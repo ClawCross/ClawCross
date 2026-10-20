@@ -1,5 +1,231 @@
 const {test,expect}=require('@playwright/test');
 
+test('human member profiles show public details, edit self and keep remote members read only',async({page})=>{
+  const {errors}=await mobileSetup(page);
+  let members=[
+    {principal:'u:alice',name:'Alice',is_agent:false,connection_id:'local',user_id:'alice',online:true,is_owner:true,can_edit_profile:true,device_kind:'client',joined_at:1790000000,profile:{avatar:'🌿',bio:'喜欢设计 <svg>',location:'上海'}},
+    {principal:'helper',name:'设计伙伴',is_agent:true,connection_id:'local',agent:{agent_id:'helper',status:{state:'running'}},platform:'webot'},
+    {principal:'remote:bob',name:'Bob',is_agent:false,connection_id:'remote',online:false,remote:true,can_edit_profile:false,device_kind:'browser',profile:{bio:'远方的朋友'}},
+  ];
+  const writes=[];
+  const pictures=new Map();
+  await page.route('**/profile-images/*',route=>route.fulfill({json:{url:pictures.get(new URL(route.request().url()).pathname.split('/').at(-1))}}));
+  await page.route('**/proxy_groups/rg_one/profile',route=>{
+    const fields=route.request().postDataJSON();writes.push(fields);
+    const images=fields.images.map((image,i)=>{const id='picture'+i;pictures.set(id,image.url);return {id,name:image.name,mime:'image/jpeg'};});
+    members[0]={...members[0],name:fields.name,profile:{text:fields.text,images}};
+    return route.fulfill({json:{group_id:'rg_one',title:'朋友们',members}});
+  });
+  await page.evaluate(list=>{renderMembers(list);toggleDrawer();},members);
+  await page.getByRole('button',{name:'Alice · 个人资料',exact:true}).click();
+  const card=page.getByRole('dialog',{name:'个人资料',exact:true});
+  await expect(card).toContainText('喜欢设计 <svg>');await expect(card).toContainText('设计伙伴');await expect(card.locator('svg')).toHaveCount(0);
+  await page.getByRole('button',{name:'编辑我的资料',exact:true}).click();
+  await card.getByLabel('群昵称').fill('小爱');
+  await expect(card.getByLabel('用户画像',{exact:true})).toHaveValue('标记：🌿\n简介：喜欢设计 <svg>\n地区：上海');
+  await expect(card.getByLabel('地区',{exact:true})).toHaveCount(0);await expect(card.getByLabel('头像标记',{exact:true})).toHaveCount(0);
+  await card.getByLabel('用户画像',{exact:true}).fill('一起构建有趣的东西');
+  await card.getByLabel('添加画像图片').setInputFiles(require('node:path').join(__dirname,'fixtures/group-invite-qr.png'));
+  await expect(card.locator('.up-picture')).toBeVisible();
+  await card.getByRole('button',{name:'保存',exact:true}).click();await expect(card).toContainText('资料已更新');
+  expect(writes).toMatchObject([{name:'小爱',text:'一起构建有趣的东西',images:[{name:'group-invite-qr.png',url:expect.stringMatching(/^data:image\/jpeg;base64,/)}]}]);
+  await expect.poll(()=>card.locator('.up-picture').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
+  for(const width of [320,390,1360]){
+    await page.setViewportSize({width,height:844});expect(await card.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+    await page.screenshot({path:`/tmp/clawcross-human-profile-${width}.png`});
+  }
+  await card.getByRole('button',{name:'关闭',exact:true}).click();
+  await page.evaluate(list=>{renderMembers(list);showHumanDetail('remote:bob');},members);
+  await expect(card).toContainText('远方的朋友');await expect(card.getByRole('button',{name:'编辑我的资料',exact:true})).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('browser guests can edit their public profile without exposing private account metadata',async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(()=>localStorage.setItem('group-guest:profile-test',JSON.stringify({token:'guest-token',name:'Carol'})));
+  let member={principal:'person',name:'Carol',is_agent:false,own:true,device:0,device_kind:'browser',online:true,profile:{bio:'你好'}};
+  await page.route('**/group-guest-api/**',route=>{
+    const action=new URL(route.request().url()).pathname.split('/').at(-1);
+    if(action==='profile'){
+      const fields=route.request().postDataJSON();member={...member,name:fields.name,profile:{text:fields.text,images:fields.images}};
+      return route.fulfill({json:{members:[member]}});
+    }
+    return route.fulfill({json:{group_id:'g_guest',title:'朋友群',name:member.name,principal:'person',members:[member],messages:[],requests:[],cursor:1,app:null}});
+  });
+  await page.goto('/group-guest#profile-test');
+  await page.getByRole('button',{name:'我的资料',exact:true}).click();
+  await page.getByRole('button',{name:'编辑我的资料',exact:true}).click();
+  await page.getByLabel('用户画像',{exact:true}).fill('浏览器里也能更新资料\n地区：杭州');
+  await page.getByLabel('添加画像图片').setInputFiles(require('node:path').join(__dirname,'fixtures/group-invite-qr.png'));
+  await expect.poll(()=>page.locator('.up-picture').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
+  await page.getByRole('button',{name:'保存',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'个人资料',exact:true})).toContainText('浏览器里也能更新资料');
+  await expect(page.getByRole('dialog',{name:'个人资料',exact:true})).toContainText('杭州');
+  expect(errors).toEqual([]);
+});
+
+test('private user portrait accepts and preserves image attachments in the Me page',async({page})=>{
+  const {errors}=await mobileSetup(page);
+  let stored={profile:'我的画像',images:[]};
+  await page.route('**/proxy_user_profile',route=>{
+    if(route.request().method()==='PUT')stored=route.request().postDataJSON();
+    return route.fulfill({json:stored});
+  });
+  await page.evaluate(()=>{goBack();switchTab('profile');});
+  await page.getByRole('button',{name:'用户画像',exact:false}).click();
+  await page.getByRole('button',{name:'编辑用户画像',exact:false}).click();
+  await page.getByLabel('添加画像图片').setInputFiles(require('node:path').join(__dirname,'fixtures/group-invite-qr.png'));
+  await expect(page.locator('#profile-subpage .up-picture')).toBeVisible();
+  await page.locator('#profile-subpage-footer .profile-footer-save').click();
+  await expect(page.locator('#private-portrait-view .up-picture')).toBeVisible();
+  expect(stored.images.length).toBe(1);expect(stored.images[0].url).toMatch(/^data:image\/jpeg;base64,/);
+  expect(errors).toEqual([]);
+});
+
+test('scan a real invitation image locally, then explicitly confirm joining', async({page}) => {
+  const {errors,calls}=await mobileSetup(page);
+  await page.setViewportSize({width:390,height:844});
+  await page.route('**/proxy_groups/join', route => route.fulfill({json:{group_id:'rg_one',title:'朋友们'}}));
+  await page.evaluate(()=>GroupNetworkUI.join());
+  await page.getByRole('button',{name:'扫一扫 / 从相册识别',exact:true}).click();
+  const scanner=page.locator('.group-network-dialog').last();
+  await scanner.getByLabel('选择群二维码图片').setInputFiles(require('node:path').join(__dirname,'fixtures/group-invite-qr.png'));
+  await expect(page.getByLabel('群聊邀请链接')).toHaveValue('https://chat.example/group-guest#scanned-invite-ticket');
+  await expect(page.locator('.group-network-dialog')).toHaveCount(1);
+  expect(calls.filter(call=>call.path==='/proxy_groups/join')).toEqual([]);
+  await page.getByLabel('你在群里的名字').fill('Alice');
+  await expect(page.getByRole('button',{name:'加入',exact:true})).toBeEnabled();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.getByRole('button',{name:'加入',exact:true}).click();
+  await expect(page.locator('.group-network-dialog')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('closing the scanner releases even a camera permission granted later', async({page}) => {
+  const {errors}=await mobileSetup(page);
+  await page.evaluate(()=>{
+    const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;
+    window.scanStream=canvas.captureStream();
+    navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>{window.grantScanCamera=()=>resolve(window.scanStream);});
+    GroupNetworkUI.scan();
+  });
+  await page.getByRole('button',{name:'开启相机',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>typeof window.grantScanCamera)).toBe('function');
+  await page.locator('.group-network-dialog').getByRole('button',{name:'关闭',exact:true}).click();
+  await page.evaluate(()=>grantScanCamera());
+  await expect.poll(()=>page.evaluate(()=>scanStream.getTracks().every(track=>track.readyState==='ended'))).toBe(true);
+  await expect(page.locator('.group-network-dialog')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('camera denial keeps photo scanning available and never navigates unknown QR links', async({page}) => {
+  const {errors}=await mobileSetup(page);
+  await page.evaluate(()=>{
+    navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('denied','NotAllowedError');};
+    GroupNetworkUI.scan();
+  });
+  await page.getByRole('button',{name:'开启相机',exact:true}).click();
+  await expect(page.locator('.gn-status')).toContainText('从相册选择二维码');
+  await page.evaluate(()=>{window.jsQR=()=>({data:'javascript:alert(1)'});});
+  await page.getByLabel('选择群二维码图片').setInputFiles(require('node:path').join(__dirname,'fixtures/group-invite-qr.png'));
+  await expect(page.locator('.gn-status')).toHaveText('这不是群聊邀请二维码，请重新扫描');
+  await expect(page.getByRole('button',{name:'从相册选择',exact:true})).toBeEnabled();
+  expect(page.url()).toContain('/mobile/group_chat');
+  expect(errors).toEqual([]);
+});
+
+test('older cross-device history loads without replaying messages or overwriting the input',async({page})=>{
+  const {errors,calls}=await mobileSetup(page);
+  let pages=0;
+  await page.route('**/proxy_groups/rg_one/history**',route=>{pages++;return route.fulfill({json:{messages:[{id:pages,sender:'friend',sender_name:'Bob',content:'更早的群聊记录 '+pages,created_at:1780000000}],next_before_id:pages===1?1:0,source:'server'}});});
+  await page.locator('#msg-input').fill('保留正在编辑的内容');
+  const button=page.getByRole('button',{name:'加载更早的聊天记录',exact:true});await expect(button).toBeVisible();await button.click();
+  await expect(page.locator('#chat-body')).toContainText('更早的群聊记录 1');await expect(page.locator('#msg-input')).toHaveValue('保留正在编辑的内容');
+  await button.click();await expect(page.locator('.group-history-bar')).toContainText('已到最早的聊天记录');
+  expect(calls.filter(c=>c.method==='POST')).toEqual([]);expect(errors).toEqual([]);
+});
+
+test('host group management offers one network switch while retaining group settings',async({page})=>{
+  let enabled=true;const updates=[];page.on('dialog',d=>d.accept());
+  await page.route('**/proxy_group_host**',async route=>{
+    const r=route.request();if(r.method()==='POST'){updates.push(r.postDataJSON());enabled=r.postDataJSON().enabled;return route.fulfill({json:{enabled}});}
+    return route.fulfill({json:{network:{enabled},groups:[{group_id:'g_host',title:'本机朋友群',announcement:'群约定',external_access_enabled:enabled,group_external_access_enabled:true,owner:'owner',members:[{principal:'owner-person',connection_id:'owner',name:'Alice',user_id:'alice',host_local:true,online:true}]}]}});
+  });
+  await page.goto('/group-host');await expect(page.getByRole('heading',{name:'群聊服务器',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'一键关闭群聊联网',exact:true}).click();await expect(page.locator('#network-title')).toHaveText('群聊联网已关闭');
+  await expect(page.getByRole('heading',{name:'本机朋友群'})).toBeVisible();await expect(page.locator('.pill')).toHaveText('仅本机连接');
+  await page.getByRole('button',{name:'恢复群聊联网',exact:true}).click();await expect(page.locator('#network-title')).toHaveText('群聊联网已开启');
+  for(const width of [390,1360]){await page.setViewportSize({width,height:844});await expect(page.locator('#network-toggle')).toBeInViewport();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`/tmp/clawcross-group-host-${width}.png`});}
+  expect(updates).toEqual([{enabled:false},{enabled:true}]);
+});
+
+test('Create offers conversation-based creation and preserves manual resources at phone and desktop sizes',async({page})=>{
+  const {errors}=await mobileSetup(page);
+  await page.evaluate(()=>{goBack();switchTab('discover');});
+  await expect(page.locator('#tab-discover')).toBeVisible();
+  await expect(page.locator('#tab-discover')).not.toContainText('Team Creator');
+  await expect(page.locator('.create-heading')).toHaveCount(0);
+  await expect(page.locator('.create-shortcut[href="/studio?compose=team"]')).toBeVisible();
+  await expect(page.locator('.create-shortcut[href="/studio?compose=app"]')).toBeVisible();
+  await expect(page.locator('.discover-card')).toHaveCount(3);
+  await expect(page.locator('.create-hub-feature .create-primary')).toContainText('ClawCross Hub');
+  const order=await page.evaluate(()=>{
+    const hub=document.querySelector('.create-hub-feature').getBoundingClientRect();
+    const creation=document.querySelector('.create-shortcuts').getBoundingClientRect();
+    return hub.bottom<=creation.top;
+  });
+  expect(order).toBe(true);
+  await expect(page.locator('.create-talk-entry[href="/studio?compose=idea"]')).toBeVisible();
+  for(const size of [{width:390,height:560},{width:360,height:560},{width:1440,height:900}]) {
+    await page.setViewportSize(size);
+    await page.locator('.discover-area').evaluate(el=>el.scrollTo(0,0));
+    await expect(page.locator('.create-primary')).toBeInViewport({ratio:1});
+    if(size.width>=1100){
+      const art=await page.locator('.create-feature-art').boundingBox();
+      const card=await page.locator('.create-hub-feature').boundingBox();
+      expect(art.width).toBeGreaterThan(card.width*.7);
+      expect(art.width/art.height).toBeCloseTo(320/120,1);
+    }
+    for(const action of ['/studio?compose=team','/studio?compose=app']){
+      const button=page.locator('.create-shortcut[href="'+action+'"]');
+      await expect(button).toBeInViewport({ratio:1});
+      const box=await button.boundingBox(),tabs=await page.locator('.tab-bar').boundingBox();
+      if(size.width<=600) expect(box.y+box.height).toBeLessThanOrEqual(tabs.y);
+    }
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.locator('.discover-card').last().scrollIntoViewIfNeeded();
+    await expect(page.locator('.discover-card').last()).toBeInViewport();
+    await page.locator('.discover-area').evaluate(el=>el.scrollTo(0,0));
+    await page.screenshot({path:`/tmp/clawcross-create-compact-${size.width}.png`});
+  }
+  await page.evaluate(()=>setLang('en'));
+  await expect(page.locator('.create-shortcut[href="/studio?compose=app"]')).toContainText('Make a mini app');
+  await expect(page.locator('.create-primary')).toContainText('Explore ClawCross Hub');
+  expect(errors).toEqual([]);
+});
+
+test('empty group actions edit a draft and disappear when the first message arrives',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  const {errors,calls}=await mobileSetup(page);
+  await page.route('**/proxy_groups/rg_one/messages**',route=>route.fulfill({json:{messages:[]}}));
+  await page.evaluate(()=>renderMessages([]));
+  await expect(page.locator('.group-start')).toBeVisible();
+  await page.locator('.group-start').getByRole('button',{name:'说声你好'}).click();
+  await expect(page.locator('#msg-input')).toHaveValue('你好！');
+  await expect(page.locator('#msg-input')).toBeFocused();
+  expect(calls.filter(c=>c.method==='POST')).toEqual([]);
+  await page.locator('#msg-input').fill('保留我的草稿');
+  await page.locator('.group-start').getByRole('button',{name:'说声你好'}).click();
+  await expect(page.locator('#msg-input')).toHaveValue('保留我的草稿');
+  await page.screenshot({path:'/tmp/clawcross-group-empty-phone.png'});
+  await page.evaluate(()=>appendMessages([{id:101,sender:'friend',sender_name:'朋友',content:'你好，很高兴认识你。',created_at:1790000001}]));
+  await expect(page.locator('.group-start')).toHaveCount(0);
+  await expect(page.locator('#chat-body')).toContainText('很高兴认识你');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'/tmp/clawcross-group-phone.png'});
+  expect(errors).toEqual([]);
+});
+
 test('visible Agent activity uses gateway states and clears the running marker',async({page})=>{
   await mobileSetup(page);let running=true;
   await page.route('**/v1/agents/activity',route=>route.fulfill({json:{data:[{agent_id:'activity-agent',state:running?'running':'idle'}]}}));

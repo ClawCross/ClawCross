@@ -61,6 +61,8 @@ class SpaceAppRunner:
         self.runs = {}        # (owner, gid) -> {'app', 'name', 'proc', 'started', 'error'}
         self.lock = threading.RLock()
         self.closed = False
+        self.wakeup = threading.Event()
+        self.monitor = None
 
     @property
     def record(self) -> Path:
@@ -103,6 +105,10 @@ class SpaceAppRunner:
         state = DATA_DIR / 'space-app-data' / gid / app_id
         state.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.lock:
+            if self.closed:
+                raise ClientError('小程序服务正在停止', 503)
+            # A deletion may have completed while the new app key was being requested.
+            self.client.require(owner, gid)
             self._stop(owner, gid)
             log = self.log(gid)
             log.parent.mkdir(parents=True, exist_ok=True)
@@ -113,15 +119,51 @@ class SpaceAppRunner:
                                         env={**os.environ, 'CLAWCROSS_SPACE_SERVER': row['url'], 'CLAWCROSS_SPACE_KEY': key, 'CLAWCROSS_SPACE_LOCAL_TOKEN': service_key(), 'CLAWCROSS_SPACE_DATA_DIR': str(state)})
             self.runs[(owner, gid)] = {'app': app_id, 'name': app['name'], 'proc': proc, 'started': time.time(), 'error': ''}
             self.save()
+            self._watch()
         return self.status(owner, gid)
 
     def stop(self, owner, gid) -> dict:
         """Ends the app and takes it off the space, which is plain group chat again."""
         with self.lock:
+            self.client.manage(owner, gid, 'app_remove', {})
+            self.discard(owner, gid)
+        return self.status(owner, gid)
+
+    def discard(self, owner, gid):
+        """Forget a deleted/detached group without trying to contact it again."""
+        with self.lock:
             self._stop(owner, gid)
             self.save()
-        self.client.manage(owner, gid, 'app_remove', {})
-        return self.status(owner, gid)
+
+    def _watch(self):
+        if not self.monitor or not self.monitor.is_alive():
+            self.monitor = threading.Thread(target=self._monitor, daemon=True, name='space-apps-lifecycle')
+            self.monitor.start()
+
+    def _monitor(self):
+        # Also catches deletion from the group host's administration API, outside this facade.
+        while not self.wakeup.wait(2):
+            with self.lock:
+                if self.closed or not self.runs:
+                    self.monitor = None
+                    return
+            self.reconcile()
+
+    def reconcile(self):
+        with self.lock:
+            runs = list(self.runs.items())
+        for (owner, gid), run in runs:
+            try:
+                row = self.client.require(owner, gid)
+                group = self.client.request(row, 'GET', '/group')
+                gone = not group.get('app')
+            except ClientError as exc:
+                # Service outages and paused networking do not mean the group was deleted.
+                gone = exc.status in (401, 403, 404)
+            if gone:
+                with self.lock:
+                    if not self.closed and self.runs.get((owner, gid)) is run:
+                        self.discard(owner, gid)
 
     def _stop(self, owner, gid):
         run = self.runs.pop((owner, gid), None)
@@ -140,6 +182,8 @@ class SpaceAppRunner:
             self.runs[(row['owner'], row['gid'])] = {'app': row['app'], 'name': apps.get(row['app'], {}).get('name', row['app']),
                                                      'proc': None, 'started': time.time(), 'error': ''}
         threading.Thread(target=self._restart, args=(rows,), daemon=True, name='space-apps-restore').start()
+        with self.lock:
+            self._watch()
 
     def _restart(self, rows):
         # The group server may still be starting: try for a few minutes.
@@ -148,7 +192,10 @@ class SpaceAppRunner:
                 if self.closed or (row['owner'], row['gid']) not in self.runs:
                     break
                 try:
-                    self.start(row['owner'], row['gid'], row['app'])
+                    with self.lock:
+                        if self.closed or (row['owner'], row['gid']) not in self.runs:
+                            break
+                        self.start(row['owner'], row['gid'], row['app'])
                     break
                 except ClientError as exc:
                     if exc.status in (403, 404):
@@ -167,6 +214,7 @@ class SpaceAppRunner:
     def close(self):
         """ClawCross is stopping: stop the apps but keep the record, so they start again next time."""
         self.closed = True
+        self.wakeup.set()
         with self.lock:
             for run in self.runs.values():
                 if run.get('proc'):
@@ -174,16 +222,28 @@ class SpaceAppRunner:
 
 
 def end(proc):
-    if proc.poll() is not None:
-        return
     group = hasattr(os, 'killpg')
+    if not group:
+        if proc.poll() is None:
+            subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        return
     try:
-        os.killpg(proc.pid, signal.SIGTERM) if group else proc.terminate()
+        os.killpg(proc.pid, signal.SIGTERM)
         proc.wait(timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         try:
             os.killpg(proc.pid, signal.SIGKILL) if group else proc.kill()
         except OSError:
+            pass
+    finally:
+        # The parent can exit first while a descendant ignores SIGTERM.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
             pass
 
 

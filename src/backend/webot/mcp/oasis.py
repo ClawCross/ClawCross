@@ -121,7 +121,10 @@ def _spawn_standalone_python_workflow(
     python_file: str,
     question: str,
     team: str = "",
+    agent_map: dict[str, str] | None = None,
 ) -> dict[str, str | int]:
+    from oasis.agent_bindings import validate_agent_map
+    bindings = validate_agent_map(agent_map if agent_map is not None else {})
     runs_dir = os.path.join(str(DATA_DIR), "python_workflow_runs")
     os.makedirs(runs_dir, exist_ok=True)
     run_id = uuid.uuid4().hex[:12]
@@ -144,6 +147,8 @@ def _spawn_standalone_python_workflow(
     ]
     if team:
         cmd.extend(["--team", team])
+    if bindings:
+        cmd.extend(["--agent-map", json.dumps(bindings, ensure_ascii=False)])
 
     log_file = open(log_path, "a", encoding="utf-8")
     proc = subprocess.Popen(
@@ -172,6 +177,7 @@ def _spawn_standalone_python_workflow(
         "user_id": user_id,
         "team": team,
         "question": question,
+        "agent_map": bindings,
     }
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
@@ -485,6 +491,7 @@ async def start_new_oasis(
     notify_session: str = "",
     discussion: bool = False,
     team: str = "",
+    agent_map: dict[str, str] | None = None,
 ) -> str:
     """
     Submit a question or task to the OASIS forum. Asynchronous: returns a
@@ -507,6 +514,9 @@ async def start_new_oasis(
         notify_session: (auto-injected) session to notify on completion
         discussion: true forces a forum with JSON replies and voting instead of a task pipeline where each agent sees earlier output; false keeps the YAML's own setting
         team: scope agents and experts to this team
+        agent_map: this run's internal name -> existing Agent ID mapping.
+            The same YAML/Python can run with different mappings; Team roles are
+            provided automatically and this map overrides them for this run.
     """
     effective_user = _resolve_effective_user(username)
 
@@ -530,6 +540,7 @@ async def start_new_oasis(
                 python_file=python_file,
                 question=question,
                 team=team,
+                agent_map=agent_map,
             )
             return (
                 f"🐍 Python 工作流已启动（standalone）\n"
@@ -545,6 +556,7 @@ async def start_new_oasis(
                 "question": question,
                 "user_id": effective_user,
                 "max_rounds": max_rounds,
+                "agent_map": agent_map if agent_map is not None else {},
             }
             # Only send discussion when explicitly set to True (discussion mode)
             # so YAML's own "discussion:" setting is respected by default.

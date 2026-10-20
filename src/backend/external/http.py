@@ -65,7 +65,9 @@ class HttpRuntime(InboxRuntime):
             return AgentReply(ok=False, error=f"{agent.agent_id} has no api_url")
         prepared = session.prepare_turn(agent, msg, context=context, mode=mode,
                                         enabled_tools=enabled_tools, response_format=response_format, plain_text=False)
-        messages = [{"role": "user", "content": build_openai_content(prepared.text, msg.attachments)}]
+        from common.model_capabilities import model_capabilities
+        pictures = [] if model_capabilities(model).get('image_inputs') is False else prepared.profile_images
+        messages = [{"role": "user", "content": build_openai_content(prepared.text, [*pictures, *msg.attachments])}]
         body = {"model": model, "messages": messages, "stream": False, **self.session_fields(agent)}
         wait = None if timeout == NO_TIMEOUT else (timeout if timeout is not None else 60)
 

@@ -13,6 +13,7 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 from oasis.python_workflow import resolve_python_workflow_path
+from oasis.agent_bindings import add_agent_map_arguments
 
 
 def _resolve_python_file(user_id: str, python_file: str, team: str = "") -> str:
@@ -35,6 +36,7 @@ def main() -> int:
     parser.add_argument("--team", default="", help="Optional team scope.")
     parser.add_argument("--question", default="", help="Question/task passed into the workflow.")
     parser.add_argument("--result-file", default="", help="Optional JSON output file.")
+    add_agent_map_arguments(parser)
     parser.add_argument(
         "--no-auto-topic",
         action="store_true",
@@ -58,6 +60,10 @@ def main() -> int:
             cmd.extend(["--result-file", args.result_file])
         if args.no_auto_topic:
             cmd.append("--no-auto-topic")
+        if args.agent_map is not None:
+            cmd.extend(["--agent-map", args.agent_map])
+        if args.agent_map_file is not None:
+            cmd.extend(["--agent-map-file", os.path.abspath(args.agent_map_file)])
         proc = subprocess.run(cmd, cwd=_PROJECT_ROOT)
         return int(proc.returncode)
     except Exception as e:

@@ -1452,9 +1452,12 @@ async def clear_session_plan(
 
 @mcp.tool()
 async def get_clawcross_help(topic: str = '', query: str = '', section: str = '') -> str:
-    """查阅 ClawCross 本地功能与设置说明；只按需读取相关文档，不联网。
+    """查阅 ClawCross 功能、设置及开发文档；只按需读取本地相关章节，不联网。
+    小程序开发用 apps：SDK、同机部署、Agent 调用、身份隔离、存档、实时页面和排错；
+    app_protocol 查底层协议和模板。teams 介绍由当前 Agent 使用管理工具创建和配置团队。
+    首次可留空获取目录；内容截断时使用返回的 sections 按章节继续，避免一次加载所有文档。
 
-    :param topic: 留空列主题；overview/configuration/channels/sandbox/agents/management/mcp/groups/teams/skills/cli/launch
+    :param topic: 留空列主题；overview/configuration/channels/sandbox/agents/management/mcp/groups/teams/workflows/apps/app_protocol/workspaces/skills/cli/launch
     :param query: 可选关键词；留空读主题概览
     :param section: 可选章节名；查返回 sections 后按需读取，避免加载全部文档
     """

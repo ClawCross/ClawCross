@@ -35,6 +35,12 @@ BROKEN = "/* 坏掉 · Broken — exits at once.\n */\nconsole.error('连不上�
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
+    runners = []
+    original_init = space_apps.SpaceAppRunner.__init__
+    def track(runner, client):
+        original_init(runner, client)
+        runners.append(runner)
+    monkeypatch.setattr(space_apps.SpaceAppRunner, '__init__', track)
     shipped, mine = tmp_path / 'shipped', tmp_path / 'state' / 'space-apps'
     for root, name, code in [(shipped, 'echo', ECHO.replace('回声', '自带回声')), (shipped, 'only-shipped', ECHO),
                              (mine, 'echo', ECHO), (mine, 'broken', BROKEN)]:
@@ -43,7 +49,9 @@ def home(tmp_path, monkeypatch):
     (mine / 'kami.key').write_text('not an app')
     for name, value in [('BUILTIN', shipped), ('STATE_DIR', tmp_path / 'state'), ('DATA_DIR', tmp_path / 'data'), ('LOGS_DIR', tmp_path / 'logs')]:
         monkeypatch.setattr(space_apps, name, value)
-    return tmp_path
+    yield tmp_path
+    for runner in runners:
+        runner.close()
 
 
 class Server:
@@ -65,6 +73,8 @@ class Server:
         return {'url': service_url()}
 
     def request(self, row, method, path, body=None):
+        if (method, path) == ('GET', '/group'):
+            return {'app': {'name': 'test'}}
         assert (method, path) == ('POST', '/app/key')
         self.keys += 1
         return {'key': f'app_key_{self.keys}'}
@@ -166,3 +176,55 @@ def test_remote_groups_cannot_start_local_apps(home):
     with pytest.raises(ClientError, match='群聊所在主机'):
         runner.start('alice', 'rg_remote', 'echo')
     assert not runner.runs and server.keys == 0
+
+
+def test_group_delete_stops_the_real_process_and_forgets_restart_record(home):
+    server = Server()
+    facade = GroupFacade(server)
+    facade.apps.start('alice', 'rg_1', 'echo')
+    proc = facade.apps.runs[('alice', 'rg_1')]['proc']
+    actions = []
+    def manage(owner, gid, action, fields):
+        actions.append(action)
+        if owner != 'alice':
+            raise ClientError('只有群主能删除群聊', 403)
+        return {'deleted': gid}
+    server.manage = manage
+    with pytest.raises(ClientError):
+        facade.delete('bob', 'rg_1')
+    assert proc.poll() is None
+    assert facade.delete('alice', 'rg_1') == {'deleted': 'rg_1'}
+    assert proc.poll() is not None
+    assert json.loads(facade.apps.record.read_text()) == []
+    assert actions == ['delete', 'delete']  # no app_remove request to a now-deleted group
+    restored = space_apps.SpaceAppRunner(server)
+    restored.restore()
+    assert restored.runs == {}
+
+
+def test_host_admin_deletion_is_reaped_but_temporary_outage_is_preserved(home):
+    server = Server()
+    runner = space_apps.SpaceAppRunner(server)
+    runner.start('alice', 'rg_1', 'echo')
+    proc = runner.runs[('alice', 'rg_1')]['proc']
+    def outage(*args, **kwargs):
+        raise ClientError('群服务器不可用', 503)
+    server.request = outage
+    runner.reconcile()
+    assert proc.poll() is None and ('alice', 'rg_1') in runner.runs
+    def deleted(*args, **kwargs):
+        raise ClientError('群凭证已经删除', 401)
+    server.request = deleted
+    wait(lambda: proc.poll() is not None, seconds=5)  # real lifecycle monitor, no UI request needed
+    wait(lambda: json.loads(runner.record.read_text()) == [])
+
+
+def test_removing_the_app_also_reaps_its_process(home):
+    server = Server()
+    runner = space_apps.SpaceAppRunner(server)
+    runner.start('alice', 'rg_1', 'echo')
+    proc = runner.runs[('alice', 'rg_1')]['proc']
+    server.request = lambda *args, **kwargs: {'app': None}
+    runner.reconcile()
+    assert proc.poll() is not None
+    assert json.loads(runner.record.read_text()) == []

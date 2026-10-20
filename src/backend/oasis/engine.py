@@ -116,13 +116,19 @@ def _get_summarizer():
     return create_chat_model(temperature=0.3, max_tokens=2048)
 
 
-def resolve_agent(user_id: str, team: str, ref: str):
+def resolve_agent(user_id: str, team: str, ref: str, agent_map: dict[str, str] | None = None):
     """``(agent, name)`` a workflow means by *ref*: in team mode a member's name first;
     then ``<team>.<name>`` or an agent id — an id not seen before is a new agent."""
     from agents.store import get_store, valid_agent_id
     from teams.store import get_team_store
 
     ref = (ref or "").strip()
+    if agent_map:
+        from oasis.agent_bindings import mapped_agent
+
+        bound = mapped_agent(user_id, ref, agent_map)
+        if bound is not None:
+            return bound
     store = get_store()
     teams = get_team_store(store)
     if team and teams.exists(user_id, team):
@@ -163,6 +169,7 @@ class DiscussionEngine:
         early_stop: bool = False,
         discussion: bool | None = None,
         team: str = "",
+        agent_map: dict[str, str] | None = None,
     ):
         self.forum = forum
         self._cancelled = False
@@ -195,6 +202,8 @@ class DiscussionEngine:
 
         # ── Step 2: the participants the plan names ──
         configs = collect_participant_configs(self.schedule)
+        from oasis.agent_bindings import merge_agent_maps, team_agent_map
+        self.agent_map = merge_agent_maps(team_agent_map(user_id, self._team), agent_map or {})
         self.experts: list[Participant] = []
         self._expert_map: dict[str, Participant] = {}
         for key in extract_expert_names(self.schedule):
@@ -228,7 +237,7 @@ class DiscussionEngine:
         kind, _, rest = key.partition(":")
         if kind == "agent":
             try:
-                agent, role = resolve_agent(user_id, self._team, rest)
+                agent, role = resolve_agent(user_id, self._team, rest, self.agent_map)
             except LookupError as exc:
                 print(f"  [OASIS] ⚠️ {exc}; skipping.")
                 return None

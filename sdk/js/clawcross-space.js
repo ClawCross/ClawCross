@@ -31,11 +31,18 @@ class Space extends EventEmitter {
     this.cursor = null;
     this.closed = false;
     this.site = null;
+    this.requests = new Set();
+    this.sockets = new Set();
     this.secret = crypto.randomBytes(16).toString('hex');
   }
 
   async call(method, path, body) {
+    if (this.closed) throw new Error('群聊小程序已停止');
+    const controller = new AbortController();
+    this.requests.add(controller);
+    try {
     const response = await fetch(this.base + path, {
+      signal: controller.signal,
       method, headers: { Authorization: 'Bearer ' + this.key, 'X-Group-Service-Key': this.localToken, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body)
     });
@@ -46,6 +53,7 @@ class Space extends EventEmitter {
       throw error;
     }
     return data;
+    } finally { this.requests.delete(controller); }
   }
 
   /** `{ title, members: [{ id, name, agent, platform, online, device, owner }] }`; one device's people and agents share `device`. */
@@ -56,11 +64,16 @@ class Space extends EventEmitter {
 
   /** Members' pages are served by `handler(req, res)`; `req.member` is `{ id, name }`, verified by the group server. */
   async serve(handler, { upgrade } = {}) {
+    if (this.closed) throw new Error('群聊小程序已停止');
     this.site = http.createServer((req, res) => {
       // Only requests forwarded by this SDK carry the secret; others on this machine are refused.
       if (req.headers['x-space-secret'] !== this.secret) { res.writeHead(403).end(); return; }
       req.member = { id: String(req.headers['x-space-member'] || ''), name: decodeURIComponent(String(req.headers['x-space-member-name'] || '')) };
       handler(req, res);
+    });
+    this.site.on('connection', socket => {
+      this.sockets.add(socket);
+      socket.once('close', () => this.sockets.delete(socket));
     });
     if (upgrade) this.site.on('upgrade', (req, socket, head) => {
       if (req.headers['x-space-secret'] !== this.secret) { socket.destroy(); return; }
@@ -76,8 +89,15 @@ class Space extends EventEmitter {
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.emit('closing');
-    this.site?.close();
+    try { this.emit('closing'); }
+    finally {
+      for (const controller of this.requests) controller.abort();
+      clearTimeout(this.retry);
+      this.resume?.();
+      this.site?.close();
+      for (const socket of this.sockets) socket.destroy();
+      this.sockets.clear();
+    }
   }
 
   async run() {
@@ -89,9 +109,10 @@ class Space extends EventEmitter {
         delay = 1000;
         for (const item of packet.items) this.dispatch(item);
       } catch (error) {
-        if (error.status === 401) { this.emit('closed', error); this.close(); return; }
+        if (this.closed) return;
+        if ([401, 403, 404].includes(error.status)) { this.close(); this.emit('closed', error); return; }
         this.emit('offline', error);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await new Promise((resolve) => { this.resume = resolve; this.retry = setTimeout(resolve, delay); });
         delay = Math.min(30000, delay * 2);
       }
     }

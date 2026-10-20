@@ -68,6 +68,16 @@ class GroupFacade:
             return self.client.messages(user, gid, after_id)
         return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/messages', params={'after_id': after_id})['messages']
 
+    def message_state(self, user, gid):
+        if not gid.startswith('rg_'):
+            return {}
+        row = self.client.require(user, gid)
+        group = json.loads(row['metadata'])
+        mapping = {m['principal']: m['agent_id'] or 'u:' + user for m in group.get('members', [])
+                   if m['connection_id'] == row['connection_id']}
+        return {'capabilities': group.get('capabilities', {}),
+                'receipts': [{**r, 'principal': mapping.get(r['principal'], r['principal'])} for r in group.get('receipts', [])]}
+
     def search_messages(self, user, gid, query, before_id=0, limit=50, **filters):
         if gid.startswith('rg_'):
             return self.client.search_messages(user, gid, query, before_id, limit, **filters)
@@ -85,9 +95,10 @@ class GroupFacade:
         return self.rpc(user, 'PATCH', '/' + quote(gid, safe=''), fields)
 
     def delete(self, user, gid):
-        if gid.startswith('rg_'):
-            return self.client.manage(user, gid, 'delete', {})
-        return self.rpc(user, 'DELETE', '/' + quote(gid, safe=''))
+        with self.apps.lock:
+            result = self.client.manage(user, gid, 'delete', {}) if gid.startswith('rg_') else self.rpc(user, 'DELETE', '/' + quote(gid, safe=''))
+            self.apps.discard(user, gid)
+            return result
 
     def add_member(self, user, gid, ref, *, convert_to_group=False):
         if gid.startswith('rg_'):
@@ -199,6 +210,36 @@ def client_router(facade, *, internal_token, verify_password):
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
+    @router.post('/groups/{gid}/receipts')
+    async def receipt(gid: str, body: dict, authorization: str | None = Header(None)):
+        try:
+            user = user_of(authorization)
+            row = facade.client.require(user, gid)
+            read = body.get('read_cursor')
+            if type(read) is not int or read < 0:
+                raise ClientError('已读位置无效')
+            return await asyncio.to_thread(facade.client.request, row, 'POST', '/receipts', {
+                'device_id': facade.client.store.node_id, 'received_cursor': row['received_cursor'], 'read_cursor': read})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.patch('/groups/{gid}/profile')
+    async def member_profile(gid: str, body: dict, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'profile', body)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.get('/groups/{gid}/members/{principal}/profile-images/{image_id}')
+    async def profile_image(gid: str, principal: str, image_id: str, authorization: str | None = Header(None)):
+        try:
+            row = facade.client.require(user_of(authorization), gid)
+            real_principal = facade.client.principal(row, principal)
+            return await asyncio.to_thread(facade.client.request, row, 'GET', '/guest/image',
+                                           params={'principal': real_principal, 'image_id': image_id})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
     @router.delete('/groups/{gid}/local')
     async def remove_local(gid: str, authorization: str | None = Header(None)):
         try:
@@ -235,7 +276,7 @@ def client_router(facade, *, internal_token, verify_password):
     @router.delete('/groups/{gid}/app')
     async def remove_app(gid: str, authorization: str | None = Header(None)):
         try:
-            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'app_remove', {})
+            return await asyncio.to_thread(facade.apps.stop, user_of(authorization), gid)
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
@@ -252,6 +293,13 @@ def client_router(facade, *, internal_token, verify_password):
     @router.get('/groups/{gid}/app-run')
     async def app_run(gid: str, authorization: str | None = Header(None)):
         return facade.apps.status(user_of(authorization), gid)
+
+    @router.get('/groups/{gid}/history')
+    async def group_history(gid: str, before_id: int = 0, limit: int = 50, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.history, user_of(authorization), gid, max(0, before_id), limit)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
 
     @router.post('/groups/{gid}/app-run')
     async def start_app(gid: str, body: AppRun, authorization: str | None = Header(None)):

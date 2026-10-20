@@ -297,6 +297,7 @@ async def create_topic(req: CreateTopicRequest):
     )
     forum.team = req.team or ""
     forum.schedule_yaml = req.schedule_yaml
+    forum.agent_map = dict(req.agent_map)
     discussions[topic_id] = forum
     forum.save()
 
@@ -333,6 +334,7 @@ async def create_topic(req: CreateTopicRequest):
                 python_file=python_path,
                 user_id=req.user_id,
                 team=req.team or "",
+                agent_map=req.agent_map,
             )
         else:
             engine = DiscussionEngine(
@@ -341,6 +343,7 @@ async def create_topic(req: CreateTopicRequest):
                 schedule_file=req.schedule_file,
                 bot_enabled_tools=req.bot_enabled_tools,
                 bot_timeout=req.bot_timeout,
+                agent_map=req.agent_map,
                 user_id=req.user_id,
                 early_stop=req.early_stop,
                 discussion=req.discussion,
@@ -696,6 +699,7 @@ def _build_topic_detail(forum: DiscussionForum, posts: list) -> TopicDetail:
             for e in forum.timeline
         ],
         discussion=bool(forum.discussion),
+        agent_map=dict(forum.agent_map),
         conclusion=forum.conclusion,
         swarm_mode=forum.swarm_mode or None,
         swarm=_sanitize_swarm_for_api(forum.swarm),

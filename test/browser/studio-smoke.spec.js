@@ -1,5 +1,129 @@
 const { test, expect } = require('@playwright/test');
 
+test('Studio switches to Message Center from a prominent top-right button',async({page})=>{
+  await stubStudioNetwork(page,{}, {agents:[],approvals:[]});
+  await page.goto('/studio');
+  const link=page.locator('.studio-mode-switch');
+  await expect(link).toHaveAttribute('href','/mobile/group_chat');
+  await expect(page.locator('.page-tab-bar > #tab-groupchat')).toHaveCount(1);
+  for(const width of [1440,390,360]){
+    await page.setViewportSize({width,height:700});
+    for(const open of [false,true]){
+      await page.locator('.studio-conversation-switcher').evaluate((el,open)=>el.open=open,open);
+      await expect(link).toBeInViewport({ratio:1});
+      const navbar=await page.locator('.page-tab-bar').boundingBox();
+      const button=await link.boundingBox();
+      expect(navbar.x+navbar.width-button.x-button.width).toBeLessThan(12);
+      expect(button.y-navbar.y).toBeLessThan(10);
+      expect(button.height).toBeGreaterThanOrEqual(44);
+      expect(button.width).toBeGreaterThanOrEqual(108);
+      await expect(link.locator('span')).toBeVisible();
+      await expect(link).toHaveText('Message');
+      expect(await link.locator('span').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    }
+    await page.screenshot({path:`/tmp/clawcross-studio-switch-${width}.png`});
+  }
+  await link.click();
+  await expect(page).toHaveURL(/\/mobile\/group_chat$/);
+  for(const width of [390,1440]){
+    await page.setViewportSize({width,height:700});
+    const studio=page.locator(width<1024?'.mobile-studio-header-link':'.tab-bar .mobile-studio-link');
+    await expect(studio).toBeInViewport({ratio:1});
+    await expect(studio).toHaveText('Studio');
+    expect(await studio.evaluate(el=>getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
+    await page.screenshot({path:`/tmp/clawcross-message-switch-${width}.png`});
+  }
+});
+
+test('Team pages keep the personal overview separate and preserve resource navigation',async({page})=>{
+  const calls={},errors=[];
+  const agent={agent_id:'project-agent',name:'项目协作伙伴',platform:'webot',settings:{},status:{state:'idle'}};
+  await stubStudioNetwork(page,calls,{agents:[agent],approvals:[]});
+  await page.route('**/teams',route=>route.fulfill({json:{teams:['__default__','Design project']}}));
+  await page.route(/\/v1\/teams(\?.*)?$/,route=>route.fulfill({json:{data:[{team:'__default__',kind:'user_space',members:[{agent}]},{team:'Design project',members:[{agent}]}]}}));
+  await page.route(/\/v1\/teams\/[^/?]+$/,route=>route.fulfill({json:{team:decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop()),members:[{agent,role:agent.name}]}}));
+  await page.route('**/proxy_visual/load-layouts**',route=>route.fulfill({json:new URL(route.request().url()).searchParams.get('mode')==='python'?[]:['Weekly report']}));
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto('/studio');
+  await page.waitForFunction(()=>window._ocSwitcherInitialized === true);
+  await page.locator('#tab-group').click();
+  const personal=page.locator('#group-list .user-space-item');
+  await expect(personal).toHaveCount(1);
+  await expect(personal.locator('.user-space-badge')).toContainText('个人总览');
+  await expect(personal.locator('.group-delete-btn')).toHaveCount(0);
+  await personal.click();
+  await expect(page.locator('#team-space-context')).toBeVisible();
+  await expect(page.locator('#team-space-context')).toContainText('不是一个项目团队');
+  await page.screenshot({path:'/tmp/clawcross-team-personal-desktop.png'});
+  await page.locator('#group-list .group-item:not(.user-space-item)').click();
+  await expect(page.locator('#team-space-context')).toBeHidden();
+  await page.locator('#team-tab-workflows').click();
+  await expect(page.locator('#team-tab-workflows')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#team-workflows-table-body')).toContainText('Weekly report');
+  await page.screenshot({path:'/tmp/clawcross-team-project-desktop.png'});
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('#team-tab-workflows')).toBeInViewport();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'/tmp/clawcross-team-project-phone.png'});
+  await page.evaluate(()=>switchPage('orchestrate'));
+  await expect(page.locator('#orch-run-btn')).toBeVisible();
+  await page.screenshot({path:'/tmp/clawcross-workflow-editor-phone.png'});
+  await page.setViewportSize({width:1440,height:900});
+  await page.screenshot({path:'/tmp/clawcross-workflow-editor-desktop.png'});
+  expect(calls.agentCreates).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('new conversation suggestions stay editable and do not create or send until requested', async ({page}) => {
+  const calls = {}, errors = [];
+  await stubStudioNetwork(page, calls, {agents:[], approvals:[]});
+  page.on('pageerror', error => errors.push(error.message));
+  let prompts = 0;
+  await page.route('**/v1/chat/completions', route => {
+    prompts++;
+    return route.fulfill({contentType:'text/event-stream',body:'data: {"choices":[{"delta":{"content":"WELCOME_SENT_OK"}}]}\n\ndata: [DONE]\n\n'});
+  });
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto('/studio');
+  await expect(page.locator('[data-conversation-welcome]')).toBeVisible();
+  await expect(page.locator('.welcome-idea')).toHaveCount(3);
+  await page.screenshot({path:'/tmp/clawcross-welcome-desktop.png'});
+  await page.locator('.welcome-idea[data-compose="app"]').click();
+  await expect(page.locator('#user-input')).toHaveValue(/小程序/);
+  expect(prompts).toBe(0);
+  expect(calls.agentCreates).toEqual([]);
+  await page.locator('#user-input').fill('A task I want to keep');
+  await page.locator('.welcome-idea[data-compose="team"]').click();
+  await expect(page.locator('#user-input')).toHaveValue(/^A task I want to keep\n/);
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.locator('#user-input').fill('Hello');
+  await page.screenshot({path:'/tmp/clawcross-welcome-phone.png'});
+  await page.locator('#send-btn').click();
+  await expect(page.locator('#chat-box')).toContainText('WELCOME_SENT_OK');
+  await expect(page.locator('[data-conversation-welcome]')).toHaveCount(0);
+  expect(prompts).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test('Create links prefill the current Studio conversation and English welcome remains translated', async ({page}) => {
+  const calls = {}, errors = [];
+  await stubStudioNetwork(page, calls, {agents:[], approvals:[]});
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(()=>localStorage.setItem('lang','en'));
+  await page.goto('/studio?compose=team');
+  await expect(page.locator('#user-input')).toHaveValue(/Help me build a team/);
+  await expect(page.locator('.welcome-idea[data-compose="team"]')).toContainText('Build a team');
+  await expect(page).not.toHaveURL(/compose=/);
+  expect(calls.agentCreates).toEqual([]);
+  await page.evaluate(()=>toggleLanguage());
+  await expect(page.locator('.welcome-idea[data-compose="team"]')).toContainText('组建协作团队');
+  await expect(page.locator('#user-input')).toHaveValue(/Help me build a team/);
+  expect(errors).toEqual([]);
+});
+
 test('local and SSH Agents share the center and remote ACP works without local acpx',async({page})=>{
   const agents=[{agent_id:'local',name:'本机伙伴',platform:'webot',settings:{},location:{kind:'local',name:'本机'},status:{state:'idle'}},
     {agent_id:'remote',name:'远端伙伴',platform:'claude',settings:{},location:{kind:'ssh',name:'笔记本',host:'laptop'},status:{state:'idle'}}];

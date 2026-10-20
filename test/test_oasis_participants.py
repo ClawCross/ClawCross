@@ -344,5 +344,76 @@ class TestAgentCenter(EngineCase):
         self.assertEqual(self.fake.deleted, [made["agent_id"]])  # made for that one call
 
 
+class TestAgentBindings(EngineCase):
+    def test_runtime_table_overrides_team_only_for_its_run(self):
+        from oasis.agent_center import AgentCenter
+        center = AgentCenter("alice", "dev", agent_map={"writer": "codex", "builder": "codex"})
+        other = AgentCenter("alice", "dev")
+        reply = asyncio.run(center.send_agent("WRITER", "draft"))
+        self.assertTrue(reply.ok)
+        self.assertEqual(self.fake.asks[-1]["agent"], "codex")
+        self.assertEqual(center.get_agent("Builder")["agent_id"], "codex")
+        self.assertEqual(other.get_agent("Builder")["agent_id"], "s1")
+        copy = center.agent_map
+        copy.clear()
+        self.assertIn("writer", center.agent_map)
+
+    def test_missing_and_cross_user_ids_never_create_agents(self):
+        from oasis.agent_center import AgentCenter
+        self.store.create("bob", driver=WEBOT, name="Private", agent_id="private")
+        for target in ("typo", "private"):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "missing Agent"):
+                AgentCenter("alice", "dev", agent_map={"bad": target})
+            self.assertIsNone(self.store.get("alice", target))
+
+    def test_same_yaml_can_run_with_different_runtime_tables(self):
+        source = "version: 2\nplan:\n  - id: task\n    agent: worker\n"
+        for agent_id in ("s1", "codex"):
+            built = DiscussionEngine(forum=DiscussionForum("bound_" + agent_id, "test", "alice"),
+                                     user_id="alice", team="dev", schedule_yaml=source,
+                                     agent_map={"worker": agent_id}, discussion=False)
+            asyncio.run(built.run())
+            self.assertEqual(built.forum.status, "concluded")
+            self.assertEqual(self.fake.asks[-1]["agent"], agent_id)
+        self.assertNotIn("agent_map", source)
+
+    def test_runtime_file_input_and_invalid_tables(self):
+        from oasis.agent_bindings import load_agent_map, validate_agent_map
+        root = Path(self.tmp.name)
+        for filename, source in (("agents.json", '{"writer":"s1"}'),
+                                 ("agents.yaml", 'agent_map: {writer: s1}')):
+            file = root / filename
+            file.write_text(source)
+            self.assertEqual(load_agent_map(file), {"writer": "s1"})
+        for invalid in ([], {"writer": 42}, {"Writer": "s1", "writer": "codex"}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_agent_map(invalid)
+
+    def test_start_tool_forwards_map_without_rewriting_workflow(self):
+        import inspect
+        from webot.mcp import oasis as tools
+        self.assertNotIn("agent_map", inspect.signature(tools.save_oasis_workflow).parameters)
+        source = "version: 2\nplan:\n  - id: task\n    agent: writer\n"
+        response = mock.Mock(status_code=200)
+        response.json.return_value = {"topic_id": "test-topic"}
+        client = mock.AsyncMock()
+        client.post.return_value = response
+        client.__aenter__.return_value = client
+        with mock.patch.object(tools.httpx, "AsyncClient", return_value=client):
+            result = asyncio.run(tools.start_new_oasis(question="write", schedule_yaml=source,
+                                                     username="alice", agent_map={"writer": "s1"}))
+        self.assertIn("test-topic", result)
+        body = client.post.call_args.kwargs["json"]
+        self.assertEqual(body["schedule_yaml"], source)
+        self.assertEqual(body["agent_map"], {"writer": "s1"})
+        with mock.patch.object(tools, "_spawn_standalone_python_workflow", return_value={
+            "run_id": "py-test", "pid": 123, "log_file": "test.log", "result_file": "test.json"
+        }) as spawn:
+            result = asyncio.run(tools.start_new_oasis(question="write", python_file="/tmp/flow.py",
+                                                     username="alice", agent_map={"writer": "codex"}))
+        self.assertIn("py-test", result)
+        self.assertEqual(spawn.call_args.kwargs["agent_map"], {"writer": "codex"})
+
+
 if __name__ == "__main__":
     unittest.main()

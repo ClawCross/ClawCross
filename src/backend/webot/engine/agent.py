@@ -1395,7 +1395,7 @@ class TeamAgent:
 
         settings = get_runtime_settings(turn.user_id, turn.session_id).context
         prefix_tokens = sum(estimate_context_components(
-            system_prompt=base_prompt, tools=context_tool_schemas, runtime_state=dynamic_context, messages=[],
+            system_prompt=base_prompt, tools=context_tool_schemas, runtime_state=dynamic_context, messages=self._portrait_context(turn, model_name),
         ).values())
         # Budgets follow the model actually used this turn (route, override).
         context_window = resolve_context_window(settings, model_name or None)
@@ -1453,12 +1453,13 @@ class TeamAgent:
         while True:
             base_prompt, prompts = self._build_live_system_prompt(turn.user_id, turn.session_id, turn.is_subagent)
             input_messages[0] = SystemMessage(content=base_prompt)
+            request_messages = [input_messages[0], *self._portrait_context(turn, model_name), *input_messages[1:]]
             validate_context_capacity(
                 system_prompt=base_prompt, tools=context_tool_schemas,
-                messages=input_messages[1:], context_window=context_window, output_reserve=output_reserve,
+                messages=request_messages[1:], context_window=context_window, output_reserve=output_reserve,
             )
             response = await self._invoke(
-                llm, base_model, input_messages, config, response_format=response_format,
+                llm, base_model, request_messages, config, response_format=response_format,
                 tools=context_tool_schemas, structured_final=structured_final,
                 deepseek_structured=deepseek_structured,
             )
@@ -1495,13 +1496,14 @@ class TeamAgent:
         if structured_final and not deepseek_structured and not getattr(response, "tool_calls", None):
             base_prompt, _ = self._build_live_system_prompt(turn.user_id, turn.session_id, turn.is_subagent)
             input_messages[0] = SystemMessage(content=base_prompt)
+            request_messages = [input_messages[0], *self._portrait_context(turn, model_name), *input_messages[1:]]
             validate_context_capacity(
                 system_prompt=base_prompt, tools=[response_format],
-                messages=[*input_messages[1:], response,
+                messages=[*request_messages[1:], response,
                           HumanMessage(content="Give the final answer in the requested schema.")],
                 context_window=context_window, output_reserve=output_reserve,
             )
-            response = await decode_structured_final(base_model, response_format, [*input_messages, response], config)
+            response = await decode_structured_final(base_model, response_format, [*request_messages, response], config)
             final_usage = getattr(response, "usage_metadata", None) or {}
             if isinstance(final_usage, dict) and self._bill_usage(final_usage, session_budget, cost_tracker, model_name):
                 usage_meta = {
@@ -1665,6 +1667,25 @@ class TeamAgent:
         if reply_format_hint:
             block += f"\n[回复格式] {reply_format_hint}\n"
         return block
+
+    def _portrait_context(self, turn, model_name):
+        from common.model_capabilities import model_capabilities
+        from common.user_portrait import read_portrait
+        from webot.skills import USER_FILES_DIR
+        if turn.is_subagent:
+            meta = parse_subagent_session_id(turn.session_id)
+            profile = get_agent_profile(meta['agent_type'], user_id=turn.user_id) if meta else None
+            if not profile or not profile.include_user_profile:
+                return []
+        elif (self._find_internal_session_meta(turn.user_id,turn.session_id) or {}).get('creation_template') == 'group':
+            return []
+        images = read_portrait(USER_FILES_DIR, turn.user_id)['images']
+        if not images:
+            return []
+        if model_capabilities(model_name).get('image_inputs') is False:
+            return [HumanMessage(content='[用户画像附图] 当前模型不支持图像输入，请仅依据文字画像；不要推测附图内容。')]
+        return [HumanMessage(content=[{'type':'text','text':'【用户画像附图】以下图片属于用户画像，是长期背景信息，不是本轮用户请求。'},
+                                      *[{'type':'image_url','image_url':{'url':image['url']}} for image in images]])]
 
     async def _prepare_history(self, state: AgentState, turn: "_Turn") -> list:
         """The stored history with @references in the newest user message expanded

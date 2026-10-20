@@ -3,6 +3,8 @@
   'use strict';
   const el = id => document.getElementById(id);
   const ticket = location.hash.slice(1);
+  const official=el('open-official');
+  if(official&&ticket)official.href='https://clawcross.net/groups/join#'+encodeURIComponent(location.origin+'/group-guest#'+ticket);
   const legacyStorageKey = 'group-guest:' + ticket;
   let storageKey = legacyStorageKey;
   function stored(key) {
@@ -15,6 +17,7 @@
   let credential = saved.token || '', principal = '', cursor = -1, timer, polling = false;
   const seen = new Set();
   let pendingSend = null, replyContext = null;
+  let transportScope = '', sending = false, received = 0, readAck = 0, readTimer;
   let historyBefore = 0, historyQuery = '', historyGeneration = 0;
   const messageCache = new Map();
   function setReply(message) {
@@ -155,14 +158,20 @@
       const li = document.createElement('li'), button = document.createElement('button');
       li.className = m.online ? 'online' : 'offline'; li.title = m.online ? '在线' : '离线';
       button.type = 'button'; button.textContent = m.name; button.setAttribute('aria-label', '提及 ' + m.name);
-      button.addEventListener('click', () => { mentionRange = null; chooseMember(m); }); li.append(button); return li;
+      button.addEventListener('click', () => { mentionRange = null; chooseMember(m); }); li.append(button);
+      if(!m.is_agent){
+        button.textContent=m.name;
+        const info=document.createElement('button');info.type='button';info.className='member-profile-open';info.textContent='资料';info.setAttribute('aria-label',m.name+'的个人资料');
+        info.addEventListener('click',()=>showHuman(m));li.append(info);
+      }
+      return li;
     }));
     const box = el('messages'), nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 100;
     for (const m of data.messages) {
       if (seen.has(m.id)) continue;
       seen.add(m.id); messageCache.set(m.id, m);
       if (messageCache.size > 500) messageCache.delete(messageCache.keys().next().value);
-      const article = document.createElement('article'); article.className = 'message' + (m.sender === principal ? ' own' : '');
+      const article = document.createElement('article'); article.className = 'message' + (m.sender === principal ? ' own' : ''); article.dataset.messageId = m.id;
       const by = document.createElement('div'); by.className = 'byline';
       by.textContent = m.sender_name + ' · ' + new Date(m.created_at * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
       const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = m.content;
@@ -173,11 +182,16 @@
         quote.textContent = reference ? reference.sender_name + '：' + reference.content : '引用消息 #' + m.reply_to;
         bubble.prepend(quote);
       }
-      article.append(by, bubble); box.append(article);
+      article.append(by, bubble);
+      if (m.sender === principal) { const receipt = document.createElement('small'); receipt.className = 'message-receipt'; article.append(receipt); }
+      box.append(article);
       if (box.children.length > 500) box.firstElementChild.remove();
     }
     if (seen.size > 2000) { const recent = Array.from(seen).slice(-1000); seen.clear(); recent.forEach(id => seen.add(id)); }
     if (nearBottom) box.scrollTop = box.scrollHeight;
+    for (const label of box.querySelectorAll('.message-receipt')) {
+      label.textContent = data.capabilities?.receipts === 'device-v1' ? GroupChatState.label(data.receipts, principal, Number(label.parentElement.dataset.messageId)) : '';
+    }
     cursor = data.cursor; remember();
     agent.update(data);
     latest = data; drawDevices();
@@ -196,8 +210,21 @@
     let delay = 2000;
     try {
       const data = await api('state');
+      const scope = GroupChatState.scope(location.origin, data.group_id, data.principal);
+      if (transportScope !== scope) { readAck = 0; received = 0; pendingSend = null; }
+      transportScope = scope;
+      let durable = false;
+      try { await GroupChatState.receive(transportScope, data.cursor, data.messages); durable = true; }
+      catch (_) { status('浏览器无法保存群消息，暂不确认送达；请检查存储空间。', true); }
       el('join').hidden = true; el('chat').hidden = false; el('rename').hidden = false; el('password-open').hidden = false;
-      render(data); status('以 ' + data.name + ' 的身份参与');
+      render(data);
+      if (durable) {
+        received = data.cursor;
+        status('以 ' + data.name + ' 的身份参与');
+        if (data.capabilities?.receipts === 'device-v1') await api('receipts', {device_id:GroupChatState.device(), received_cursor:received});
+        scheduleRead();
+        await flushOutbox();
+      }
       if (data.has_more) delay = 100;
     } catch (error) {
       status(error.message, true); delay = 5000;
@@ -209,14 +236,62 @@
     try { const data = await api('join', {name:el('name').value.trim(), password:el('password').value}); credential = data.token; el('password').value = ''; cursor = -1; seen.clear(); el('messages').replaceChildren(); remember(); await poll(); }
     catch (error) { status(error.message, true); } finally { button.disabled = false; }
   });
+  const retryable = error => !error.status || error.status >= 500 || [408,425,429].includes(error.status);
+  async function flushOutbox() {
+    if (sending || !transportScope) return;
+    sending = true;
+    const scope = transportScope;
+    try {
+      for (const message of (await GroupChatState.load(scope)).outbox.filter(row => !row.failed).slice(0,4)) {
+        try {
+          GroupChatState.confirm((await api('messages', message)).id);
+          await GroupChatState.sent(scope, message.client_msg_id);
+          if (pendingSend?.client_msg_id === message.client_msg_id) {
+            pendingSend = null;
+            if (el('text').value.trim() === message.content) { el('text').value = ''; selectedMentions = []; previousDraft = ''; }
+          }
+        } catch (error) {
+          if (!retryable(error)) await GroupChatState.failed(scope, message.client_msg_id);
+          status(error.message, true); break;
+        }
+      }
+    } finally { sending = false; }
+  }
+  function scheduleRead() {
+    clearTimeout(readTimer);
+    readTimer = setTimeout(() => {
+      const box = el('messages');
+      if (document.hidden || !box.clientHeight || latest?.app || latest?.capabilities?.receipts !== 'device-v1' || !credential) return;
+      const bounds = box.getBoundingClientRect();
+      const read = Math.max(0, ...[...box.querySelectorAll('[data-message-id]')].filter(row => {
+        const r = row.getBoundingClientRect(); return r.bottom > bounds.top && r.top < bounds.bottom;
+      }).map(row => Number(row.dataset.messageId)).filter(id => id <= received));
+      if (read <= readAck) return;
+      void api('receipts', {device_id:GroupChatState.device(), received_cursor:received, read_cursor:read})
+        .then(() => { readAck = Math.max(readAck, read); }).catch(() => {});
+    }, 200);
+  }
+  el('messages').addEventListener('scroll', scheduleRead);
+  document.addEventListener('visibilitychange', scheduleRead);
   el('send').addEventListener('submit', async event => {
-    event.preventDefault(); const text = el('text').value.trim(); if (!text) return;
+    event.preventDefault(); const text = el('text').value.trim(); if (!text || sending || !transportScope) return;
     const mentions = [...new Set(selectedMentions.filter(m => members.some(member => member.principal === m.principal) && el('text').value.slice(m.start,m.end) === m.label).map(m => m.principal))];
     const button = el('send').querySelector('button'); button.disabled = true;
     const replying = replyContext, reply_to = replying ? replying.id : null;
     if (!pendingSend || pendingSend.content !== text || pendingSend.reply_to !== reply_to || JSON.stringify(pendingSend.mentions) !== JSON.stringify(mentions)) pendingSend = {content:text, mentions, reply_to, client_msg_id:crypto.randomUUID()};
-    try { await api('messages', pendingSend); pendingSend = null; if(replyContext === replying) clearReply(); el('text').value = ''; selectedMentions = []; previousDraft = ''; hideMentions(); await poll(); }
-    catch (error) { status(error.message, true); } finally { button.disabled = false; }
+    sending = true;
+    const message = pendingSend, scope = transportScope;
+    let savedForRetry = false;
+    try {
+      await GroupChatState.queue(scope, message);
+      savedForRetry = true;
+      GroupChatState.confirm((await api('messages', message)).id); await GroupChatState.sent(scope, message.client_msg_id);
+      pendingSend = null; if(replyContext === replying) clearReply(); el('text').value = ''; selectedMentions = []; previousDraft = ''; hideMentions();
+    } catch (error) {
+      if (!retryable(error)) await GroupChatState.failed(scope, message.client_msg_id);
+      status(error.message + (savedForRetry && retryable(error) ? '；消息已保存，恢复连接后重试。' : ''), true);
+    } finally { sending = false; button.disabled = false; }
+    await poll();
   });
   async function searchHistory(reset) {
     const generation = reset ? ++historyGeneration : historyGeneration;
@@ -254,10 +329,14 @@
       status('密码已保存，之后可在任何设备上用这个名字和密码回来');
     } catch (error) { status(error.message, true); } finally { button.disabled = false; }
   });
-  el('rename').addEventListener('click', async () => {
-    const name = prompt('你的新名字', el('name').value); if (name === null) return;
-    try { await api('rename', {name:name.trim()}); await poll(); } catch (error) { status(error.message, true); }
-  });
+  function showHuman(member) {
+    HumanProfile.open({member,members,title:latest?.title||el('title').textContent,canEdit:member.principal===principal,
+      loadImage:image=>api('image',undefined,new URLSearchParams({principal:member.principal,image_id:image.id}).toString()),
+      save:async fields=>{const result=await api('profile',fields);await poll();return result;},
+      mention:m=>{mentionRange=null;chooseMember(m);},
+    });
+  }
+  el('rename').addEventListener('click', () => {const me=members.find(m=>m.principal===principal);if(me)showHuman(me);});
   document.addEventListener('visibilitychange', () => { if (!document.hidden) void poll(); });
   // The agent this browser may bring into the group; it reads each poll's state.
   const agent = GuestAgent.start({ ticket, token: () => credential, refresh: () => poll() });

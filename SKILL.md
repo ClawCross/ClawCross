@@ -519,7 +519,7 @@ print(extract_text(resp.content))
 - [docs/index.md](./docs/index.md) — canonical task-based docs map
 - [docs/repo-index.md](./docs/repo-index.md) — codebase and file index
 - [docs/overview.md](./docs/overview.md) — product overview
-- [docs/team-creator.md](./docs/team-creator.md) — ClawCross Creator flow
+- [docs/team-management.md](./docs/team-management.md) — main-Agent Team management
 - [docs/oasis-reference.md](./docs/oasis-reference.md) — OASIS runtime and orchestration
 - [docs/runtime-reference.md](./docs/runtime-reference.md) — architecture and auth
 - [docs/webot-agent-runtime.md](./docs/webot-agent-runtime.md) — WeBot subagents and profiles

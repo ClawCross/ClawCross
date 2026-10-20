@@ -1,6 +1,118 @@
 const { test, expect } = require('@playwright/test');
 const creation=require('./agent-creation-fixture');
 
+test('partner profiles keep common actions simple, load skills on demand and keep remote agents read-only',async({page})=>{
+  await stub(page,{posts:[],control:[]});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/v1/agents/s_lead',route=>route.fulfill({json:{...LEAD,name:'负责跨设备协作的伙伴',status:{state:'running'},settings:{...LEAD.settings,llm:{model:'test-model'},persona:'认真负责的协作伙伴。'.repeat(30)},groups:[{group_id:'g_dev',title:'Dev'}]}}));
+  let skillCalls=0;
+  await page.route('**/v1/agents/s_lead/skills',route=>{skillCalls++;return route.fulfill({json:{skills:[{name:'Research',source:'companion',description:'查阅资料'},{name:'Review',source:'team',team_name:'dev'}]}});});
+  await page.goto('/mobile/group_chat');await page.evaluate(()=>showAgentDetail('s_lead'));
+  await expect(page.locator('.ap-hero')).toContainText('负责跨设备协作的伙伴');
+  await expect(page.locator('.ap-presence')).toContainText('正在工作');
+  await expect(page.locator('.ap-facts')).toContainText('test-model');expect(skillCalls).toBe(0);
+  await page.locator('.ap-skills > summary').click();await expect(page.locator('.ap-skill')).toHaveCount(2);
+  await expect(page.locator('.ap-skills')).toContainText('专属');await expect(page.locator('.ap-skills')).toContainText('团队 · dev');
+  for(const width of [320,390,1360]){await page.setViewportSize({width,height:844});await page.locator('#agent-detail-body').evaluate(el=>el.scrollTop=0);await expect(page.locator('.ap-primary')).toBeInViewport();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`/tmp/clawcross-agent-profile-${width}.png`});}
+  await page.evaluate(()=>{currentMembers=[{principal:'remote-principal',name:'远方伙伴',remote:true,is_agent:true,user_id:'Bob',node_id:'Device-B',online:true,agent:{platform:'codex',agent_id:'remote-principal'}}];return showAgentDetail('remote-principal');});
+  await expect(page.locator('.ap-hero')).toContainText('远方伙伴');await expect(page.locator('.ap-facts')).toContainText('Device-B');
+  await expect(page.locator('.ap-primary-actions,.ap-advanced,.ap-danger')).toHaveCount(0);expect(errors).toEqual([]);
+});
+
+test('Contacts use a compact team filter and keep names readable near the top',async({page})=>{
+  const calls={posts:[],control:[]},errors=[];
+  await stub(page,calls);
+  const longName='负责复杂任务与跨设备协作的长期伙伴';
+  const agents=[{...LEAD,name:longName},CODEX];
+  await page.route(/\/v1\/agents(\?.*)?$/,route=>route.fulfill({json:{data:agents}}));
+  await page.route('**/v1/teams/dev',route=>route.fulfill({json:{team:'dev',members:[{agent:agents[0],role:longName}]}}));
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/mobile/group_chat');
+  await page.evaluate(()=>switchTab('contacts'));
+  await expect(page.locator('#contacts-scope')).toHaveAttribute('data-user-space','true');
+  await expect(page.locator('#contacts-team-select option:checked')).toContainText('用户空间');
+  await expect(page.locator('#tab-contacts .contacts-intro, #tab-contacts .contacts-actions, #contacts-import-panel')).toHaveCount(0);
+  const name=page.locator('#contacts-list .contact-name').filter({hasText:longName});
+  await expect(name).toBeVisible();
+  expect(await name.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  await page.screenshot({path:'/tmp/clawcross-contacts-personal-phone.png'});
+  await page.locator('#contacts-team-select').selectOption('dev');
+  await expect(page.locator('#contacts-scope')).toHaveAttribute('data-user-space','false');
+  await expect(page.locator('#contacts-team-info')).toBeVisible();
+  await expect(name).toBeVisible();
+  await expect(page.locator('#contacts-list [data-agent-activity="ag_codex00001"]')).toHaveCount(0);
+  await page.locator('#contacts-search-input').fill('codex');
+  await expect(page.locator('#contacts-list .contacts-empty')).toBeVisible();
+  await page.locator('#contacts-search-input').fill(longName);
+  await expect(name).toBeVisible();
+  for(const width of [390,360,1440]){
+    await page.setViewportSize({width,height:560});
+    await expect(name).toBeInViewport({ratio:1});
+    if(width<=600) expect((await name.boundingBox()).y).toBeLessThan(320);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:`/tmp/clawcross-contacts-${width}.png`});
+  }
+  await page.locator('#contacts-team-select').selectOption('');
+  await expect(page.locator('#contacts-team-info')).toBeHidden();
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#contacts-list [data-agent-activity="ag_codex00001"]').click();
+  await expect(page.locator('#agent-detail-overlay')).toHaveClass(/open/);
+  expect(errors).toEqual([]);
+});
+
+test('Contacts category labels scroll with long lists without covering contacts',async({page})=>{
+  await stub(page,{posts:[],control:[]});
+  const agents=Array.from({length:20},(_,index)=>({...LEAD,agent_id:`scroll-agent-${index}`,name:`伙伴 ${index+1}`}));
+  await page.route(/\/v1\/agents(\?.*)?$/,route=>route.fulfill({json:{data:[...agents,CODEX]}}));
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/mobile/group_chat');
+  await page.evaluate(()=>switchTab('contacts'));
+  await expect(page.locator('#contacts-list .contact-item')).toHaveCount(22);
+  for(const width of [390,360,1440]){
+    await page.setViewportSize({width,height:560});
+    const geometry=await page.evaluate(()=>{
+      const list=document.getElementById('contacts-area');
+      list.scrollTop=0;
+      const labels=[...document.querySelectorAll('#contacts-list .contact-section-title, #contacts-list .contacts-cat-header')];
+      const before=labels.map(label=>label.getBoundingClientRect().top);
+      list.scrollTop=300;
+      return {scroll:list.scrollTop,labels:labels.map((label,index)=>({
+        position:getComputedStyle(label).position,
+        moved:before[index]-label.getBoundingClientRect().top,
+      }))};
+    });
+    expect(geometry.scroll).toBe(300);
+    for(const label of geometry.labels){
+      expect(label.position).toBe('static');
+      expect(label.moved).toBeCloseTo(geometry.scroll,0);
+    }
+    await page.screenshot({path:`/tmp/clawcross-contacts-scroll-${width}.png`});
+  }
+  expect(errors).toEqual([]);
+});
+
+test('workflow run cards fit phones and retain their existing controls',async({page})=>{
+  const calls={posts:[],control:[]},errors=[];
+  await stub(page,calls);
+  const topics=[{topic_id:'workflow-one',question:'整理资料并完成团队的周报，保留所有参考与交付结果',status:'discussing',post_count:4,current_round:2,max_rounds:5,created_at:1790000000},
+    {topic_id:'workflow-two',question:'已完成的资料审阅',status:'concluded',post_count:6,current_round:3,max_rounds:3,created_at:1789999990}];
+  await page.route('**/proxy_oasis/topics',route=>route.fulfill({json:topics}));
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/mobile/group_chat');
+  await page.evaluate(()=>openOasisSidebar());
+  await expect(page.locator('#oasis-topic-list .oasis-topic-item')).toHaveCount(2);
+  for(const width of [390,1440]){
+    await page.setViewportSize({width,height:844});
+    await expect(page.locator('#oasis-launch-wf-btn')).toBeInViewport();
+    await expect(page.locator('.oasis-topic-item').first().locator('.oasis-topic-question')).toBeVisible();
+    const box=await page.locator('#oasis-sidebar').boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x+box.width).toBeLessThanOrEqual(width+1);
+    await page.screenshot({path:`/tmp/clawcross-workflow-runs-${width}.png`});
+  }
+  expect(errors).toEqual([]);
+});
+
 test('Agent details and subagent pages stay inside the desktop conversation column', async ({page}) => {
   await page.setViewportSize({width:1360,height:900});
   await stub(page,{posts:[],control:[]});

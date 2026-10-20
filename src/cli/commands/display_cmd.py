@@ -535,7 +535,7 @@ def _pick_workflow_to_run(user: str) -> dict | str:
 def _parse_run_args(rest: list[str]) -> tuple[dict | None, str | None]:
     """Parse ``<name> [team <T>] question <Q...>``. Returns (parsed, error)."""
     usage = (
-        "Usage: /cross workflow run <name> [team <T>] question <text...>\n"
+        "Usage: /cross workflow run <name> [team <T>] [--agent-map '<JSON>' | --agent-map-file <path>] question <text...>\n"
         "Example: /cross workflow run paper_review_council "
         "team 论文审读汇报团 question 分析这篇综述的核心论点"
     )
@@ -547,6 +547,18 @@ def _parse_run_args(rest: list[str]) -> tuple[dict | None, str | None]:
     while i < len(rest):
         token = rest[i]
         lower = token.lower()
+        if lower in {"--agent-map", "--agent-map-file"}:
+            if i + 1 >= len(rest):
+                return None, f"{token} requires a value\n{usage}"
+            try:
+                from oasis.agent_bindings import load_agent_map, validate_agent_map
+                import json
+                parsed["agent_map"] = (load_agent_map(rest[i + 1]) if lower == "--agent-map-file"
+                                       else validate_agent_map(json.loads(rest[i + 1])))
+            except (OSError, ValueError) as exc:
+                return None, f"invalid agent_map: {exc}"
+            i += 2
+            continue
         if lower in {"team", "question"}:
             current = lower
             i += 1
@@ -919,6 +931,7 @@ def handle_workflow_command(args: list[str], *, interactive: bool = False, user:
             team=parsed["team"],
             question=parsed["question"],
             kind=run_kind,
+            **({"agent_map": parsed["agent_map"]} if "agent_map" in parsed else {}),
         )
         if rerr:
             return rerr

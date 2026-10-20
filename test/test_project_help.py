@@ -21,3 +21,23 @@ class ProjectHelpTests(unittest.TestCase):
         with self.assertRaises(ValueError):lookup('../../config/.env')
         self.assertEqual(lookup(query='no-such-feature-unlikely')['results'],[])
         self.assertTrue(lookup('configuration',query='KEEP Y')['results'])
+
+    def test_mini_app_development_is_discoverable_and_sections_are_complete(self):
+        overview = lookup('apps')['results'][0]
+        self.assertIn('SDK 选择', overview['sections'])
+        self.assertIn('状态与存档', overview['sections'])
+        self.assertIn('实时页面与输入焦点', overview['sections'])
+        example = lookup('apps', section='最小示例')['results'][0]
+        self.assertIn('module.exports', example['content'])
+        self.assertFalse(example['truncated'])
+        self.assertNotIn('## 安全边界', example['content'])
+        state = lookup('apps', section='状态与存档')['results'][0]
+        self.assertIn('CLAWCROSS_SPACE_DATA_DIR', state['content'])
+        self.assertTrue(lookup(query='小程序 SDK')['results'])
+        self.assertIn('SDK 选择', lookup('apps', section='missing-section')['sections'])
+
+    def test_teams_help_uses_main_agent_tools(self):
+        result = lookup('teams')['results'][0]
+        self.assertEqual(result['source'], 'docs/team-management.md')
+        self.assertIn('manage_team', result['content'])
+        self.assertIn('不再有独立的 Team Creator 页面', result['content'])

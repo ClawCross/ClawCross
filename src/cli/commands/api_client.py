@@ -691,7 +691,7 @@ def list_crons(team: str | None = None, user: str | None = None) -> tuple[list[d
 
 
 def run_workflow(user: str, name: str, team: str, question: str,
-                 kind: str = "yaml") -> tuple[dict, str | None]:
+                 kind: str = "yaml", agent_map: dict[str, str] | None = None) -> tuple[dict, str | None]:
     """Launch a saved workflow.
 
     YAML: POST ``{OASIS_BASE}/topics`` with the resolved schedule.
@@ -710,6 +710,7 @@ def run_workflow(user: str, name: str, team: str, question: str,
             "python_file": py_path,
             "question": question,
             "team": team or "",
+            **({"agent_map": agent_map} if agent_map is not None else {}),
         }
         code, body = _req("POST", url, headers=_front_headers(user), data=payload, timeout=30)
         if code == 200 and isinstance(body, dict):
@@ -732,6 +733,7 @@ def run_workflow(user: str, name: str, team: str, question: str,
         "team": team or "",
         "schedule_file": yaml_path,
         "schedule_yaml": yaml_content,
+        **({"agent_map": agent_map} if agent_map is not None else {}),
     }
     url = f"{OASIS_BASE}/topics"
     code, body = _req("POST", url, data=payload, timeout=30)

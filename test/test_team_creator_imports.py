@@ -25,18 +25,12 @@ class ClawcrossCreatorImportTests(unittest.TestCase):
     def setUp(self):
         self.client = front.app.test_client()
 
-    def test_creator_page_renders_local_path_import_fields(self):
+    def test_old_creator_link_opens_main_conversation_and_pipeline_is_removed(self):
         response = self.client.get("/creator")
-        html = response.get_data(as_text=True)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('id="feishu-app-id"', html)
-        self.assertIn('id="generate-colleague-btn"', html)
-        self.assertIn('id="import-colleague-dir"', html)
-        self.assertIn('id="mentor-arxiv-name"', html)
-        self.assertIn('id="generate-mentor-btn"', html)
-        self.assertIn('id="import-mentor-json-path"', html)
-        self.assertIn('id="import-mentor-skill-path"', html)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/studio?compose=team')
+        self.assertEqual(self.client.post('/api/team-creator/build', json={}).status_code, 404)
+        self.assertEqual(self.client.get('/api/team-creator/jobs').status_code, 404)
 
     def test_distill_colleague_skill_artifacts_uses_llm_payload(self):
         meta_json = {

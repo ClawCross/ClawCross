@@ -67,6 +67,9 @@
 .gn-status.is-error { color: var(--ui-danger); }
 .gn-qr { width:min(260px,100%); height:auto; justify-self:center; background:white; padding:8px; border-radius:12px; box-sizing:border-box; }
 .gn-qr-caption { text-align:center; }
+.gn-scan-stage { position:relative; aspect-ratio:1; overflow:hidden; border-radius:20px; background:#101a29; }
+.gn-scan-video { display:block; width:100%; height:100%; object-fit:cover; }
+.gn-scan-frame { position:absolute; inset:15%; border:2px solid #52dfb2; border-radius:18px; box-shadow:0 0 0 80px #0003; pointer-events:none; }
 .gn-btn[href] { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
 .gn-qr[hidden],.gn-qr-caption[hidden],.gn-btn[hidden] { display:none; }
 .gn-search-controls { display:grid; gap:12px; min-width:0; }
@@ -100,3 +103,4 @@
   .group-network-dialog { width: calc(100vw - 24px); padding: 18px 16px 14px; }
   .gn-actions .gn-btn { flex: 1 1 100%; }
 }
+.message-receipt { display:block; margin-top:4px; color:var(--text-secondary, #788491); font-size:11px; line-height:1.4; }

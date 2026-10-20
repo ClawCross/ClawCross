@@ -28,7 +28,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Configure context compaction, inspect approval bugs, or enable independent automatic review | [`compact-approval-audit.md`](./compact-approval-audit.md) | [`webot-agent-runtime.md`](./webot-agent-runtime.md) |
 | Understand what an agent is (its number, the ways in), and how group chat, workflows and teams compose agents | [`architecture.md`](./architecture.md) | [`runtime-reference.md`](./runtime-reference.md), [`team-anatomy.md`](./team-anatomy.md), [`repo-index.md`](./repo-index.md) |
 | Compare WeBot with Claude Code and inspect the runtime feature matrix that drives parity work | [`webot-claude-gap-analysis.md`](./webot-claude-gap-analysis.md) | [`webot-agent-runtime.md`](./webot-agent-runtime.md), [`repo-index.md`](./repo-index.md) |
-| Build a Team from a task description or discovered SOP pages | [`team-creator.md`](./team-creator.md) | [`build_team.md`](./build_team.md), [`example_team.md`](./example_team.md), [`team-anatomy.md`](./team-anatomy.md) |
+| Create or configure a Team through the main Agent | [`team-management.md`](./team-management.md) | [`build_team.md`](./build_team.md), [`example_team.md`](./example_team.md), [`team-anatomy.md`](./team-anatomy.md) |
 | Understand what a running Team is on disk (file layout, schemas, cross-file bindings) | [`team-anatomy.md`](./team-anatomy.md) | [`example_team.md`](./example_team.md), [`create_workflow.md`](./create_workflow.md) |
 | Understand OASIS runtime behavior, Town Mode, GraphRAG memory, or ReportAgent | [`oasis-reference.md`](./oasis-reference.md) | [`runtime-reference.md`](./runtime-reference.md), [`create_workflow.md`](./create_workflow.md), [`build_team.md`](./build_team.md) |
 | Build Python-script OASIS workflows, call team agents from Python, or post into OASIS topics from code | [`workflowpy.md`](./workflowpy.md) | [`oasis-reference.md`](./oasis-reference.md), [`create_workflow.md`](./create_workflow.md), [`repo-index.md`](./repo-index.md) |
@@ -40,7 +40,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Find CLI syntax or examples | [`cli.md`](./cli.md) | `uv run src/cli/cli.py <command> --help` |
 | Build a Team | [`build_team.md`](./build_team.md) | [`example_team.md`](./example_team.md), [`team-anatomy.md`](./team-anatomy.md) |
 | Debug a Team that already exists (wrong persona, missing member, dead workflow edge) | [`team-anatomy.md`](./team-anatomy.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
-| Convert a workflow canvas into a Team | [`team-creator.md`](./team-creator.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
+| Convert a workflow canvas into a Team | [`team-management.md`](./team-management.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
 | Create / debug workflow YAML | [`create_workflow.md`](./create_workflow.md) | [`example_team.md`](./example_team.md) |
 | Use OpenClaw (an ACP agent, like Codex) | [`openclaw-commands.md`](./openclaw-commands.md) | [`build_team.md`](./build_team.md) |
 | Manage SSH devices and remote ACP Agents | [`ssh-agents.md`](./ssh-agents.md) | [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
@@ -59,7 +59,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 ### Operator / Builder Guides
 
 - [`cli.md`](./cli.md): command catalog
-- [`team-creator.md`](./team-creator.md): ClawCross Creator flow, jobs, bilingual UI, workflow-to-team bridge
+- [`team-management.md`](./team-management.md): main-Agent Team management, membership, workflows and schedules
 - [`build_team.md`](./build_team.md): agents, teams, members on any platform, personas
 - [`create_workflow.md`](./create_workflow.md): workflow YAML grammar and examples
 - [`workflowpy.md`](./workflowpy.md): Python-script workflow mode, agent center, and forum posting helpers
@@ -97,9 +97,9 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 4. Read [`team-anatomy.md`](./team-anatomy.md) and [`example_team.md`](./example_team.md)
 5. If behavior looks wrong, inspect the indexed runtime files in [`repo-index.md`](./repo-index.md)
 
-### Use ClawCross Creator or Generate Team from Workflow
+### Manage Teams in the main conversation
 
-1. Read [`team-creator.md`](./team-creator.md)
+1. Read [`team-management.md`](./team-management.md)
 2. If the output Team shape matters, read [`build_team.md`](./build_team.md)
 3. If the source is a workflow graph, read [`create_workflow.md`](./create_workflow.md)
 4. If UI behavior looks wrong, inspect the indexed frontend files in [`repo-index.md`](./repo-index.md)
@@ -128,6 +128,12 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 2. Read [`runtime-reference.md`](./runtime-reference.md)
 3. Read [`repo-index.md`](./repo-index.md)
 4. Open the indexed WeBot runtime and MCP files only as needed
+
+## 小程序开发
+
+- [mini-app-development.md](mini-app-development.md)：SDK、最小例子、成员与 Agent 调用、存档、实时页面、部署、分享和排错。
+- [space-apps.md](space-apps.md)：群小程序底层协议、流式 HTTP/WebSocket 与内置模板清单。
+- Agent 可通过 `get_clawcross_help(topic="apps")` 查看章节，再按 `section` 读取详情；只在调用时读取内容。
 
 ## Current Structure Rationale
 

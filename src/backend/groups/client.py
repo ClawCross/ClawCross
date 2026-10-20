@@ -20,6 +20,7 @@ from agents.gateway import reply_channel
 from groups.config import frontend_url, own_front_ends, service_key, service_url
 from groups.delivery import render_digest
 from groups.service import GroupError
+from groups.outbox import OutboxStore
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def normalize_url(value: str) -> str:
     return f'{parsed.scheme}://{host}' + (f':{port}' if port else '') + path
 
 
-class ClientStore:
+class ClientStore(OutboxStore):
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,10 +92,14 @@ class ClientStore:
             # ``via``: the invitation ticket of a member that reaches the group through a web front end.
             if 'via' not in {c[1] for c in db.execute('PRAGMA table_info(group_client_connections)')}:
                 db.execute("ALTER TABLE group_client_connections ADD COLUMN via TEXT NOT NULL DEFAULT ''")
+            if 'received_cursor' not in {c[1] for c in db.execute('PRAGMA table_info(group_client_connections)')}:
+                db.execute('ALTER TABLE group_client_connections ADD COLUMN received_cursor INTEGER NOT NULL DEFAULT 0')
+                db.execute('UPDATE group_client_connections SET received_cursor=cursor')
             db.execute('INSERT OR IGNORE INTO group_client_identity VALUES(1,?)', ('device_' + secrets.token_hex(16),))
             self.node_id = db.execute('SELECT node_id FROM group_client_identity WHERE id=1').fetchone()[0]
         if os.name != 'nt':
             self.path.chmod(0o600)
+        self.init_outbox()
 
     @contextmanager
     def db(self):
@@ -147,7 +152,7 @@ class ClientStore:
             db.execute('''INSERT INTO group_client_connections(owner,alias,url,remote_id,connection_id,token,metadata,via)
                        VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(owner,alias) DO UPDATE SET
                        connection_id=excluded.connection_id,token=excluded.token,metadata=excluded.metadata,
-                       via=excluded.via,cursor=0,allowed_agents='[]',active=1,error='正在连接' ''',
+                       via=excluded.via,cursor=0,received_cursor=0,allowed_agents='[]',active=1,error='正在连接' ''',
                        (owner, alias, url, gid, result['connection_id'], result['token'],
                         json.dumps(result['group'], ensure_ascii=False), via))
         return alias
@@ -174,26 +179,37 @@ class ClientStore:
             row = db.execute('SELECT 1 FROM group_client_connections WHERE owner=? AND alias=?', (owner, alias)).fetchone()
             if not row:
                 raise ClientError('本机没有这个群聊', 404)
-            for table in ('group_client_events', 'group_client_deliveries', 'group_client_connections'):
+            for table in ('group_client_outbox', 'group_client_events', 'group_client_deliveries', 'group_client_connections'):
                 db.execute(f'DELETE FROM {table} WHERE owner=? AND alias=?', (owner, alias))
 
     def cache(self, row, event):
+        self.cache_events(row, [event])
+
+    def cache_events(self, row, events, *, received=False):
+        if not events:
+            return
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if not db.execute('SELECT 1 FROM group_client_connections WHERE owner=? AND alias=? AND connection_id=? AND active=1',
                               (row['owner'], row['alias'], row['connection_id'])).fetchone():
                 return
-            db.execute('INSERT OR IGNORE INTO group_client_events VALUES(?,?,?,?)',
-                       (row['owner'], row['alias'], event['id'], json.dumps(event, ensure_ascii=False)))
+            db.executemany('INSERT OR IGNORE INTO group_client_events VALUES(?,?,?,?)',
+                           [(row['owner'], row['alias'], event['id'], json.dumps(event, ensure_ascii=False)) for event in events])
+            if received and events:
+                db.execute('UPDATE group_client_connections SET received_cursor=MAX(received_cursor,?) WHERE owner=? AND alias=?',
+                           (events[-1]['id'], row['owner'], row['alias']))
             cutoff = db.execute('SELECT id FROM group_client_events WHERE owner=? AND alias=? ORDER BY id DESC LIMIT 1 OFFSET 1999', (row['owner'], row['alias'])).fetchone()
             if cutoff:
                 db.execute('DELETE FROM group_client_events WHERE owner=? AND alias=? AND id<?', (row['owner'], row['alias'], cutoff[0]))
                 db.execute('DELETE FROM group_client_deliveries WHERE owner=? AND alias=? AND event_id<?', (row['owner'], row['alias'], cutoff[0]))
 
-    def messages(self, owner, alias, after=0):
+    def messages(self, owner, alias, after=0, *, before=0, limit=100, through=None):
         with self.db() as db:
-            rows = db.execute('SELECT body FROM group_client_events WHERE owner=? AND alias=? AND id>? ORDER BY id DESC LIMIT 100', (owner, alias, after)).fetchall()
-            return [json.loads(r['body']) for r in reversed(rows)]
+            order = 'ASC' if after else 'DESC'
+            rows = db.execute(f"SELECT body FROM group_client_events WHERE owner=? AND alias=? AND id>? "
+                              f"AND (?=0 OR id<?) AND (? IS NULL OR id<=?) AND json_extract(body,'$.kind')='message' ORDER BY id {order} LIMIT ?",
+                              (owner, alias, after, before, before, through, through, min(100, max(1, limit)))).fetchall()
+            return [json.loads(r['body']) for r in (rows if after else reversed(rows))]
 
     def delivered(self, row, event_id, agent_id):
         with self.db() as db:
@@ -221,6 +237,9 @@ class GroupClient:
         self.store, self.agents, self.gateway = store, agents, gateway
         self.tasks = {}
         self.closed = False
+        self.sends = {}
+        self.outbox_task = None
+        self.receives = {}
 
     @staticmethod
     def headers(row):
@@ -236,6 +255,8 @@ class GroupClient:
         try:
             body = response.json()
         except ValueError:
+            body = {}
+        if not isinstance(body, dict):
             body = {}
         return ClientError(str(body.get('detail') or body.get('error') or '群服务器拒绝请求'), response.status_code)
 
@@ -393,6 +414,7 @@ class GroupClient:
                          'remote': not local, 'settings': {'persona': '', 'tools': [], 'teams': []},
                          'status': {'state': state, 'actions': []}}
             members.append({**member, 'principal': principal, 'agent': agent, 'nickname': '', 'remote': not local,
+                            'can_edit_profile': local and not member['is_agent'],
                             'is_owner': not member['is_agent'] and member['connection_id'] == group.get('owner'),
                             'can_remove': (group.get('owner') == row['connection_id'] and member['connection_id'] != group.get('owner'))
                                           or (member['is_agent'] and local)})
@@ -402,7 +424,10 @@ class GroupClient:
                 primary = visible['principal']
         messages = self.messages(row['owner'], row['alias'])
         paused = '暂停外部联网' in row['error']
+        receipt_names = {m['principal']: m['agent_id'] or 'u:' + row['owner']
+                         for m in group.get('members', []) if m['connection_id'] == row['connection_id']}
         return {**group, 'group_id': row['alias'], 'remote_group_id': row['remote_id'], 'server_url': row['url'],
+                'receipts': [{**r, 'principal': receipt_names.get(r['principal'], r['principal'])} for r in group.get('receipts', [])],
                 'connection_state': 'paused' if paused else 'connected' if not row['error'] else 'reconnecting',
                 'external_access_enabled': False if paused else group.get('external_access_enabled', True), 'connection_error': row['error'],
                 'owner': row['owner'] if group.get('owner') == row['connection_id'] else 'remote:' + str(group.get('owner')),
@@ -413,16 +438,15 @@ class GroupClient:
 
     def messages(self, owner, alias, after=0):
         row = self.require(owner, alias)
-        mapping = {m['principal']: (m['agent_id'] or 'u:' + owner) for m in json.loads(row['metadata']).get('members', [])
+        return [self.local_message(row, {**e['message'], 'id': e['id']})
+                for e in self.store.messages(owner, alias, after, through=row['received_cursor']) if e['kind'] == 'message']
+
+    @staticmethod
+    def local_message(row, message):
+        mapping = {m['principal']: (m['agent_id'] or 'u:' + row['owner']) for m in json.loads(row['metadata']).get('members', [])
                    if m['connection_id'] == row['connection_id']}
-        result = []
-        for event in self.store.messages(owner, alias, after):
-            if event['kind'] != 'message':
-                continue
-            message = event['message']
-            result.append({**message, 'id': event['id'], 'sender': mapping.get(message['sender'], message['sender']),
-                           'mentions': [mapping.get(m, m) for m in message.get('mentions', [])]})
-        return result
+        return {**message, 'sender': mapping.get(message['sender'], message['sender']),
+                'mentions': [mapping.get(m, m) for m in message.get('mentions', [])]}
 
     def search_messages(self, owner, alias, query, before_id=0, limit=50, **filters):
         row = self.require(owner, alias)
@@ -432,6 +456,32 @@ class GroupClient:
 
     def message_context(self, owner, alias, message_id):
         return self.request(self.require(owner,alias),'GET',f'/messages/{message_id}/context')
+
+    def history(self, owner, alias, before_id=0, limit=50):
+        """Read server history separately from the delivery cursor and Agent inbox."""
+        row = self.require(owner, alias)
+        limit = min(50, max(1, limit))
+        mapping = {m['principal']: (m['agent_id'] or 'u:' + owner)
+                   for m in json.loads(row['metadata']).get('members', []) if m['connection_id'] == row['connection_id']}
+        try:
+            # Existing relay protocol supports date-filtered, cursor-paged searches,
+            # including older Hub servers. Do not replay these rows as events.
+            page = self.search_messages(owner, alias, '', before_id, limit, from_ts=1)
+            messages = [{**m, 'sender': mapping.get(m['sender'], m['sender']),
+                         'mentions': [mapping.get(p, p) for p in m.get('mentions', [])]}
+                        for m in page.get('messages', [])]
+            return {'messages': sorted(messages, key=lambda m: m['id']),
+                    'next_before_id': page.get('next_before_id', 0), 'source': 'server', 'error': ''}
+        except ClientError as exc:
+            if exc.status not in {502, 503, 504}:
+                raise
+            events = self.store.messages(owner, alias, before=before_id, limit=limit)
+            messages = [{**e['message'], 'id': e['id'],
+                         'sender': mapping.get(e['message']['sender'], e['message']['sender']),
+                         'mentions': [mapping.get(p, p) for p in e['message'].get('mentions', [])]} for e in events]
+            more = bool(messages and self.store.messages(owner, alias, before=messages[0]['id'], limit=1))
+            return {'messages': messages, 'next_before_id': messages[0]['id'] if more else 0,
+                    'source': 'cache', 'error': str(exc)}
 
     def memberships(self, owner, aid):
         result = []
@@ -469,29 +519,104 @@ class GroupClient:
                 'client_msg_id': fields.get('client_msg_id') or secrets.token_hex(16), 'reply_to': fields.get('reply_to'),
                 'expected_title': fields.get('expected_title')}
         try:
+            key = self.store.enqueue(row, body)
+        except ValueError as exc:
+            raise ClientError(str(exc), 409) from exc
+        self.ensure_outbox()
+        return await self.send_pending(key)
+
+    async def send_pending(self, key):
+        # Coalesce a caller and the retry loop. Server-side dedup also covers process crashes.
+        if key not in self.sends:
+            task = asyncio.create_task(self._send_pending(key))
+            self.sends[key] = task
+            def finished(done):
+                self.sends.pop(key, None)
+                if not done.cancelled():
+                    done.exception()
+            task.add_done_callback(finished)
+        return await asyncio.shield(self.sends[key])
+
+    async def _send_pending(self, key):
+        item = self.store.outbox(key)
+        if not item:
+            return None
+        owner, alias, aid, _ = key
+        try:
+            row = self.require(owner, alias)
+            if row['connection_id'] != item['connection_id'] or (aid and (
+                    aid not in json.loads(row['allowed_agents']) or self.agents.get(owner, aid) is None)):
+                raise ClientError('原发送身份已失效，停止重试', 403)
+            return await self._send_body(row, json.loads(item['body']), key)
+        except ClientError as exc:
+            retry = exc.status in {408, 425, 429, 500, 502, 503, 504}
+            self.store.send_failed(key, exc, retry)
+            if retry:
+                raise ClientError(f'{exc}；消息已保存待重试（{key[-1]}）', exc.status) from exc
+            raise
+
+    async def _send_body(self, row, body, key):
+        try:
             async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
                 response = await client.post(row['url'] + '/relay/messages', headers=self.headers(row), json=body)
         except httpx.HTTPError as exc:
             raise ClientError('无法连接群服务器', 503) from exc
         if response.status_code >= 400:
-            raise ClientError(str(response.json().get('detail', '发送失败')), response.status_code)
-        result = response.json()
+            raise self._refusal(response)
+        try:
+            result = response.json()
+            if not result.get('app'):
+                message = result.get('message', {})
+                if type(message.get('id')) is not int or message['id'] <= 0 or not isinstance(message.get('sender'), str):
+                    raise ValueError('invalid message confirmation')
+        except (ValueError, AttributeError) as exc:
+            raise ClientError('群服务器未返回有效发送确认', 502) from exc
         if result.get('app'):
+            self.store.sent(key)
             return result  # in a space with an app, the output went to the app rather than the chat
         self.store.cache(row, {'id': result['message']['id'], 'kind': 'message', 'message': result['message']})
-        return {**result, 'message': self.messages(owner, alias, result['message']['id'] - 1)[-1]}
+        self.store.sent(key)
+        return {**result, 'message': self.local_message(row, result['message'])}
+
+    def ensure_outbox(self):
+        if not self.closed and (self.outbox_task is None or self.outbox_task.done()):
+            self.outbox_task = asyncio.create_task(self.retry_outbox())
+
+    async def retry_outbox(self):
+        while not self.closed:
+            await asyncio.gather(*(self.send_pending(key) for key in self.store.pending_sends()), return_exceptions=True)
+            await asyncio.sleep(1)
 
     async def consume(self, row, packet):
+        key = (row['owner'], row['alias'])
+        async with self.receives.setdefault(key, asyncio.Lock()):
+            current = self.require(*key)
+            if current['connection_id'] != row['connection_id']:
+                raise ClientError('接收连接身份已改变', 403)
+            await self._consume(current, packet)
+
+    async def _consume(self, row, packet):
         if packet.get('connection_id') != row['connection_id']:
             raise ClientError('连接身份不匹配', 403)
         if packet.get('group', {}).get('group_id') != row['remote_id']:
             raise ClientError('群身份不匹配', 403)
-        self.store.update(row['owner'], row['alias'], metadata=json.dumps(packet['group'], ensure_ascii=False), error='')
+        ids = [event.get('id') for event in packet.get('events', [])]
+        if any(type(value) is not int or value <= 0 for value in ids) or ids != sorted(set(ids)):
+            raise ClientError('群服务器事件顺序无效', 502)
+        group = {**packet['group']}
+        if 'receipts' in packet:
+            group['receipts'] = packet['receipts']
+            group['capabilities'] = packet.get('capabilities', {})
+        self.store.update(row['owner'], row['alias'], metadata=json.dumps(group, ensure_ascii=False), error='')
+        # Cache the authoritative ordered batch atomically. Outgoing POST responses
+        # alone must not advance this watermark and hide older messages still in flight.
+        self.store.cache_events(row, packet.get('events', []), received=True)
         row = self.require(row['owner'], row['alias'])
         allowed = set(json.loads(row['allowed_agents']))
         card = self.card(row)
         for event in packet.get('events', []):
-            self.store.cache(row, event)
+            if event['id'] <= row['cursor']:
+                continue
             if event.get('kind') == 'message':
                 for member in packet['group'].get('members', []):
                     aid = member.get('agent_id')
@@ -547,7 +672,7 @@ class GroupClient:
                     try:
                         await self.post(owner,alias,target,reply.content,client_msg_id=f'chat-reply:{event_id}:{target}')
                     except ClientError:
-                        pass  # Membership or networking may change while the reply is generated.
+                        logger.warning('群回复暂未发送：%s/%s', owner, alias, exc_info=True)
         reply_meta = self.metadata(card,visible)
         reply_meta['reply_channel'] = '直接输出文字；系统会发送到当前群，不需要调用工具。' if text_reply else reply_channel(agent,row['alias'])
         receipt = await self.gateway.inbox(agent, message, context={'conversation_id': row['alias'],
@@ -584,7 +709,8 @@ class GroupClient:
         row = self.require(owner, alias)
         uri = row['url'].replace('https://', 'wss://', 1).replace('http://', 'ws://', 1) + '/relay/ws'
         async with connect(uri, open_timeout=10, max_size=2 * 1024 * 1024, proxy=None) as ws:
-            await ws.send(json.dumps({'token': row['token'], 'cursor': row['cursor']}))
+            await ws.send(json.dumps({'token': row['token'], 'cursor': row['cursor'],
+                                     'received_cursor': row['received_cursor'], 'device_id': self.store.node_id}))
             connected()
             async for raw in ws:
                 packet = json.loads(raw)
@@ -595,9 +721,10 @@ class GroupClient:
         version = None
         while not self.closed:
             row = self.require(owner, alias)
-            packet = await asyncio.to_thread(self.request, row, 'POST', '/poll', {'cursor': row['cursor']})
+            packet = await asyncio.to_thread(self.request, row, 'POST', '/poll', {
+                'cursor': row['cursor'], 'received_cursor': row['received_cursor'], 'device_id': self.store.node_id})
             connected()
-            if packet['events'] or packet['group'].get('version') != version:
+            if packet['events'] or packet['group'].get('version') != version or 'receipts' in packet:
                 await self._receive(owner, alias, packet)
                 version = packet['group'].get('version')
             if not packet['events']:
@@ -637,12 +764,16 @@ class GroupClient:
                 delay = min(30, delay * 2)
 
     async def start(self):
+        self.ensure_outbox()
         for row in self.store.rows():
             if row['active']:
                 self.ensure(row['owner'], row['alias'])
 
     async def close(self):
         self.closed = True
-        for task in self.tasks.values():
+        tasks = [*self.tasks.values(), *self.sends.values()]
+        if self.outbox_task is not None:
+            tasks.append(self.outbox_task)
+        for task in tasks:
             task.cancel()
-        await asyncio.gather(*self.tasks.values(), return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)

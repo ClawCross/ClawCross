@@ -177,7 +177,7 @@ edges:
         workflow.write_text("""from oasis.workflow import workflow
 @workflow
 async def main(ctx):
-    reply = await ctx.send_agent('Writer', 'PYTHON_AGENT_REQUEST')
+    reply = await ctx.send_agent('draft', 'PYTHON_AGENT_REQUEST')
     if not reply.ok:
         raise RuntimeError(reply.error)
     await ctx.publish(reply.content, author='workflowpy')
@@ -188,7 +188,7 @@ async def main(ctx):
         process = subprocess.run([
             sys.executable, str(ROOT / "src/backend/oasis/run_python_workflow.py"), "python_smoke",
             "--user-id", "tester", "--team", "runtime", "--question", "python test",
-            "--result-file", str(result_file),
+            "--result-file", str(result_file), "--agent-map", '{"draft":"writer"}',
         ], cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=20)
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         result = json.loads(result_file.read_text())
@@ -198,3 +198,71 @@ async def main(ctx):
         self.assertEqual(detail["status"], "concluded")
         self.assertEqual(detail["conclusion"], "PYTHON_WORKFLOW_OK")
         self.assertIn("AGENT_OK:writer", [p["content"] for p in detail["posts"]])
+
+    def test_same_saved_yaml_uses_each_runs_map_without_source_changes(self):
+        folder = self.teams.folder("tester", "runtime") / "oasis/yaml"
+        folder.mkdir(parents=True, exist_ok=True)
+        source = "version: 2\nplan:\n  - id: task\n    agent: author\n"
+        workflow = folder / "runtime_bound.yaml"
+        workflow.write_text(source)
+        for index, target in enumerate(("writer", "reviewer")):
+            payload = {"question": "runtime bindings", "user_id": "tester", "team": "runtime",
+                       "discussion": False, "agent_map": {"author": target}}
+            payload.update({"schedule_file": str(workflow)} if index == 0 else {"schedule_yaml": source})
+            response = self.client.post("/topics", json=payload)
+            self.assertEqual(response.status_code, 200, response.text)
+            finished = self.wait(response.json()["topic_id"], lambda d: d["status"] in ("concluded", "error"))
+            self.assertEqual(finished["status"], "concluded")
+            self.assertEqual([p["content"] for p in finished["posts"]], ["AGENT_OK:" + target])
+            self.assertEqual(finished["agent_map"], {"author": target})
+        self.assertEqual(workflow.read_text(), source)
+
+    def test_same_python_uses_runtime_json_or_file_not_module_map(self):
+        folder = self.teams.folder("tester", "runtime") / "oasis/python"
+        folder.mkdir(parents=True, exist_ok=True)
+        workflow = folder / "runtime_bound.py"
+        source = '''from oasis.workflow import run
+# A module variable is ordinary workflow data, not a runtime binding source.
+AGENT_MAP = {"author": "not-a-real-agent"}
+async def main(ctx):
+    reply = await ctx.send_agent("author", "write")
+    if not reply.ok:
+        raise RuntimeError(reply.error)
+    ctx.set_result({"text": reply.content, "bindings": ctx.agent_map})
+if __name__ == "__main__":
+    raise SystemExit(run(main))
+'''
+        workflow.write_text(source)
+        mapping_file = self.home / "runtime-agents.yaml"
+        mapping_file.write_text("author: reviewer\n")
+        for index, options in enumerate((["--agent-map", '{"author":"writer"}'],
+                                          ["--agent-map-file", str(mapping_file)])):
+            result_file = self.home / f"runtime-bindings-{index}.json"
+            process = subprocess.run([
+                sys.executable, str(ROOT / "src/backend/oasis/run_python_workflow.py"), "runtime_bound",
+                "--user-id", "tester", "--team", "runtime", "--no-auto-topic",
+                "--result-file", str(result_file), *options,
+            ], cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=20)
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            result = json.loads(result_file.read_text())
+            self.assertTrue(result["ok"])
+            target = ("writer", "reviewer")[index]
+            self.assertEqual(result["result"]["text"], "AGENT_OK:" + target)
+            self.assertEqual(result["agent_map"]["author"], target)
+            self.assertEqual(result["result"]["bindings"]["Writer"], "writer")
+        self.assertEqual(workflow.read_text(), source)
+
+    def test_legacy_python_topic_receives_runtime_map(self):
+        folder = self.teams.folder("tester", "runtime") / "oasis/python"
+        folder.mkdir(parents=True, exist_ok=True)
+        workflow = folder / "legacy_bound.py"
+        workflow.write_text('reply = await send_agent("author", question)\n'
+                            'await publish(reply.content)\nset_conclusion(reply.content)\n')
+        response = self.client.post("/topics", json={
+            "question": "legacy bindings", "user_id": "tester", "team": "runtime",
+            "python_file": str(workflow), "agent_map": {"author": "reviewer"},
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        finished = self.wait(response.json()["topic_id"], lambda d: d["status"] in ("concluded", "error"))
+        self.assertEqual(finished["status"], "concluded")
+        self.assertIn("AGENT_OK:reviewer", finished["conclusion"])

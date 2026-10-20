@@ -20,6 +20,17 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda: '', is_host_request=lambda: False):
     signer = URLSafeTimedSerializer(app.secret_key, salt='group-human-invite-v1')
 
+    @app.after_request
+    def browser_agent_cors(response):
+        # These public routes use explicit group capabilities, never main-site cookies.
+        # Let a personal Agent on another site (including the official Hub) join and poll.
+        if request.endpoint in {'group_guest_api', 'group_device_relay'}:
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Group-Invite, X-Guest-Token'
+            response.headers['Access-Control-Max-Age'] = '600'
+        return response
+
     def host_proof_headers(target):
         """Forward machine proof only from a direct host client to this host's relay."""
         supplied = request.headers.get('X-Group-Service-Key', '')
@@ -79,7 +90,8 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
 
     # A device joined by link reaches the group server only through these calls.
     device_calls = {('POST', 'join'), ('POST', 'poll'), ('GET', 'group'), ('GET', 'messages'), ('GET', 'search'),
-                    ('POST', 'messages'), ('POST', 'agents')}
+                    ('POST', 'messages'), ('POST', 'agents'), ('GET', 'guest/image'),
+                    ('GET', 'health'), ('GET', 'capabilities'), ('POST', 'receipts')}
 
     @app.route('/relay/app/<path:rest>', methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
     def group_app_relay(rest):
@@ -203,7 +215,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Cache-Control'] = 'no-store'
         # connect-src: a guest's agent calls the model provider the guest chose, straight from the browser.
-        response.headers['Content-Security-Policy'] = ("default-src 'self'; script-src 'self'; style-src 'self'; "
+        response.headers['Content-Security-Policy'] = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
             "connect-src 'self' https: http://localhost:* http://127.0.0.1:*; frame-ancestors 'none'; base-uri 'none'")
         return response
 
@@ -219,7 +231,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
 
     @app.route('/group-guest-api/<action>', methods=['GET', 'POST'])
     def group_guest_api(action):
-        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'search':'GET', 'rename': 'POST', 'password': 'POST', 'app_session': 'POST'}
+        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'search':'GET', 'rename': 'POST', 'profile': 'POST', 'image': 'GET', 'password': 'POST', 'app_session': 'POST', 'receipts': 'POST'}
         if methods.get(action) != request.method:
             return jsonify(error='不支持的操作'), 405
         ticket = request.headers.get('X-Group-Invite', '')
@@ -254,7 +266,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
                 client.trust_env = False
                 response = client.request(request.method, target['url'] + '/relay/guest/' + action,
                     headers=headers, json=body if request.method == 'POST' else None,
-                    params=({'after_id': request.args.get('after_id', '0')} if action == 'state'
+                    params=({key:request.args.get(key,'') for key in ('principal','image_id')} if action == 'image' else {'after_id': request.args.get('after_id', '0')} if action == 'state'
                             else {key:request.args.get(key, default) for key, default in (('query',''),('before_id','0'),('limit','50'))} if action == 'search' else None),
                     timeout=15, allow_redirects=False)
             data = response.json()

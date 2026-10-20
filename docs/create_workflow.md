@@ -439,6 +439,40 @@ conditional_edges:
 
 ---
 
+## Runtime Agent bindings
+
+A workflow declares only its internal names, never the concrete ID bindings:
+
+```yaml
+version: 2
+plan:
+  - id: draft
+    agent: writer
+  - id: review
+    agent: reviewer
+edges:
+  - [draft, review]
+```
+
+Supply the name → Agent ID table **when starting each run**:
+
+```python
+await start_new_oasis(
+    schedule_file="review.yaml", question="Review the proposal",
+    agent_map={"writer": "ag_writer_id", "reviewer": "ag_reviewer_id"},
+)
+```
+
+The HTTP equivalent is `POST /topics` with `agent_map` alongside `schedule_yaml`
+or `schedule_file`. The same unmodified workflow can run with different Agents.
+Team member role names provide the default table at runtime; the supplied map
+can override them for that run. Bindings do not change Team membership.
+Mapped IDs must belong to existing Agents of the current user.
+
+Bindings are run inputs, recorded with the run, and are never injected by
+`save_oasis_workflow` or stored inside workflow source. Python uses the same
+input mechanism; see [WorkflowPy](./workflowpy.md).
+
 ## 8. Workflow File Location
 
 Workflow YAML files are stored at:

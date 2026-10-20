@@ -257,7 +257,7 @@ class AcpRuntime(InboxRuntime):
                         tool=canonical_platform(agent.platform),
                         session_key=session.runtime_session(agent),
                         prompt_text=prompt, reset_session=False, system_prompt=None,
-                        attachments=[dict(a) for a in msg.attachments] or None,
+                        attachments=[*prepared.profile_images, *[dict(a) for a in msg.attachments]] or None,
                         model=model, mcp_config=connector, config_options=native_config,
                         on_event=on_event, **run,
                         **({'resume_session_id': agent.runtime['native_resume_id']} if agent.runtime.get('native_resume_id') else {}),

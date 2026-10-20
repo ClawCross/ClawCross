@@ -98,6 +98,111 @@
     window.dispatchEvent(new CustomEvent('group-network-changed', { detail: group }));
   }
 
+  let decoder;
+  function qrDecoder() {
+    if (window.jsQR) return Promise.resolve(window.jsQR);
+    if (!decoder) decoder = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '/static/vendor/jsqr/jsQR.js?v=1.4.0';
+      script.onload = () => resolve(window.jsQR);
+      script.onerror = () => { script.remove(); decoder = null; reject(new Error('二维码识别组件加载失败，请重试或粘贴邀请链接')); };
+      document.head.append(script);
+    });
+    return decoder;
+  }
+  function invitation(value) {
+    try {
+      const url = new URL(value.trim());
+      return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password && !url.search &&
+        url.pathname.replace(/\/+$/, '').endsWith('/group-guest') && url.hash.length > 1 ? url.href : '';
+    } catch (_) { return ''; }
+  }
+  async function scanInvitation(onResult) {
+    const view = dialog('扫一扫', '对准朋友分享的群二维码，或从相册中选择');
+    const stage = el('div', 'gn-scan-stage');
+    const video = el('video', 'gn-scan-video');
+    video.muted = true; video.playsInline = true; video.setAttribute('aria-label', '扫码相机');
+    stage.append(video, el('span', 'gn-scan-frame'));
+    const camera = button('开启相机', 'primary', startCamera);
+    const file = el('input'); file.type = 'file'; file.accept = 'image/*'; file.hidden = true;
+    file.setAttribute('aria-label', '选择群二维码图片');
+    const album = button('从相册选择', 'secondary', () => file.click());
+    const actions = el('div', 'gn-actions'); actions.append(camera, album);
+    view.body.append(stage, actions, file, el('p', 'gn-note', '图片仅在本机识别，不会上传。识别后请确认名字并加入。'));
+    const canvas = document.createElement('canvas'), context = canvas.getContext('2d', {willReadFrequently:true});
+    let stream, timer, stopped = false, serial = 0;
+    function stopCamera() {
+      serial++;
+      clearTimeout(timer);
+      stream?.getTracks().forEach(track => track.stop());
+      stream = null; video.srcObject = null; camera.disabled = false;
+    }
+    const close = view.done;
+    view.done = () => { stopped = true; stopCamera(); close(); };
+    // All exits (X, Escape, backdrop, success) release the camera, including a late permission grant.
+    const cleanup = () => { stopped = true; stopCamera(); };
+    view.root.addEventListener('close', cleanup, {once:true});
+    view.root.addEventListener('cancel', cleanup, {once:true});
+    function accept(value) {
+      const link = invitation(value);
+      if (!link) { view.status.textContent = '这不是群聊邀请二维码，请重新扫描'; return false; }
+      view.done(); onResult(link); return true;
+    }
+    function read(source, width, height, decode) {
+      if (!width || !height) return '';
+      const scale = Math.min(1, 1280 / Math.max(width, height));
+      canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale);
+      context.drawImage(source, 0, 0, canvas.width, canvas.height);
+      return decode(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height)?.data || '';
+    }
+    async function startCamera() {
+      stopCamera();
+      const attempt = serial;
+      camera.disabled = true; view.status.classList.remove('is-error');
+      if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
+        camera.disabled = false; view.status.textContent = '相机需要 HTTPS 或本机访问；也可以从相册选择二维码'; return;
+      }
+      view.status.textContent = '正在开启相机…';
+      try {
+        const decode = await qrDecoder();
+        if (stopped || attempt !== serial) return;
+        const acquired = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+        if (stopped || !view.root.isConnected || attempt !== serial) { acquired.getTracks().forEach(track => track.stop()); return; }
+        stream = acquired; video.srcObject = stream; await video.play();
+        if (stopped || attempt !== serial) return;
+        view.status.textContent = '将二维码放入取景框';
+        const frame = () => {
+          if (stopped || attempt !== serial || !view.root.isConnected) return;
+          try {
+            const value = read(video, video.videoWidth, video.videoHeight, decode);
+            if (value && accept(value)) return;
+          } catch (_) { /* The next frame may be ready. */ }
+          timer = setTimeout(frame, 240);
+        };
+        frame();
+      } catch (_) {
+        if (stopped || attempt !== serial) return;
+        stopCamera(); view.status.textContent = '无法使用相机，请允许相机权限或从相册选择二维码'; view.status.classList.add('is-error');
+      }
+    }
+    file.addEventListener('change', async () => {
+      const imageFile = file.files?.[0]; if (!imageFile) return;
+      stopCamera(); album.disabled = true; view.status.classList.remove('is-error'); view.status.textContent = '正在识别图片…';
+      const url = URL.createObjectURL(imageFile);
+      try {
+        const decode = await qrDecoder(), image = new Image();
+        image.src = url; await image.decode();
+        if (stopped || !view.root.isConnected) return;
+        const value = read(image, image.naturalWidth, image.naturalHeight, decode);
+        if (!value) throw new Error('没有识别到二维码，请选择清晰完整的群聊二维码图片');
+        accept(value);
+      } catch (error) {
+        if (!stopped) { view.status.textContent = error.message; view.status.classList.add('is-error'); }
+      } finally { URL.revokeObjectURL(url); album.disabled = false; file.value = ''; }
+    });
+    // Request camera access only after an explicit tap. Photo selection works without camera access.
+  }
+
   window.GroupNetworkUI = {
     async rename(gid) {
       let group;
@@ -278,13 +383,21 @@
       paint();
     },
 
-    join() {
-      const view = dialog('加入群聊', '粘贴朋友发来的邀请链接');
+    scan() { return scanInvitation(link => this.join({link})); },
+
+    join({link = ''} = {}) {
+      const view = dialog('加入群聊', '扫描二维码，或粘贴朋友发来的邀请链接');
       const input = el('textarea', 'gn-input gn-link-input');
       input.rows = 3;
       input.placeholder = 'https://…/group-guest#…';
       input.autocomplete = 'off';
       input.spellcheck = false;
+      input.value = link;
+      input.setAttribute('aria-label', '群聊邀请链接');
+      const scan = button('扫一扫 / 从相册识别', 'secondary', () => scanInvitation(value => {
+        if (!view.root.isConnected) return;
+        input.value = value; ready(); view.status.textContent = '已识别邀请链接，请确认后加入'; name.focus();
+      }));
       const name = el('input', 'gn-input');
       name.placeholder = '你在群里的名字'; name.maxLength = 40; name.autocomplete = 'nickname'; name.setAttribute('aria-label', '你在群里的名字');
       name.value = window.__currentUser || '';
@@ -301,10 +414,10 @@
         view.done();
         changed({...group,open_group:true});
       }));
-      const ready = () => { join.disabled = !input.value.includes('/group-guest#') || !name.value.trim() || !!password.value && password.value.length < 6; };
+      const ready = () => { join.disabled = !invitation(input.value) || !name.value.trim() || !!password.value && password.value.length < 6; };
       ready();
       for (const field of [input, name, password]) field.addEventListener('input', ready);
-      view.body.append(input, name, el('p', 'gn-note', '无需设置密码，凭证由 ClawCross 自动保存在本机。再次加入会沿用本机身份，其他设备不能仅凭同名接管。加入后可在群成员里添加自己的 Agent。'), join, advanced);
+      view.body.append(scan, input, name, el('p', 'gn-note', '无需设置密码，凭证由 ClawCross 自动保存在本机。再次加入会沿用本机身份，其他设备不能仅凭同名接管。加入后可在群成员里添加自己的 Agent。'), join, advanced);
       setTimeout(() => input.focus(), 50);
     },
 
@@ -325,6 +438,10 @@
       const copy = button('复制链接', 'primary', async () => {
         try { await navigator.clipboard.writeText(link.value); view.status.textContent = '已复制'; }
         catch (_) { link.focus(); link.select(); view.status.textContent = '请手动复制'; }
+      });
+      const share = button('分享群聊', 'secondary', async () => {
+        try { await navigator.share({title:group.title || '群聊邀请',text:'邀请你加入「' + (group.title || '群聊') + '」',url:link.value}); }
+        catch (error) { if (error.name !== 'AbortError') view.status.textContent = '请复制链接或保存二维码后分享'; }
       });
       const create = button('', 'secondary', () => busy(create, view.status, '正在生成…', async () => {
         await ensurePublicEntry(view.status);
@@ -350,13 +467,14 @@
         const has = Boolean(link.value);
         if(!has) qr.hidden=qrCaption.hidden=download.hidden=true;
         copy.hidden = !has;
+        share.hidden = !has || !navigator.share;
         stop.hidden = !has;
         create.textContent = has ? '换一个新链接' : '生成邀请链接';
         create.className = 'gn-btn ' + (has ? 'gn-btn-secondary' : 'gn-btn-primary');
       }
       refresh();
       const actions = el('div', 'gn-actions');
-      actions.append(copy, create, stop);
+      actions.append(share, copy, create, stop);
       const publicNote = el('p', 'gn-note', text(
         '没有公网域名时，可连接 ClawCross Hub 获得专属 HTTPS 子域名，无需下载组件。Cloudflare 可在公网设置中手动选择。',
         'Connect to ClawCross Hub for a device HTTPS subdomain without extra downloads. Cloudflare remains an option in public access settings.'

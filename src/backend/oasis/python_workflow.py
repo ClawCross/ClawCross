@@ -67,6 +67,10 @@ class AgentAccess:
 
     _agent_center: AgentCenter
 
+    @property
+    def agent_map(self) -> dict[str, str]:
+        return self._agent_center.agent_map
+
     def list_agents(self) -> list[dict[str, Any]]:
         return self._agent_center.list_agents()
 
@@ -109,12 +113,13 @@ class AgentAccess:
 
 
 class PythonWorkflowContext(AgentAccess):
-    def __init__(self, forum: DiscussionForum, *, user_id: str, team: str, question: str):
+    def __init__(self, forum: DiscussionForum, *, user_id: str, team: str, question: str,
+                 agent_map: dict[str, str] | None = None):
         self.forum = forum
         self.user_id = user_id
         self.team = team
         self.question = question
-        self._agent_center = AgentCenter(user_id, team)
+        self._agent_center = AgentCenter(user_id, team, agent_map=agent_map)
 
     async def publish(self, content: str, *, author: str = "workflowpy", reply_to: int | None = None) -> None:
         await self.forum.publish(author=author, content=content, reply_to=reply_to)
@@ -124,14 +129,14 @@ class PythonWorkflowContext(AgentAccess):
 
 
 class StandalonePythonWorkflowContext(AgentAccess):
-    def __init__(self, *, user_id: str, team: str, question: str):
+    def __init__(self, *, user_id: str, team: str, question: str, agent_map: dict[str, str] | None = None):
         self.user_id = user_id
         self.team = team
         self.question = question
         self.topic_id: str | None = None
         self.conclusion: str = ""
         self.published_messages: list[dict[str, Any]] = []
-        self._agent_center = AgentCenter(user_id, team)
+        self._agent_center = AgentCenter(user_id, team, agent_map=agent_map)
 
     async def publish(self, content: str, *, author: str = "workflowpy", reply_to: int | None = None) -> None:
         entry = {"author": author, "content": content, "reply_to": reply_to}
@@ -211,6 +216,7 @@ async def run_python_workflow_standalone(
     user_id: str = "anonymous",
     team: str = "",
     question: str = "",
+    agent_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     try:
         with open(python_file, "r", encoding="utf-8") as f:
@@ -222,6 +228,7 @@ async def run_python_workflow_standalone(
         user_id=user_id,
         team=team,
         question=question,
+        agent_map=agent_map,
     )
     run_id = uuid.uuid4().hex[:12]
     globals_dict: dict[str, Any] = {
@@ -245,6 +252,7 @@ async def run_python_workflow_standalone(
         "list_agents": ctx.list_agents,
         "list_personas": ctx.list_personas,
         "get_agent": ctx.get_agent,
+        "agent_map": ctx.agent_map,
         "get_persona": ctx.get_persona,
         "send_agent": ctx.send_agent,
         "send_agent_once": ctx.send_agent_once,
@@ -286,11 +294,13 @@ class PythonWorkflowEngine:
         python_file: str,
         user_id: str = "anonymous",
         team: str = "",
+        agent_map: dict[str, str] | None = None,
     ):
         self.forum = forum
         self.python_file = python_file
         self._user_id = user_id
         self._team = team
+        self._agent_map = agent_map
         self.experts: list[Any] = []
         self.callback_url: str | None = None
         self.callback_session_id: str | None = None
@@ -322,6 +332,7 @@ class PythonWorkflowEngine:
             "list_agents": ctx.list_agents,
             "list_personas": ctx.list_personas,
             "get_agent": ctx.get_agent,
+            "agent_map": ctx.agent_map,
             "get_persona": ctx.get_persona,
             "send_agent": ctx.send_agent,
             "send_agent_once": ctx.send_agent_once,
@@ -356,6 +367,7 @@ class PythonWorkflowEngine:
             user_id=self._user_id,
             team=self._team,
             question=self.forum.question,
+            agent_map=self._agent_map,
         )
         result = await self._exec_script_main(ctx)
 

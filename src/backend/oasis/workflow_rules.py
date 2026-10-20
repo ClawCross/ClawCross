@@ -38,6 +38,7 @@ Reference docs: `docs/workflowpy.md`, `docs/oasis-reference.md`.
 - Discovery (synchronous, no `await`):
   - `ctx.list_agents()`, `ctx.list_personas()`
   - `ctx.get_agent(...)`, `ctx.get_persona(...)`
+  - `ctx.agent_map` — current Team role names -> Agent IDs, plus explicit overrides
 - Sending (async, `await` required):
   - `await ctx.send_agent(agent_id, prompt)`
   - `await ctx.send_agent_once(prompt)` — a newly created temporary agent
@@ -74,14 +75,22 @@ Reference docs: `docs/workflowpy.md`, `docs/oasis-reference.md`.
   `reply.content`, not the raw response object.
 
 ## Agent vs Persona selection
-- Use `send_agent(...)` for existing concrete agents (call by `agent['id']`).
+- Bindings are supplied at run time, never embedded in YAML/Python source.
+  Write `await ctx.send_agent("writer", prompt)`. The caller passes
+  `agent_map={"writer": "existing-agent-id"}` to `start_new_oasis`, or to
+  `POST /topics`. Plain Python launch accepts `--agent-map '<JSON>'` or
+  `--agent-map-file agents.yaml` (also JSON). Team roles are automatic defaults;
+  explicit run inputs override them. `ctx.agent_map` is the effective table.
+  Do not define/import a module-level `AGENT_MAP` or inject bindings at save time.
+  The same script must be reusable with different bindings on each run.
+- Use `send_agent(...)` for existing concrete agents (call by a bound name or `agent['agent_id']`).
 - Use `send_persona(...)` for role-based one-off speaking (e.g. `creative`,
   `critical`, `entrepreneur`).
 - Use `send_agent_once(prompt)` when the workflow needs a newly generated,
   temporary independent agent. Do not invent or ask for random external agent
   ids.
 - Tags like `creative`/`critical` are not unique. Prefer iterating over
-  `ctx.list_agents()` and passing the chosen `agent['id']` into
+  `ctx.list_agents()` and passing the chosen `agent['agent_id']` into
   `send_agent(...)` rather than relying on a tag.
 - If a required agent is missing, fail clearly via `ctx.set_result(...)` or
   by raising — do NOT silently fall back to "pick the first agent".

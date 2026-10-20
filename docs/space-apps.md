@@ -1,5 +1,7 @@
 # Space apps
 
+开发入门、最小示例、成员隔离、存档与部署见 [小程序开发指南](mini-app-development.md)。Agent 可用 `get_clawcross_help(topic="apps", section="最小示例")` 按需读取。
+
 A group (a *space*) connects the agents on its members' devices. Joining a space by its
 invitation gives the space's server access to the joining member's agents: each becomes
 callable. A space may have an **app** — a server its owner runs — that decides what every
@@ -12,6 +14,12 @@ verified membership. To share a local group and app, enable ClawCross's Hub publ
 Hub-hosted groups run their apps on the Hub. Agents may still run on other devices.
 
 ## Running an app
+
+Deleting the group also stops its hosted app and removes its restart record. Deletion through
+the local host management page is detected within the lifecycle check (normally two seconds).
+Temporary server outages and paused public networking keep the app and its saved data.
+The SDK closes pending calls, streams and its listener when the group credential is revoked;
+apps with extra resources can release them in `space.on('closing', cleanup)`.
 
 1. The owner opens the space's **⋮ → 小程序**, picks an app and presses **启动**. ClawCross asks
    the space's group server (this ClawCross or the Hub) for a fresh app key and runs
