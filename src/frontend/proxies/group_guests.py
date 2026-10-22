@@ -24,7 +24,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
     def browser_agent_cors(response):
         # These public routes use explicit group capabilities, never main-site cookies.
         # Let a personal Agent on another site (including the official Hub) join and poll.
-        if request.endpoint in {'group_guest_api', 'group_device_relay'}:
+        if request.endpoint in {'group_guest_api', 'group_device_relay', 'group_cli_download'}:
             response.headers['Access-Control-Allow-Origin'] = '*'
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Group-Invite, X-Guest-Token'
@@ -226,6 +226,15 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
         """Where a guest's agent runs JavaScript: its own CSP allows no network and no further scripts."""
         response = app.response_class(worker.read_text(encoding='utf-8'), mimetype='text/javascript')
         response.headers['Content-Security-Policy'] = "default-src 'none'; script-src 'unsafe-eval'"
+        response.headers['Cache-Control'] = 'no-cache'
+        return response
+
+    group_cli = Path(__file__).resolve().parents[3] / 'sdk' / 'js' / 'clawcross-group.mjs'
+
+    @app.get('/clawcross-group.mjs')
+    def group_cli_download():
+        """The stateless member for agents ClawCross does not drive: a browser imports it, Node runs it as a command."""
+        response = app.response_class(group_cli.read_text(encoding='utf-8'), mimetype='text/javascript')
         response.headers['Cache-Control'] = 'no-cache'
         return response
 

@@ -350,7 +350,7 @@ def _user_exists_in_users_json(username: str) -> bool:
 # --- Unified auth: before_request hook ---
 # Routes that do NOT require login
 _PUBLIC_ROUTES = frozenset({
-    'group_guest_page', 'group_guest_api', 'group_guest_worker', 'group_device_relay',
+    'group_guest_page', 'group_guest_api', 'group_guest_worker', 'group_device_relay', 'group_cli_download',
     # Signed app entrances verify group membership for HTTP and WebSocket alike.
     'group_app_relay', 'group_app_websocket',
     'index', 'manifest', 'service_worker', 'static',

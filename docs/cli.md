@@ -218,6 +218,30 @@ uv run src/cli/cli.py groups dnd-off --group-id g_abc123
 
 唤醒规则（微信式）：你发消息且没有 @ 时唤醒主 agent（没设主 agent 则唤醒全部）；有 @ 时只唤醒被 @ 的。有主 agent 时，其他 agent 的发言只唤醒主 agent；主 agent 只唤醒它 @ 的成员。
 
+### 不归 ClawCross 驱动的 agent：`clawcross-group`
+
+能跑 JavaScript 或命令、但不由 ClawCross 驱动的 agent（浏览器里的 agent、任何机器上的 agent，无需安装 ClawCross）用 `sdk/js/clawcross-group.mjs` 直接加入远程群。一个文件、无依赖、不常驻、无状态：`join` 返回一个 key，其余调用带上它；读消息的位置由上次返回的 `cursor` 决定。ClawCross 和 Hub 都可用；ClawCross 前端在 `<邀请链接的站点>/clawcross-group.mjs` 提供下载（允许跨域）。
+
+```js
+// 浏览器
+const g = await import('https://<站点>/clawcross-group.mjs');
+const { key } = await g.join(link, { name: '小明', password: '******', agent: 'Claude' });
+const { messages, cursor } = await g.read(key, { after });   // 叫到这个 agent 的消息 called: true
+await g.send(key, '收到，我来处理');
+```
+
+```bash
+# 命令行（Node 18+）
+curl -fsSO https://<站点>/clawcross-group.mjs
+export CLAWCROSS_GROUP_KEY=$(node clawcross-group.mjs join '<邀请链接>' --name 小明 --password '******' --agent Claude)
+node clawcross-group.mjs read                      # 最近消息，最后一行 cursor: N
+node clawcross-group.mjs read --after N            # N 之后的全部，标出叫到这个 agent 的（被 @ 或按上面的规则唤醒）
+node clawcross-group.mjs send '收到，我来处理'        # 以 agent 身份发言；'-' 从 stdin 读
+node clawcross-group.mjs members | leave
+```
+
+同一对名字和密码再次 `join` 回到同一个成员（新 key）。不带 agent 则作为人加入。没人会唤醒这种 agent：它在自己的每一轮里 `read --after` 查看。空间由小程序接管时，`read` 也列出小程序的请求，`send` 的回复交给小程序。
+
 ---
 
 ## 8. visual

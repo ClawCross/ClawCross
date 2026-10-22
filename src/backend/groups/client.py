@@ -675,12 +675,19 @@ class GroupClient:
                         logger.warning('群回复暂未发送：%s/%s', owner, alias, exc_info=True)
         reply_meta = self.metadata(card,visible)
         reply_meta['reply_channel'] = '直接输出文字；系统会发送到当前群，不需要调用工具。' if text_reply else reply_channel(agent,row['alias'])
-        receipt = await self.gateway.inbox(agent, message, context={'conversation_id': row['alias'],
-            'delivery_id': f'relay:{row["alias"]}:{event_id}:{aid}',
-            'group_human_requests': human_requests,
-            'groups': [reply_meta]},mode='chat' if automatic else None,on_complete=completion)
-        if not receipt.accepted:
-            raise ClientError('本机 agent 暂未接受群消息，稍后重试', 503)
+        try:
+            receipt = await self.gateway.inbox(agent, message, context={'conversation_id': row['alias'],
+                'delivery_id': f'relay:{row["alias"]}:{event_id}:{aid}',
+                'group_human_requests': human_requests,
+                'groups': [reply_meta]},mode='chat' if automatic else None,on_complete=completion)
+            error = '' if receipt.accepted else receipt.error or '未接受'
+        except Exception as exc:
+            error = str(exc) or type(exc).__name__
+        if error:
+            # One agent that cannot take messages must not stop the group: skip it here; the unread
+            # digest of its next delivery carries what it missed.
+            logger.warning('群消息 #%s 未送达 agent %s：%s', event_id, aid, error)
+            return
         self.store.mark_delivered(row, event_id, aid)
 
     def ensure(self, owner, alias):
