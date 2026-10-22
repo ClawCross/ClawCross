@@ -5,15 +5,15 @@
  */
 const {expect}=require('@playwright/test');
 const {spawn}=require('node:child_process');
-const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const crypto=require('node:crypto'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 
 const root=path.resolve(__dirname,'..');
 const python=process.env.CLAWCROSS_TEST_PYTHON || path.join(os.homedir(),'.clawcross/venv/bin/python');
 
-async function request(base,method,route,{token,key,invite,guest,body}={}){
+async function request(base,method,route,{token,key,invite,guest,cookie,body}={}){
   const response=await fetch(base+route,{method,headers:{'Content-Type':'application/json',
     ...(token?{Authorization:'Bearer '+token}:{}),...(key?{'X-Group-Service-Key':key}:{}),
-    ...(invite?{'X-Group-Invite':invite}:{}),...(guest?{'X-Guest-Token':guest}:{})},
+    ...(invite?{'X-Group-Invite':invite}:{}),...(guest?{'X-Guest-Token':guest}:{}),...(cookie?{Cookie:cookie}:{})},
     body:body===undefined?undefined:JSON.stringify(body)});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(route+': '+response.status+' '+JSON.stringify(data));
@@ -39,14 +39,17 @@ async function clawcross(port,home){
 
 /** A built Hub (`next build` into .next-space-apps) serving /groups. */
 async function hub(port,home){
-  const dir=process.env.CLAWCROSS_SPACE_TEST_HUB,origin=`http://127.0.0.1:${port}`;
+  const dir=process.env.CLAWCROSS_SPACE_TEST_HUB,origin=`http://127.0.0.1:${port}`,secret=crypto.randomBytes(24).toString('hex');
   const child=spawn(process.execPath,[path.join(dir,'node_modules/next/dist/bin/next'),'start','--hostname','127.0.0.1','--port',String(port)],
     {cwd:dir,env:{...process.env,CLAWCROSSHUB_BUILD_DIR:process.env.CLAWCROSS_SPACE_TEST_HUB_BUILD || '.next-space-apps',
-      CLAWCROSSHUB_DATA_DIR:home,NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','ignore','inherit']});
+      CLAWCROSSHUB_DATA_DIR:home,SESSION_SECRET:secret,NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','ignore','inherit']});
   await expect.poll(async()=>{try{return(await fetch(origin+'/groups')).status;}catch{return 0;}},{timeout:30000}).toBe(200);
   const call=(method,route,options)=>request(origin+'/groups',method,route,options);
   process.env.CLAWCROSS_SPACE_LOCAL_TOKEN=fs.readFileSync(path.join(home,'space-app-local.key'),'utf8').trim();
-  const alice=await call('POST','/group-guest-api/create',{body:{title:'测试空间'}});
+  // Creating a space needs a signed-in owner: Alice signs in as the Hub's GitHub login would sign her in.
+  const session=Buffer.from(JSON.stringify({github_user:{id:1,login:'alice',name:'Alice',avatar_url:'',html_url:''},iat:Date.now(),v:2})).toString('base64url');
+  const owner='__Host-clawcrosshub_session='+session+'.'+crypto.createHmac('sha256',secret).update(session).digest('hex');
+  const alice=await call('POST','/group-guest-api/create',{cookie:owner,body:{title:'测试空间'}});
   await call('POST','/group-guest-api/rename',{guest:alice.token,body:{name:'Alice'}});
   const bob=await call('POST','/group-guest-api/join',{invite:alice.invite,body:{name:'Bob',password:'bob-password'}});
   return {child,server:origin+'/groups',relay:call,alice:alice.token,bob:bob.token,
