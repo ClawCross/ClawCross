@@ -7,11 +7,13 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import sqlite3
 import time
 import unicodedata
+from xml.etree import ElementTree
 
 from groups.delivery import WakeRequest, mentions_everyone, select_wake_targets, resolve_text_mentions
 from common.user_portrait import MAX_TEXT, image_records, public_portrait
@@ -37,6 +39,28 @@ ONLINE_SECONDS = 90
 # A space's app server is online while it polled within this window.
 APP_ONLINE_SECONDS = 60
 # What a member's device receives: everything except the app's traffic, and its own agents' app requests.
+CAT_SVG_BYTES = 12000
+CAT_ELEMENTS = {'svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon', 'defs', 'lineargradient', 'radialgradient',
+                'stop', 'clippath', 'mask', 'pattern', 'style', 'title', 'desc', 'animate', 'animatetransform', 'set', 'filter', 'fegaussianblur',
+                'feoffset', 'femerge', 'femergenode', 'feflood', 'fecomposite', 'feblend', 'fecolormatrix', 'fedropshadow'}
+
+
+def clean_cat_svg(svg: str) -> str:
+    """An agent's cat if it is one small, self-contained SVG picture; otherwise empty (the cat its name gives)."""
+    svg = (svg or '').strip()
+    if not svg.startswith('<svg') or not svg.endswith('</svg>') or len(svg.encode()) > CAT_SVG_BYTES:
+        return ''
+    if re.search(r"""<!|<\?|javascript:|data:|@import|\bon[a-z]+\s*=|href\s*=|url\(\s*['"]?(?!#)""", svg, re.I):
+        return ''
+    if any(name.lower() not in CAT_ELEMENTS for name in re.findall(r'</?\s*([a-zA-Z][\w:.-]*)', svg)):
+        return ''
+    try:  # entities and doctypes were refused above, so parsing is safe
+        ElementTree.fromstring(svg)
+    except ElementTree.ParseError:
+        return ''
+    return svg
+
+
 MEMBER_EVENTS = "(kind NOT IN ('app_request','app_output') OR (kind='app_request' AND json_extract(body,'$.connection')=?))"
 
 
@@ -111,6 +135,9 @@ class RelayStore(ReceiptStore):
                 db.execute('ALTER TABLE relay_groups ADD COLUMN external_access_enabled INTEGER NOT NULL DEFAULT 1')
             if 'announcement' not in {row[1] for row in db.execute('PRAGMA table_info(relay_groups)')}:
                 db.execute("ALTER TABLE relay_groups ADD COLUMN announcement TEXT NOT NULL DEFAULT ''")
+            # An agent's cyber cat (SVG); empty: the cat its name gives.
+            if 'avatar' not in {row[1] for row in db.execute('PRAGMA table_info(relay_members)')}:
+                db.execute("ALTER TABLE relay_members ADD COLUMN avatar TEXT NOT NULL DEFAULT ''")
         if os.name != 'nt':
             self.path.chmod(0o600)
         self.init_receipts()
@@ -160,7 +187,7 @@ class RelayStore(ReceiptStore):
         group = db.execute('SELECT * FROM relay_groups WHERE id=?', (gid,)).fetchone()
         if group is None:
             raise RelayError('群不存在', 404)
-        members = [dict(row) for row in db.execute('''SELECT m.id AS principal,m.agent_id,m.name,m.platform,m.muted,
+        members = [dict(row) for row in db.execute('''SELECT m.id AS principal,m.agent_id,m.name,m.platform,m.muted,m.avatar,
                   c.node_id,c.user_id,c.display_name,c.id AS connection_id,c.host_local,c.seen_at,c.guest,c.profile,c.joined_at
                   FROM relay_members m JOIN relay_connections c ON c.id=m.connection_id
                   WHERE m.group_id=? AND c.revoked=0 ORDER BY c.joined_at,m.agent_id''', (gid,))]
@@ -359,7 +386,7 @@ class RelayStore(ReceiptStore):
                                      'targets': body.get('targets', [])})
             # `device` numbers the connections, so a browser can group members by device without learning ids.
             devices = list(dict.fromkeys(m['connection_id'] for m in group['members']))
-            members = [{k: m[k] for k in ('principal', 'agent_id', 'name', 'is_agent', 'online', 'muted', 'device_kind', 'platform', 'profile', 'joined_at')} |
+            members = [{k: m[k] for k in ('principal', 'agent_id', 'name', 'is_agent', 'online', 'muted', 'device_kind', 'platform', 'profile', 'joined_at', 'avatar')} |
                        {'own': m['connection_id'] == conn['id'], 'device': devices.index(m['connection_id']),
                         'is_owner': not m['is_agent'] and m['connection_id'] == group['owner']}
                        for m in group['members']]
@@ -401,7 +428,7 @@ class RelayStore(ReceiptStore):
             return self._card(db, conn['group_id'])
 
     def add_agent(self, token: str, *, agent_id: str, name: str, platform: str,
-                  convert_to_group: bool = False) -> dict:
+                  convert_to_group: bool = False, avatar: str = '') -> dict:
         if not agent_id:
             raise RelayError('agent 编号不能为空')
         with self.db() as db:
@@ -420,9 +447,9 @@ class RelayStore(ReceiptStore):
                 if group['owner'] != conn['id']:
                     raise RelayError('只有群主可以将私聊转为群聊', 403)
                 db.execute("UPDATE relay_groups SET kind='group' WHERE id=?", (conn['group_id'],))
-            db.execute('INSERT INTO relay_members(id,group_id,connection_id,agent_id,name,platform) VALUES(?,?,?,?,?,?) '
-                       'ON CONFLICT(connection_id,agent_id) DO UPDATE SET name=excluded.name,platform=excluded.platform',
-                       ('p_' + secrets.token_hex(12), conn['group_id'], conn['id'], agent_id, name, platform))
+            db.execute('INSERT INTO relay_members(id,group_id,connection_id,agent_id,name,platform,avatar) VALUES(?,?,?,?,?,?,?) '
+                       'ON CONFLICT(connection_id,agent_id) DO UPDATE SET name=excluded.name,platform=excluded.platform,avatar=excluded.avatar',
+                       ('p_' + secrets.token_hex(12), conn['group_id'], conn['id'], agent_id, name, platform, clean_cat_svg(avatar)))
             db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (conn['group_id'],))
             self._event(db, conn['group_id'], 'metadata', {})
             return self._card(db, conn['group_id'])

@@ -40,6 +40,7 @@ class AgentJoin(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     platform: str = Field('agent', max_length=50)
     convert_to_group: bool = False
+    avatar: str = Field('', max_length=12000)  # its cyber cat (SVG)
 
 
 class GuestJoin(BaseModel):
