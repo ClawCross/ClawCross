@@ -9,7 +9,10 @@ import stat
 import tempfile
 from urllib.parse import urlsplit
 
-from dotenv import dotenv_values
+try:
+    from dotenv import dotenv_values
+except ImportError:  # The stdlib CLI can display its welcome screen before core setup.
+    from .env_settings import read_env_all as dotenv_values
 
 from . import runtime_paths
 

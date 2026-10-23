@@ -25,12 +25,18 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 try:
-    from src.backend.common.runtime_paths import DATA_DIR, USER_FILES_DIR  # type: ignore
+    from src.backend.common.runtime_paths import DATA_DIR, USER_FILES_DIR, USERS_FILE, ENV_FILE
 except Exception:  # pragma: no cover - runtime fallback
     DATA_DIR = Path(os.getenv("CLAWCROSS_DATA_DIR", str(Path.home() / ".clawcross" / "data")))
     USER_FILES_DIR = Path(
         os.getenv("CLAWCROSS_USER_FILES_DIR", str(Path.home() / ".clawcross" / "user_files"))
     )
+    ENV_FILE = Path(os.getenv("CLAWCROSS_CONFIG_DIR", str(Path.home() / ".clawcross" / "config"))) / ".env"
+    USERS_FILE = ENV_FILE.with_name("users.json")
+
+from src.backend.common.env_settings import read_env_all
+for _key, _value in read_env_all(str(ENV_FILE)).items():
+    os.environ.setdefault(_key, _value)
 
 
 # ── Constants / config ──────────────────────────────────────────────────────
@@ -54,9 +60,7 @@ def _canonical_user() -> str:
         v = (os.getenv(var) or "").strip()
         if v:
             return v
-    users_json = Path(
-        os.getenv("CLAWCROSS_HOME", str(Path.home() / ".clawcross"))
-    ) / "config" / "users.json"
+    users_json = USERS_FILE
     if users_json.is_file():
         try:
             data = json.loads(users_json.read_text("utf-8"))

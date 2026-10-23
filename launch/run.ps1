@@ -1,8 +1,7 @@
-[CmdletBinding()]
 param(
-    [Parameter(Position = 0)][string]$Command = "help",
-    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
+    [string]$Command = "help"
 )
+$Rest = @($args)
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -19,7 +18,7 @@ if ($env:CLAWCROSS_USE_LEGACY_PATHS -in @("1", "true", "yes", "on")) {
 }
 $python = Join-Path $env:CLAWCROSS_VENV_DIR "Scripts\python.exe"
 $readOnly = @("status", "stop", "components", "stop-tunnel", "tunnel-status", "logs", "doctor")
-$needsUv = @("start", "start-foreground", "start-fg", "restart", "setup", "install-component", "start-tunnel", "cli", "clawcross", "evolve-skill")
+$needsUv = @("start", "start-foreground", "start-fg", "restart", "setup", "install-component", "start-tunnel", "evolve-skill")
 if ($Command -in @("help", "-h", "--help") -and -not (Test-Path $python)) {
     Write-Host "ClawCross commands: start, setup, stop, status, configure, components, install-component, logs, cli, help"
     exit 0
@@ -27,6 +26,15 @@ if ($Command -in @("help", "-h", "--help") -and -not (Test-Path $python)) {
 if (-not (Test-Path $python) -and $Command -in $readOnly) {
     $systemPython = Get-Command python -ErrorAction SilentlyContinue
     if ($systemPython) { $python = $systemPython.Source }
+}
+if (-not (Test-Path $python) -and $Command -in @("cli", "clawcross")) {
+    foreach ($name in @("python", "python3", "py")) {
+        $candidate = Get-Command $name -ErrorAction SilentlyContinue
+        if ($candidate) {
+            & $candidate.Source -c "import sys; sys.exit(sys.version_info < (3, 11))" 2>$null
+            if ($LASTEXITCODE -eq 0) { $python = $candidate.Source; break }
+        }
+    }
 }
 if (-not (Test-Path $python) -or $Command -in $needsUv) {
     $uv = $null

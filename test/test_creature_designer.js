@@ -22,5 +22,11 @@ const {Designer,MARKER}=require('../examples/space-apps/creature-battle/designer
  const fresh=store.data.designers.alice.pending.id;
  designer.receive({agent:'alpha',request:7,content:MARKER+JSON.stringify({request:fresh,design:{...design,description:'星光凝成的原创伙伴。',skills:[{name:'火花',type:'fire',power:16},{name:'撞击',type:'normal',power:14},{name:'守住',type:'guard',power:0},{name:'自我再生',type:'heal',power:22}]}})});
  const created=garden.view('alice');assert.equal(created.creatures.length,size+1);assert.equal(created.creatures.at(-1).level,1);assert.equal(created.creatures.at(-1).description,'星光凝成的原创伙伴。');assert.equal(designer.view('alice').ui.creature,created.creatures.at(-1).id);
- console.log('PASS: assistant ownership, reply correlation, safe design, protected growth, UI navigation, cancellation and private history');
+ await designer.ask({id:'alice',name:'Alice'},{agent:'alpha',create:true,content:'测试等待超时'});
+ const overdue=store.data.designers.alice.pending.id;store.data.designers.alice.pending.started=Date.now()-300001;
+ assert.equal(designer.expire(),true);assert.equal(designer.view('alice').pending,null);
+ assert.match(designer.view('alice').messages.at(-1).text,/没有收到完整设计/);assert.equal(designer.expire(),false);
+ designer.receive({agent:'alpha',request:7,content:MARKER+JSON.stringify({request:overdue,design:{...design,description:'迟到的精灵'}})});
+ assert.equal(garden.view('alice').creatures.length,size+1);
+ console.log('PASS: assistant ownership, reply correlation, safe design, protected growth, UI navigation, cancellation, timeouts and private history');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -8,7 +8,15 @@ function packet(text){const at=String(text).indexOf(MARKER);if(at<0)return null;
 class Designer{
  constructor(store,garden,space,roster,changed,tower=null){Object.assign(this,{store,garden,space,roster,changed,tower});if(!store.data.designers)store.update(d=>{d.designers={};});}
  state(owner){if(!Object.hasOwn(this.store.data.designers,owner))this.store.update(d=>{d.designers[owner]={agent:'',messages:[],pending:null,ui:null};});return this.store.data.designers[owner];}
- view(owner){const s=this.state(owner);return{agent:s.agent,messages:s.messages,pending:s.pending?{id:s.pending.id,started:s.pending.started}:null,ui:s.ui};}
+ view(owner){this.expire(owner);const s=this.state(owner);return{agent:s.agent,messages:s.messages,pending:s.pending?{id:s.pending.id,started:s.pending.started}:null,ui:s.ui};}
+ expire(owner){
+  let expired=false;
+  for(const [id,s]of Object.entries(this.store.data.designers)){
+   if(owner&&id!==owner||!s.pending||Date.now()-s.pending.started<300000)continue;
+   this.write(id,state=>{state.pending=null;this.message(state,'status','这次没有收到完整设计，请重新发送。已有精灵已保留。');});expired=true;
+  }
+  if(expired)this.changed();return expired;
+ }
  write(owner,fn){this.state(owner);this.store.update(d=>{const s=d.designers[owner];fn(s);s.messages=s.messages.slice(-80);});}
  message(s,role,text){s.messages.push({id:crypto.randomUUID(),role,text:String(text).slice(0,5000)});}
  cancel(owner){this.write(owner,s=>{if(s.pending){s.pending=null;this.message(s,'status','已取消等待；迟到的设计不会应用。');}});this.changed();return this.view(owner);}
@@ -16,7 +24,7 @@ class Designer{
   const members=this.roster().members,me=members.find(m=>m.id===person.id&&!m.agent),agent=members.find(m=>m.id===body.agent&&m.agent&&me&&m.device===me.device);
   if(!agent)error('请先选择自己带入群聊的 Agent。');
   const text=typeof body.content==='string'?body.content.trim():'';if(!text||text.length>2000)error('请用 1–2000 字描述你的想法。');
-  const current=this.state(person.id);if(current.pending&&Date.now()-current.pending.started<300000)error('设计师还在处理上一条请求，可先取消等待。');
+  this.expire(person.id);const current=this.state(person.id);if(current.pending)error('设计师还在处理上一条请求，可先取消等待。');
   const campaign=body.task==='tower';if(campaign&&!this.tower)error('当前主机还不支持星塔设计。');const range=campaign?this.tower.range(person.id):null;
   const creating=!campaign&&body.create===true,pet=campaign?null:creating?null:this.garden.view(person.id).creatures.find(c=>c.id===(body.creature||this.garden.view(person.id).selected));
   if(!campaign&&body.creature&&!pet)error('只能选择自己背包里的精灵。');

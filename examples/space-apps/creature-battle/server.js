@@ -40,7 +40,8 @@ ${scripts}
 (function(){
   const root=document.getElementById('room-root'),chat=document.getElementById('chat'),text=document.getElementById('text');
   const hint=document.getElementById('hint'),send=document.querySelector('[data-send]'),context=document.getElementById('command-context');
-  const seen=new Set();let composer=null,after=0,revision=-1,epoch='',sending=false,command=false,shell=null;
+  const sendIcon=send.innerHTML,stopIcon='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  const seen=new Set();let composer=null,after=0,revision=-1,epoch='',sending=false,cancelRequested=false,command=false,shell=null;
   async function api(address,body){
     // text/plain keeps a POST "simple": the sandboxed page skips the CORS preflight round trip.
     const response=await fetch(address,body===undefined?{}:{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)});
@@ -62,7 +63,9 @@ ${scripts}
   }
   function paint(){
     if(!shell)return;
-    send.disabled=sending||(command?(!composer||!composer.canSubmit):!shell.canSend());
+    const busy=shell.isBusy()||sending&&!command&&shell.channel()==='assistant';
+    send.disabled=!busy&&(sending||(command?(!composer||!composer.canSubmit):!shell.canSend()));
+    const label=busy?'终止':'发送';if(send.getAttribute('aria-label')!==label){send.setAttribute('aria-label',label);send.title=label;send.innerHTML=busy?stopIcon:sendIcon;}
     context.hidden=!command;
     text.placeholder=command?'告诉我的精灵怎么行动…':shell.channel()==='assistant'?'描述你的精灵，或想要的技能动画…':'聊聊，或 @ Agent';
   }
@@ -91,14 +94,18 @@ ${scripts}
   async function refresh(){receive(await api('state?after='+after));}
   async function run(button,task){
     const value=text.value.trim();if(!value)return;
-    if(sending)return;sending=true;hint.textContent='';text.value='';paint();
+    if(sending)return;sending=true;cancelRequested=false;hint.textContent='';text.value='';paint();
     let failure='';
-    try{await task(value);command=false;}
+    try{await task(value);if(cancelRequested&&shell.isBusy())await shell.cancel();command=false;}
     catch(error){failure=error.message||String(error);if(!text.value)text.value=value;}
     finally{sending=false;paint();if(failure)hint.textContent=failure;}
   }
   // The page is sandboxed without forms, so the buttons act on click.
-  send.addEventListener('click',()=>run(send,value=>command?game.submit(value):shell.submit(value).then(refresh)));
+  send.addEventListener('click',()=>{
+    if(shell.isBusy()||sending&&!command&&shell.channel()==='assistant'){cancelRequested=true;void shell.cancel().then(refresh).catch(error=>{hint.textContent=error.message;});return;}
+    if(sending)return;
+    void run(send,value=>command?game.submit(value):shell.submit(value).then(refresh));
+  });
   text.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();if(!send.disabled)send.click();}});
   paint();
   // Network events update game state; local animations never wait for a polling timer.
@@ -125,6 +132,7 @@ function battle(space) {
   let revision = 0;
   const tower=new Tower(store,garden,changed);
   const designer=new Designer(store,garden,space,()=>roster,changed,tower);
+  const designTimeout=setInterval(()=>designer.expire(),10000);designTimeout.unref();
   const arena=new Arena(store,garden,()=>roster,()=>config,next=>{config=next;},changed);
 
   const view = () => roster.members.map((m) => ({ principal: m.id, name: m.name, is_agent: m.agent, device: m.device, platform: m.platform }));
@@ -203,7 +211,7 @@ function battle(space) {
     return row;
   }
 
-  space.on('closing',()=>{for(const viewer of viewers)viewer.res.end();viewers.clear();});
+  space.on('closing',()=>{clearInterval(designTimeout);for(const viewer of viewers)viewer.res.end();viewers.clear();});
   space.on('agent',message=>{if(!designer.receive(message))append(message.agent,message.name,message.content);});
   space.on('member', () => refreshRoster().catch(() => {}));
 

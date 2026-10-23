@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import select
 import shutil
 import signal
@@ -67,15 +68,8 @@ def _load_env() -> None:
     env_path = ENV_FILE
     if not env_path.exists():
         return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if key and key not in os.environ:
-            os.environ[key] = value
+    for key, value in read_env_all(str(env_path)).items():
+        os.environ.setdefault(key, value)
 
 
 _configure_stdio()
@@ -211,12 +205,17 @@ SLASH_COMMANDS = [
     ("/restart", "restart the ClawCross backend"),
     ("/cancel", "cancel generation on the current platform (internal or ACP)"),
     ("/front", "get magic link (local 127.0.0.1 + public tunnel)"),
-    ("/tunnel [on|off|status]", "toggle public Cloudflare tunnel"),
+    ("/tunnel [on|off|status]", "Hub public access (Cloudflare optional)"),
     ("/help", "show commands"),
     ("/exit", "leave the shell (backend keeps running)"),
     ("/shutdown", "stop all background services and quit"),
 ]
 SLASH_MENU = [
+    ("/agents", "list and manage agents", "/agents", True),
+    ("/groups", "list and manage group chats", "/groups", True),
+    ("/history", "show current conversation history", "/history", True),
+    ("/reset", "reset the current Agent", "/reset", True),
+    ("/compact", "compress the current conversation", "/compact", True),
     ("/platform", "platform actions (list / use)", "/platform", True),
     ("/state", "show persisted state", "/state", True),
     ("/restart", "restart the ClawCross backend", "/restart", True),
@@ -234,7 +233,7 @@ SLASH_MENU = [
     ("/cron [<team>]", "cron actions (list / add / delete)", "/cron", True),
     ("/channel", "list / setup channels", "/channel", True),
     ("/front", "magic link: local 127.0.0.1 + public tunnel", "/front", True),
-    ("/tunnel", "toggle public Cloudflare tunnel (on/off/status)", "/tunnel", True),
+    ("/tunnel", "Hub public access (Cloudflare optional) (on/off/status)", "/tunnel", True),
     ("/exit", "leave the shell (backend keeps running)", "/exit", True),
     ("/shutdown", "stop all background services and quit", "/shutdown", True),
 ]
@@ -677,6 +676,9 @@ def _remember_recent(state: dict) -> None:
 
 
 def _headers_for_user(user: str) -> dict:
+    global INTERNAL_TOKEN
+    if not INTERNAL_TOKEN:
+        INTERNAL_TOKEN = read_env_all(str(ENV_FILE)).get("INTERNAL_TOKEN", "")
     if not INTERNAL_TOKEN:
         raise RuntimeError("INTERNAL_TOKEN is not configured. Start ClawCross or configure config/.env first.")
     return {"Authorization": f"Bearer {INTERNAL_TOKEN}:{user}"}
@@ -917,6 +919,7 @@ class _Thinking:
 
 def _print_sse_text(lines) -> bool:
     wrote = False
+    completed = False
     at_line_start = True
     seen_tool_ids: set[str] = set()
     thinking = _Thinking()
@@ -928,12 +931,20 @@ def _print_sse_text(lines) -> bool:
             continue
         data_str = line[5:].strip()
         if data_str == "[DONE]":
+            completed = True
             break
         try:
             chunk = json.loads(data_str)
-        except json.JSONDecodeError:
-            continue
-        delta = chunk.get("choices", [{}])[0].get("delta", {})
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Invalid streaming response from the Agent service") from exc
+        if chunk.get("error"):
+            error = chunk["error"]
+            raise RuntimeError(error.get("message", str(error)) if isinstance(error, dict) else str(error))
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue  # OpenAI usage-only frames have an empty choices array.
+        completed = completed or bool(choices[0].get("finish_reason"))
+        delta = choices[0].get("delta") or {}
         text = delta.get("content", "")
         if text:
             thinking.stop()
@@ -984,6 +995,8 @@ def _print_sse_text(lines) -> bool:
         thinking.stop()
     if wrote and not at_line_start:
         print()
+    if not completed:
+        raise RuntimeError("Agent reply stream ended before completion; use clawcross status to check the service")
     return wrote
 
 
@@ -999,15 +1012,71 @@ def _run_internal(prompt: str, state: dict, *, model: str = "default") -> None:
         "user": user,
         "session_id": session_id,
         "session_mode": mode,
+        "cli_workspace": str(Path.cwd().resolve()),
     }
     if mode == "chat":
         # Chat: agent must answer with text only; no tool calls allowed.
         payload["enabled_tools"] = []
-    _print_sse_text(_post_stream(
-        f"{AGENT_BASE}/v1/chat/completions",
-        _headers_for_user(user),
-        payload,
-    ))
+    _stream_turn(payload, state)
+
+
+def _stream_turn(payload: dict, state: dict, *, timeout: int = 600) -> None:
+    """While the original reply waits, resolve human approvals on that same turn."""
+    user = _current(state).get("user") or DEFAULT_USER
+    headers = _headers_for_user(user)
+    lines = _post_stream(f"{AGENT_BASE}/v1/chat/completions", headers, payload, timeout=timeout)
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        _print_sse_text(lines)
+        return
+    done, stopped = threading.Event(), threading.Event()
+    errors: list[Exception] = []
+
+    def consume():
+        try:
+            def active_lines():
+                for line in lines:
+                    if stopped.is_set():
+                        return
+                    yield line
+            _print_sse_text(active_lines())
+        except Exception as exc:
+            if not stopped.is_set():
+                errors.append(exc)
+        finally:
+            done.set()
+
+    worker = threading.Thread(target=consume, daemon=True)
+    worker.start()
+    try:
+        while not done.wait(1):
+            try:
+                from urllib.parse import urlencode
+                approvals = _request_json("GET", AGENT_BASE + "/webot/tool-approvals?" + urlencode({
+                    "user_id": user, "session_id": payload["session_id"], "status": "pending",
+                }), headers={"X-Internal-Token": INTERNAL_TOKEN}, timeout=2)
+            except (OSError, RuntimeError):
+                continue
+            for item in approvals.get("approvals", []):
+                if (item.get("review") or {}).get("reviewer") == "auto_review":
+                    continue
+                print(f"\n需要批准 · {item.get('tool_name', '工具')}\n{item.get('request_reason', '')}")
+                for key, value in (item.get("args") or {}).items():
+                    print(f"  {key}: {str(value)[:2000]}")
+                while True:
+                    choice = input("Y 同意 / N 拒绝 / KEEP Y 记住此操作 > ").strip().upper()
+                    if choice in {"Y", "N", "KEEP Y", "KEEPY"}:
+                        break
+                _request_json("POST", AGENT_BASE + "/webot/tool-approvals/resolve",
+                    headers={"X-Internal-Token": INTERNAL_TOKEN}, data={
+                        "user_id": user, "session_id": payload["session_id"],
+                        "approval_id": item["approval_id"], "action": "deny" if choice == "N" else "approve",
+                        "remember": choice.startswith("KEEP"),
+                    })
+    except (KeyboardInterrupt, EOFError):
+        stopped.set()
+        raise KeyboardInterrupt from None  # run_prompt cancels through the gateway.
+    if errors:
+        raise errors[0]
 
 
 def _acpx_tool(platform: str) -> str:
@@ -1028,8 +1097,9 @@ def _run_acpx(prompt: str, state: dict, *, model: str = "default") -> None:
         "stream": True,
         "session_id": _agent_id(current.get("session") or _repo_session_name()),
         "session_mode": _normalize_mode(current.get("mode")),
+        "cli_workspace": str(Path.cwd().resolve()),
     }
-    _print_sse_text(_post_stream(f"{AGENT_BASE}/v1/chat/completions", _headers_for_user(user), payload, timeout=700))
+    _stream_turn(payload, state, timeout=700)
 
 
 def run_prompt(prompt: str, state: dict, *, model: str = "default") -> int:
@@ -1040,10 +1110,6 @@ def run_prompt(prompt: str, state: dict, *, model: str = "default") -> int:
     platform = current.get("platform") or "internal"
     try:
         if platform == "internal":
-            hint = _missing_model_hint(model)
-            if hint:
-                print(hint, file=sys.stderr)
-                return 2
             _run_internal(prompt, state, model=model)
         elif ":" not in platform and _acpx_tool(platform) in ACP_PLATFORMS:
             _run_acpx(prompt, state, model=model)
@@ -1075,6 +1141,9 @@ def run_prompt(prompt: str, state: dict, *, model: str = "default") -> int:
         return 1
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
+        return 1
+    except (OSError, TimeoutError) as exc:
+        print(f"Reply failed: {exc}", file=sys.stderr)
         return 1
 
 
@@ -1227,41 +1296,19 @@ def cmd_run(args, state: dict) -> int:
 
 
 def cmd_cancel(args, state: dict) -> int:
+    """Cancel through the gateway for both internal and external Agents."""
     current = _current(state)
-    user = args.user or current.get("user") or DEFAULT_USER
-    platform = current.get("platform") or "internal"
-    tool = _acpx_tool(platform)
-
-    # External ACP agent: route cancellation to the adapter. Closing the acpx session
-    # terminates its in-flight turn (the session is re-created on the next run).
-    if platform != "internal" and tool in ACP_PLATFORMS:
-        session_name = args.session or current.get("session") or _repo_session_name()
-        try:
-            resp = _request_json(
-                "POST",
-                f"{FRONT_BASE}/proxy_sessions_close",
-                headers=_headers_for_user(user),
-                data={"platform": tool, "session_name": session_name},
-            ) or {}
-        except Exception as exc:
-            print(f"cancel failed: {exc}", file=sys.stderr)
-            return 1
-        ok = resp.get("status") == "success"
-        detail = "stopped" if ok else (resp.get("reason") or resp.get("error") or resp)
-        print(f"acp session {session_name!r} on {tool}: {detail}")
-        return 0 if ok else 1
-
-    # Internal agent (default); one with no turn yet has nothing to cancel.
-    session_id = _agent_id(args.session or current.get("session") or "default")
+    user = getattr(args, 'user', '') or current.get('user') or DEFAULT_USER
+    session = _agent_id(getattr(args, 'session', '') or current.get('session') or 'default')
     try:
-        resp = _request_json("POST", f"{AGENT_BASE}/v1/agents/{session_id}/control",
-                             headers=_headers_for_user(user), data={"action": "cancel"})
+        response = _request_json('POST', f'{AGENT_BASE}/v1/agents/{session}/control',
+            headers=_headers_for_user(user), data={'action': 'cancel'})
     except Exception as exc:
-        if not str(exc).startswith("HTTP 404"):
-            print(f"cancel failed: {exc}", file=sys.stderr)
+        if not str(exc).startswith('HTTP 404'):
+            print(f'cancel failed: {exc}', file=sys.stderr)
             return 1
-        resp = {"cancelled": False}
-    print(f"session {session_id!r}: {'cancelled' if resp.get('cancelled') else 'nothing running'}")
+        response = {'cancelled': False}
+    print(f"session {session!r}: {'cancelled' if response.get('cancelled') else 'nothing running'}")
     return 0
 
 
@@ -1308,111 +1355,14 @@ def _show_magic_link(state: dict) -> None:
         print("  公网 (tunnel):    未开启 —— 用 /tunnel on 开启后再 /front")
 
 
-def _cmd_tunnel(arg: str = "") -> None:
-    """Cloudflare 公网 tunnel 开关：on / off / status（不带参数=status）。
-
-    与 `clawcross tunnel` 共用同一 pidfile，所以 shell 内外状态一致。
-    """
-    pidfile = os.path.join(str(PID_DIR), "tunnel.pid")
-
-    def _running():
-        if not os.path.exists(pidfile):
-            return False, 0
-        try:
-            pid = int(open(pidfile).read().strip())
-        except (ValueError, OSError):
-            return False, 0
-        try:
-            os.kill(pid, 0)
-            return True, pid
-        except OSError:
-            return False, pid
-
-    def _public_domain():
-        from src.backend.common.public_access import read_public_domain
-        return read_public_domain(ENV_FILE, tunnel_running=_running()[0])
-
+def _cmd_tunnel(arg: str = "") -> int:
+    """Use the shared lifecycle controller; Hub is default, Cloudflare is opt-in."""
     action = (arg or "status").strip().lower()
-    if action in ("", "status"):
-        ok, pid = _running()
-        if ok:
-            dom = _public_domain()
-            print(f"✅ tunnel 运行中 (PID {pid})")
-            print(f"🌍 公网: {dom}" if dom else "⏳ 公网地址尚未就绪")
-        else:
-            print("❌ tunnel 未运行（/tunnel on 开启）")
-            if _public_domain():
-                print(f"🌍 已配置公网入口: {_public_domain()}")
-        return
-    if action in ("on", "start"):
-        ok, pid = _running()
-        if ok:
-            print(f"⚠️ tunnel 已在运行 (PID {pid})")
-            return
-        log = os.path.join(str(LOGS_DIR), "tunnel.log")
-        os.makedirs(os.path.dirname(log), exist_ok=True)
-        command = [sys.executable, str(PROJECT_ROOT / "launch" / "tunnel.py")]
-        runtime_env = set_subprocess_env(os.environ)
-        preflight = subprocess.run(
-            [*command, "--check"], cwd=str(WORKSPACE_DIR), env=runtime_env,
-            capture_output=True, text=True, timeout=10,
-        )
-        if preflight.returncode:
-            print(f"❌ {(preflight.stderr or preflight.stdout).strip()}")
-            return
-        with open(log, "w") as log_file:
-            proc = subprocess.Popen(
-                command, stdout=log_file, stderr=subprocess.STDOUT,
-                cwd=str(WORKSPACE_DIR), start_new_session=True, env=runtime_env,
-            )
-        print(f"🌐 tunnel 启动中 (PID {proc.pid})，日志 {log}")
-        for _ in range(30):
-            time.sleep(2)
-            dom = _public_domain()
-            if dom:
-                print(f"🌍 公网: {dom} —— 现在 /front 会同时给出本地和公网链接")
-                return
-            if proc.poll() is not None:
-                print(f"❌ tunnel 启动失败，请查看日志: {log}")
-                return
-        print("⏳ 公网地址尚未就绪，请稍后 /tunnel status 或查看日志")
-        return
-    if action in ("off", "stop"):
-        def _kill_pidfile(pf: str) -> bool:
-            if not os.path.exists(pf):
-                return False
-            try:
-                pid = int(open(pf).read().strip())
-            except (ValueError, OSError):
-                pid = 0
-            killed = False
-            if pid:
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                    for _ in range(10):
-                        time.sleep(0.5)
-                        try:
-                            os.kill(pid, 0)
-                        except OSError:
-                            break
-                    else:
-                        os.kill(pid, signal.SIGKILL)
-                    killed = True
-                except OSError:
-                    pass
-            try:
-                os.remove(pf)
-            except OSError:
-                pass
-            return killed
-        # 同时停 tunnel.py 与其 cloudflared 子进程
-        any_killed = _kill_pidfile(pidfile)
-        any_killed = _kill_pidfile(os.path.join(str(PID_DIR), "cloudflared.pid")) or any_killed
-        print("✅ tunnel 已停止" if any_killed else "tunnel 未运行")
-        from src.backend.common.public_access import write_tunnel_domain
-        write_tunnel_domain("", ENV_FILE)
-        return
-    print(f"未知参数: {action}（用 on / off / status）")
+    commands = {"on": "start-tunnel", "start": "start-tunnel", "off": "stop-tunnel", "stop": "stop-tunnel", "status": "tunnel-status"}
+    if action not in commands:
+        print("Usage: /tunnel on|off|status", file=sys.stderr)
+        return 2
+    return main([commands[action]])
 
 
 def cmd_restart(_args, state: dict) -> int:
@@ -2240,10 +2190,41 @@ def _read_interactive_line(prompt: str) -> str:
 
 
 def _handle_slash(command: str, state: dict) -> bool:
-    parts = command.strip().split()
+    try:
+        parts = shlex.split(command.strip())
+    except ValueError as exc:
+        print(f"Invalid command: {exc}", file=sys.stderr)
+        return True
     if not parts:
         return True
     name = parts[0].lower()
+    if name in {"/start", "/status", "/doctor", "/components"}:
+        main([name[1:], *parts[1:]])
+        return True
+    if name in {"/agents", "/teams", "/groups", "/tools", "/settings"}:
+        try:
+            main(["-u", _current(state).get("user") or DEFAULT_USER, name[1:], *parts[1:]])
+        except SystemExit:
+            pass
+        return True
+    if name == "/history":
+        _replay_current_session_history(state)
+        return True
+    if name == "/reset":
+        session = _agent_id(_current(state).get("session") or "default")
+        user = _current(state).get("user") or DEFAULT_USER
+        try:
+            _request_json("POST", f"{AGENT_BASE}/v1/agents/{session}/control",
+                headers=_headers_for_user(user), data={"action": "reset"})
+            print("Agent 已重置。")
+        except (OSError, RuntimeError) as exc:
+            print(f"reset failed: {exc}", file=sys.stderr)
+        return True
+    if name == "/compact":
+        from src.cli.commands.display_cmd import handle_compact_command
+        print(handle_compact_command([_agent_id(_current(state).get("session") or "default")],
+            user=_current(state).get("user") or DEFAULT_USER))
+        return True
     if name == "/":
         chosen = _choose_slash_command()
         if not chosen:
@@ -2334,49 +2315,50 @@ def _handle_slash(command: str, state: dict) -> bool:
         return True
     if name == "/model":
         from src.cli.commands.model_cmd import handle_model_command
-        out = handle_model_command(parts[1:], interactive=True)
+        out = handle_model_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty())
         if out:
             print(out)
         return True
     current_user = (state.get("current", {}).get("user") or "").strip() or None
     if name == "/team":
         from src.cli.commands.display_cmd import handle_team_command
-        out = handle_team_command(parts[1:], interactive=True, user=current_user)
+        out = handle_team_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
         if out:
             print(out)
         return True
     if name == "/workflow":
         from src.cli.commands.display_cmd import handle_workflow_command
-        out = handle_workflow_command(parts[1:], interactive=True, user=current_user)
+        out = handle_workflow_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
         if out:
             print(out)
         return True
     if name == "/skill":
         from src.cli.commands.display_cmd import handle_skill_command
-        out = handle_skill_command(parts[1:], interactive=True, user=current_user)
+        out = handle_skill_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
         if out:
             print(out)
         return True
     if name == "/expert":
         from src.cli.commands.display_cmd import handle_expert_command
-        out = handle_expert_command(parts[1:], interactive=True, user=current_user)
+        out = handle_expert_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
         if out:
             print(out)
         return True
     if name == "/cron":
         from src.cli.commands.display_cmd import handle_cron_command
-        out = handle_cron_command(parts[1:], interactive=True, user=current_user)
+        out = handle_cron_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
         if out:
             print(out)
         return True
     if name == "/channel":
         from src.cli.commands.channel_cmd import handle_channel_command
-        out = handle_channel_command(parts[1:], interactive=True)
+        out = handle_channel_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty())
         if out:
             print(out)
         return True
     if name == "/help":
         print(_rich_help_text())
+        print("\nAgent control: /agents · /groups · /history · /reset · /compact")
         return True
     print(f"unknown command: {name}. Try /help.")
     return True
@@ -2793,6 +2775,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-V", "--version", action="version",
         version=f"%(prog)s {_package_version()}",
     )
+    parser.add_argument("-u", "--user", dest="global_user", help="User identity")
+    parser.add_argument("-s", "--session", "--agent", dest="global_session", help="Agent/session id")
+    parser.add_argument("-p", "--platform", dest="global_platform", help="Agent platform")
+    parser.add_argument("--mode", dest="global_mode", choices=list(VALID_MODES))
     sub = parser.add_subparsers(dest="command")
 
     run = sub.add_parser("run", help="Run one prompt on the current or selected platform")
@@ -2808,7 +2794,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("platforms", help="List known platforms")
     sub.add_parser("state", help="Show persisted shell state")
-    sub.add_parser("chat", help="Enter interactive shell")
+    chat = sub.add_parser("chat", help="Enter interactive shell, or send a message")
+    chat.add_argument("prompt", nargs="?")
+    chat.add_argument("-s", "--session", "--agent")
+    chat.add_argument("-u", "--user")
+    chat.add_argument("-p", "--platform")
+    chat.add_argument("-m", "--model")
+    chat.add_argument("--mode", choices=list(VALID_MODES))
     sub.add_parser("restart", help="Request a backend restart")
     sub.add_parser("shutdown", aliases=["stop"], help="Stop all background services and exit the launcher")
 
@@ -2818,6 +2810,8 @@ def build_parser() -> argparse.ArgumentParser:
     cancel = sub.add_parser("cancel", help="Cancel generation on the current platform (internal agent, or active ACP session)")
     cancel.add_argument("-s", "--session", help="Session id")
     cancel.add_argument("-u", "--user", help="User id")
+    compact = sub.add_parser("compact", help="Compress an Agent's conversation")
+    compact.add_argument("session", nargs="?", help="Agent id (default: current Agent)")
 
     update = sub.add_parser(
         "update",
@@ -2857,12 +2851,40 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
+    # Keep the terminal shell and the API CLI behind one installed command.
+    command_index = 2 if raw[:1] in (["-u"], ["--user"]) else (1 if raw and raw[0].startswith("--user=") else 0)
+    command = raw[command_index] if len(raw) > command_index else ""
+    lifecycle_commands = {"dev", "start", "start-foreground", "start-fg", "setup", "stop", "restart", "status", "doctor", "logs", "configure", "auto-model", "import-openclaw-llm", "check-openclaw", "components", "install-component", "start-tunnel", "stop-tunnel", "tunnel-status", "add-user", "evolve-skill"}
+    if command in lifecycle_commands:
+        if os.name == "nt":
+            launcher = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(PROJECT_ROOT / "launch/run.ps1")]
+        else:
+            launcher = ["bash", str(PROJECT_ROOT / "launch/run.sh")]
+        return subprocess.call([*launcher, *raw[command_index:]])
+    api_commands = {"agents", "teams", "groups", "settings", "tools", "tts", "profile", "visual", "topics", "personas", "workflows", "token"}
+    if command == "tunnel":
+        return _cmd_tunnel(raw[command_index + 1] if len(raw) > command_index + 1 else "status")
+    if command in api_commands:
+        from src.cli.cli import main as api_main
+        return api_main(raw)
     state = _load_state()
     parser = build_parser()
-    if len(sys.argv) == 1:
+    if not raw:
+        if not sys.stdin.isatty():
+            parser.print_help()
+            return 0
         return repl(state)
-    args = parser.parse_args()
+    args = parser.parse_args(raw)
+    if args.global_user:
+        _current(state)["user"] = args.global_user
+    if args.global_platform:
+        _set_platform(state, args.global_platform)
+    if args.global_session:
+        _set_session(state, args.global_session)
+    if args.global_mode:
+        _current(state)["mode"] = args.global_mode
     if args.command == "run":
         return cmd_run(args, state)
     if args.command == "use":
@@ -2874,6 +2896,20 @@ def main() -> int:
     if args.command in ("login", "user"):
         return cmd_user(args, state)
     if args.command == "chat":
+        if args.prompt is not None:
+            args.prompt = [sys.stdin.read() if args.prompt == "-" else args.prompt]
+            return cmd_run(args, state)
+        for key in ("user", "session", "platform", "mode"):
+            value = getattr(args, key)
+            if value:
+                if key == "platform":
+                    _set_platform(state, value)
+                elif key == "session":
+                    _set_session(state, value)
+                else:
+                    _current(state)[key] = value
+        if not sys.stdin.isatty():
+            parser.error("chat needs a terminal, or provide a message / standard input with chat -")
         return repl(state)
     if args.command == "restart":
         return cmd_restart(args, state)
@@ -2881,6 +2917,11 @@ def main() -> int:
         return cmd_shutdown(args, state)
     if args.command == "cancel":
         return cmd_cancel(args, state)
+    if args.command == "compact":
+        from src.cli.commands.display_cmd import handle_compact_command
+        print(handle_compact_command([args.session or _agent_id(_current(state).get("session") or "default")],
+            user=_current(state).get("user") or DEFAULT_USER))
+        return 0
     if args.command == "update":
         return cmd_update(args, state)
     if args.command == "config":
@@ -2908,19 +2949,19 @@ def main() -> int:
         return cmd_config(args, state)
     if args.command == "model":
         from src.cli.commands.model_cmd import handle_model_command
-        out = handle_model_command(list(args.args or []), interactive=True)
+        out = handle_model_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
         if out:
             print(out)
         return 0
     if args.command == "team":
         from src.cli.commands.display_cmd import handle_team_command
-        out = handle_team_command(list(args.args or []), interactive=True)
+        out = handle_team_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
         if out:
             print(out)
         return 0
     if args.command == "workflow":
         from src.cli.commands.display_cmd import handle_workflow_command
-        out = handle_workflow_command(list(args.args or []), interactive=True)
+        out = handle_workflow_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
         if out:
             print(out)
         return 0
@@ -2932,28 +2973,33 @@ def main() -> int:
         return 0
     if args.command == "skill":
         from src.cli.commands.display_cmd import handle_skill_command
-        out = handle_skill_command(list(args.args or []), interactive=True)
+        out = handle_skill_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
         if out:
             print(out)
         return 0
     if args.command == "expert":
         from src.cli.commands.display_cmd import handle_expert_command
-        out = handle_expert_command(list(args.args or []), interactive=True)
+        out = handle_expert_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
         if out:
             print(out)
         return 0
     if args.command == "cron":
         from src.cli.commands.display_cmd import handle_cron_command
-        out = handle_cron_command(list(args.args or []), interactive=True)
+        out = handle_cron_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
         if out:
             print(out)
         return 0
     if args.command == "channel":
         from src.cli.commands.channel_cmd import handle_channel_command
-        out = handle_channel_command(list(args.args or []), interactive=True)
+        out = handle_channel_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
         if out:
             print(out)
         return 0
+    if args.command is None:
+        if not sys.stdin.isatty():
+            parser.print_help()
+            return 0
+        return repl(state)
     parser.print_help()
     return 0
 

@@ -1,8 +1,8 @@
 {
   "name": "clawcross",
-  "version": "0.0.28",
+  "version": "0.0.29",
   "description": "ClawCross multi-platform agent CLI with Python services and web interface.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=18"
   },
@@ -56,7 +56,8 @@
     "SKILL.md",
     "README_CN.md",
     "examples/space-apps/**",
-    "sdk/js/**"
+    "sdk/js/**",
+    "src/cli/help.txt"
   ],
   "scripts": {
     "clawcross": "node bin/clawcross.js",
@@ -65,7 +66,9 @@
     "build:oasis-town": "node tools/build/build_oasis_town.mjs",
     "test:node": "node test/test_tinyfish_live_shared.js && node test/test_pretext_text_core.js",
     "test:browser-smoke": "playwright test --config playwright.config.mjs",
-    "build:css": "tailwindcss -c tools/build/tailwind.config.cjs -i tools/build/tailwind.input.css -o src/frontend/static/css/tailwind.css --minify"
+    "build:css": "tailwindcss -c tools/build/tailwind.config.cjs -i tools/build/tailwind.input.css -o src/frontend/static/css/tailwind.css --minify",
+    "prepack": "node tools/build/verify_npm_package.cjs",
+    "check:package": "npm pack --dry-run --json --ignore-scripts | node tools/build/verify_npm_package.cjs --manifest"
   },
   "dependencies": {
     "playwright": "^1.58.2"

@@ -36,7 +36,7 @@ bin/*
 !bin/clawcross.js
 
 # 打包产物
-build/
+/build/
 dist/
 node_modules/
 .npm-cache/

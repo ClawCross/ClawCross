@@ -12,6 +12,7 @@ Also provides a non-interactive model setter for scripted / one-shot use.
 from __future__ import annotations
 
 import os
+import getpass
 import re
 import sys
 from pathlib import Path
@@ -37,8 +38,8 @@ from src.backend.common.env_settings import read_env_all, write_env_settings
 
 def _find_env_file() -> Path:
     """Locate config/.env using standard ClawCross home resolution."""
-    home = Path(os.environ.get("CLAWCROSS_HOME", Path.home() / ".clawcross"))
-    return home / "config" / ".env"
+    from src.backend.common.runtime_paths import ENV_FILE
+    return ENV_FILE
 
 
 def _read_env() -> dict[str, str]:
@@ -405,7 +406,7 @@ def cmd_add_interactive(name: str | None = None) -> str:
 
     print(f"\nDefault base URL: {provider_info.default_base_url}")
     base_url = prompt_text("Base URL (enter for default): ", default="") or provider_info.default_base_url
-    api_key = prompt_text("API key (paste): ")
+    api_key = getpass.getpass("API key (hidden): ")
 
     profile = models_store.upsert_profile(
         name=name,

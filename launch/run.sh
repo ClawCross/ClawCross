@@ -23,7 +23,7 @@ esac
 PYTHON="$CLAWCROSS_VENV_DIR/bin/python"
 NEEDS_UV=0
 case "$1" in
-    start|start-foreground|start-fg|restart|setup|install-component|start-tunnel|cli|clawcross|evolve-skill)
+    start|start-foreground|start-fg|restart|setup|install-component|start-tunnel|evolve-skill)
         NEEDS_UV=1
         ;;
     help|-h|--help)
@@ -34,6 +34,12 @@ case "$1" in
         ;;
     status|stop|components|stop-tunnel|tunnel-status|logs|doctor)
         if [ ! -x "$PYTHON" ] && command -v python3 >/dev/null 2>&1; then
+            PYTHON="$(command -v python3)"
+        fi
+        ;;
+    cli|clawcross)
+        if [ ! -x "$PYTHON" ] && command -v python3 >/dev/null 2>&1 &&
+            python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' >/dev/null 2>&1; then
             PYTHON="$(command -v python3)"
         fi
         ;;

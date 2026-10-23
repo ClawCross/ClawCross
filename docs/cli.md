@@ -4,22 +4,30 @@
 
 ## 运行方式
 
-**使用项目根目录作为工作目录，通过 `uv run` 直接执行：**
+npm 安装后，在任意工作目录使用：
 
 ```bash
-cd /path/to/Clawcross
-uv run src/cli/cli.py [参数...]
+npm install -g clawcross
+clawcross start                   # 显式准备核心环境并启动服务
+clawcross                         # 交互式终端，保留平台、Agent 和模式
+clawcross -u alice -s myagent      # 继续指定 Agent
+clawcross run "你好" -p codex -s myagent -u alice
+clawcross chat "你好" -s myagent -u alice
+printf '你好' | clawcross chat - -s myagent -u alice
+clawcross agents list -h
 ```
 
-**Windows PowerShell：**
+源码安装使用 `./clawcross`（Linux/macOS）或 `./clawcross.ps1`（Windows）；两者与 npm 命令共用 Python 实现。旧的 `uv run src/cli/cli.py ...` 和 `uv run launch/cli.py ...` API 命令入口仍可用。
 
-```powershell
-Set-Location C:\path\to\Clawcross
-uv run .\launch\cli.py [参数...]
-```
+终端交互保留历史选择器、平台选择器、输入框及斜杠菜单。`/resume [ID]` 选择已有 Agent，`/new session` 新建会话，`/use` 切换平台，`/mode` 选择模式；`/agents`、`/groups`、`/history`、`/reset`、`/compact` 可直接管理当前对话。消息只发送本轮新增内容，历史由 Agent 服务保存。
 
-> 不需要额外安装 `clawcross` 命令或设置 alias。直接在项目目录下用 `uv run` 即可，它会自动解析项目依赖并执行。
-> 如果你更想复用当前虚拟环境，也可以直接运行 `.venv\Scripts\python.exe .\launch\cli.py [参数...]`。
+Ctrl+C 中断当前生成，并通过 gateway 取消对应的内部或外部 Agent 调用；不会因为退出终端而关闭后台服务。人工审核在当前终端接受 `Y`、`N`、`KEEP Y`，批准后继续同一次调用；自动审核不转成人工确认。非交互命令遇到流式/API 错误返回非零状态，不能将失败当作发送成功。
+
+CLI 保留启动时所在目录，作为 `cli_workspace` 交给后端；继续已有 Agent 时仍由后端的工作区与沙盒策略处理。配置和运行数据在 `CLAWCROSS_HOME`，不会写入 npm 安装目录。
+
+帮助与版本不需要 Python，也不触发下载或启动服务。普通 API 命令可使用现有 Python 3.11+，无需安装完整服务依赖；缺少 Python 才由平台入口准备 uv/Python。核心依赖在显式 `start`/`setup` 时准备；acpx、SRT、Cloudflare 等仍需显式安装。
+
+---
 
 ## 概览
 

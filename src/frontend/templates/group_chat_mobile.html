@@ -6593,6 +6593,9 @@ async function openSettingsToPassword() {
 
 // ── State ──
 let currentGroupId = null;
+let chatLoadSequence = 0;
+let chatHistoryPending = false;
+let chatHistoryReady = false;
 let currentGroupName = '';
 let currentTab = 'chats';
 let mobileUpdatePollTimer = null;
@@ -6855,8 +6858,8 @@ function formatFastApiErrorBody(data) {
   return lines.join('\n\n').trim();
 }
 
-async function api(method, path, body) {
-  const opts = { method, headers: {} };
+async function api(method, path, body, options = {}) {
+  const opts = { method, headers: {}, ...options };
   if (body) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -8815,37 +8818,79 @@ function applyGroupDetail(detail) {
   GroupReceipts.update(detail);
 }
 
-async function reloadGroupDetail() {
-  if (!currentGroupId) return null;
-  const detail = await api('GET', `/proxy_groups/${encodeURIComponent(currentGroupId)}`);
-  applyGroupDetail(detail);
+async function chatApi(path) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    return await api('GET', path, undefined, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isCurrentChat(groupId, sequence) {
+  return currentGroupId === groupId && chatLoadSequence === sequence;
+}
+
+async function reloadGroupDetail(groupId = currentGroupId, sequence = chatLoadSequence) {
+  if (!groupId) return null;
+  const detail = await chatApi(`/proxy_groups/${encodeURIComponent(groupId)}`);
+  if (isCurrentChat(groupId, sequence)) applyGroupDetail(detail);
   return detail;
 }
 
+function renderChatHistoryError() {
+  if (renderedMsgIds.size) return;
+  const message = _currentLang === 'zh' ? '聊天记录暂时未能加载' : 'Could not load chat history';
+  const retry = _currentLang === 'zh' ? '重试' : 'Retry';
+  document.getElementById('chat-body').innerHTML = `<section class="group-start refresh-hint" role="status"><p>${message}</p><div class="group-start-actions"><button type="button" onclick="pollNewMessages()">${retry}</button></div></section>`;
+}
+
+async function loadChatHistory(groupId, sequence, detailTask) {
+  if (!isCurrentChat(groupId, sequence) || chatHistoryPending) return;
+  chatHistoryPending = true;
+  try {
+    // Read authoritative history independently of the Agent delivery cursor.
+    const history = String(groupId).startsWith('rg_')
+      ? await chatApi(`/proxy_groups/${encodeURIComponent(groupId)}/history?limit=50`)
+      : await (detailTask || reloadGroupDetail(groupId, sequence));
+    if (!isCurrentChat(groupId, sequence)) return;
+    const messages = history.messages || [];
+    if (history.source === 'cache' && !messages.length) throw new Error('History unavailable');
+    // A message sent while history was loading must survive the initial render.
+    const merged = new Map(messages.map(message => [message.id, message]));
+    for (const id of renderedMsgIds) {
+      if (groupReplyMessages.has(id)) merged.set(id, groupReplyMessages.get(id));
+    }
+    renderedMsgIds.clear();
+    renderMessages([...merged.values()].sort((a, b) => a.id - b.id));
+    chatHistoryReady = history.source !== 'cache';
+  } catch (_) {
+    if (isCurrentChat(groupId, sequence)) renderChatHistoryError();
+  } finally {
+    if (isCurrentChat(groupId, sequence)) chatHistoryPending = false;
+  }
+}
 
 async function openChat(groupId, name) {
   closeAppFullscreen();
   GroupMessageMenu.close();
   clearGroupReply();
+  stopPolling();
   currentGroupId = groupId;
+  const sequence = ++chatLoadSequence;
+  chatHistoryPending = false;
+  chatHistoryReady = false;
   currentGroupName = name;
   lastMsgId = 0;
   renderedMsgIds.clear();
+  groupReplyMessages.clear();
+  currentMembers = [];
   clearGroupUnread(groupId, false);
   _hideNewMsgBanner();
 
   document.getElementById('chat-title').textContent = name;
-  let cachedDetail = _cacheGetFresh(__mobileGroupDetailCache, groupId);
-  if (!cachedDetail) {
-    const warmTask = prefetchGroupDetail(groupId);
-    if (warmTask) {
-      await Promise.race([
-        warmTask,
-        new Promise(resolve => setTimeout(resolve, 180))
-      ]);
-      cachedDetail = _cacheGetFresh(__mobileGroupDetailCache, groupId);
-    }
-  }
+  const cachedDetail = _cacheGetFresh(__mobileGroupDetailCache, groupId);
 
   const chatPage = document.getElementById('chat-page');
   chatPage.classList.remove('offscreen');
@@ -8857,24 +8902,24 @@ async function openChat(groupId, name) {
   renderGroupList(groups);
   if (cachedDetail) {
     applyGroupDetail(cachedDetail);
-    refreshPendingApprovalsForCurrentGroup();
+  }
+  if (cachedDetail?.messages?.length) {
     renderMessages(cachedDetail.messages || []);
   } else {
     renderChatLoadingSkeleton();
   }
 
-  try {
-    const data = await reloadGroupDetail();
-    await refreshPendingApprovalsForCurrentGroup();
-    renderMessages(data.messages || []);
+  const detailTask = reloadGroupDetail(groupId, sequence);
+  detailTask.then(() => {
+    if (!isCurrentChat(groupId, sequence)) return;
     updateMuteBtn();
-    // Load workflows for this team
-    await loadWorkflows();
-  } catch (e) {
-    toast(t('load_failed') + ': ' + e.message);
-  }
-
+    // Auxiliary requests must not delay history or live messages.
+    refreshPendingApprovalsForCurrentGroup();
+    loadWorkflows();
+  }).catch(() => {});
   startPolling();
+  await loadChatHistory(groupId, sequence, detailTask);
+  if (isCurrentChat(groupId, sequence)) pollNewMessages();
 }
 
 // The group list folds away on wide screens; the choice is remembered on this device.
@@ -8916,6 +8961,7 @@ function goBack() {
   document.querySelector('.tab-bar').classList.remove('hidden');
   closeOasisSidebar();
   currentGroupId = null;
+  ++chatLoadSequence;
   renderPendingApprovalCards([]);
   refreshGroups();
 }
@@ -9000,6 +9046,7 @@ function appendMessages(msgs) {
   // Remove empty hint if present
   const hint = body.querySelector('.refresh-hint');
   if (hint) hint.remove();
+  body.querySelector('.mobile-skeleton-bubble-wrap')?.remove();
 
   // 必须在插入 DOM 之前判断：插入后 scrollHeight 变大，若在底部会被误判为「不在底部」，
   // 导致不自动滚到底、且把自己的消息也算进「新消息」提示（对齐 main-local）
@@ -9146,6 +9193,7 @@ function renderPendingApprovalCards(approvals) {
 
 async function refreshPendingApprovalsForCurrentGroup() {
   if (!currentGroupId) return;
+  const groupId = currentGroupId, sequence = chatLoadSequence;
   // Both internal and external agents use the ClawCross approval broker.
   const sessions = (currentMembers || [])
     .filter(m => m.agent)
@@ -9153,7 +9201,8 @@ async function refreshPendingApprovalsForCurrentGroup() {
     .filter(Boolean);
   void ClawcrossChannelSetup.sync(document.getElementById('chat-body'), sessions).catch(() => {});
   try {
-    const data = await api('GET', '/proxy_webot_tool_approvals?status=&limit=100');
+    const data = await chatApi('/proxy_webot_tool_approvals?status=&limit=100');
+    if (!isCurrentChat(groupId, sequence)) return;
     const allApprovals = Array.isArray(data.approvals) ? data.approvals : [];
     renderPendingApprovalCards(allApprovals.filter(item => sessions.includes(String(item.session_id || ''))));
   } catch (_) {}
@@ -11890,7 +11939,7 @@ async function importMobileManagedSkillZip(input) {
 }
 
 // ── Polling ──
-let _polling = false;  // 互斥锁，防止并发 poll 导致重复消息
+let pollingChatSequence = null;
 let _typingTimer = null;
 
 function startPolling() {
@@ -11908,85 +11957,36 @@ function stopPolling() {
 
 async function pollNewMessages() {
   if (!currentGroupId) return;
-  if (_polling) return;  // 上一次 poll 还没完成，跳过
   const pollingGroupId = currentGroupId;
-  _polling = true;
+  const sequence = chatLoadSequence;
+  if (chatHistoryPending || pollingChatSequence === sequence) return;
+  pollingChatSequence = sequence;
   try {
-    const [data] = await Promise.all([
-      api('GET', `/proxy_groups/${encodeURIComponent(pollingGroupId)}/messages?after_id=${lastMsgId}`),
-      refreshPendingApprovalsForCurrentGroup(),
-    ]);
-    if (currentGroupId !== pollingGroupId) return;
+    if (!chatHistoryReady) {
+      await loadChatHistory(pollingGroupId, sequence);
+      if (!isCurrentChat(pollingGroupId, sequence) || !chatHistoryReady) return;
+    }
+    const data = await chatApi(`/proxy_groups/${encodeURIComponent(pollingGroupId)}/messages?after_id=${lastMsgId}`);
+    if (!isCurrentChat(pollingGroupId, sequence)) return;
     const msgs = data.messages || [];
     if (msgs.length) appendMessages(msgs);
     GroupReceipts.update({group_id:pollingGroupId, capabilities:data.capabilities, receipts:data.receipts});
+    refreshPendingApprovalsForCurrentGroup();
   } catch (_) { /* silent */ } finally {
-    _polling = false;
+    if (pollingChatSequence === sequence) pollingChatSequence = null;
   }
 }
 
 // ── Typing indicator ──
 async function pollTypingStatus() {
   if (!currentGroupId) return;
+  const groupId = currentGroupId, sequence = chatLoadSequence;
   try {
-    const data = await api('GET', `/proxy_groups/${encodeURIComponent(currentGroupId)}/typing`);
+    const data = await chatApi(`/proxy_groups/${encodeURIComponent(groupId)}/typing`);
+    if (!isCurrentChat(groupId, sequence)) return;
     updateTypingBar(data.typing || []);
-    await pollExternalToolActivity(data.typing || []);
   } catch (_) {
     // silent - don't break polling on error
-  }
-}
-
-const _externalToolCursors = new Map();
-const _externalToolRows = new Map();
-let _externalToolGroup = null;
-let _externalToolBusy = new Set();
-async function pollExternalToolActivity(typing) {
-  const groupId = currentGroupId;
-  if (_externalToolGroup !== groupId) {
-    _externalToolGroup = groupId;
-    _externalToolRows.clear();
-    _externalToolBusy.clear();
-    document.getElementById('acp-mobile-tool-activity')?.remove();
-  }
-  const members = (currentMembers || []).filter(m => m.is_agent && !m.remote &&
-    m.agent && !['webot', 'http', 'llm'].includes(m.agent.platform));
-  const busy = new Set(members.filter(m => typing.includes(m.name)).map(m => m.agent.agent_id));
-  const selected = members.filter(m => busy.has(m.agent.agent_id) || _externalToolBusy.has(m.agent.agent_id));
-  _externalToolBusy = busy;
-  const completedThisPoll = new Set();
-  await Promise.all(selected.slice(0, 8).map(async member => {
-    const id = member.agent.agent_id;
-    try {
-      const data = await api('GET', `/v1/agents/${encodeURIComponent(id)}/events?after=${_externalToolCursors.get(id) || 0}`);
-      if (currentGroupId !== groupId) return;
-      _externalToolCursors.set(id, data.cursor || 0);
-      if (data.turn?.group_id !== groupId) return;
-      for (const item of data.items || []) {
-        if (item.kind !== 'tool') continue;
-        if (['completed', 'failed'].includes(item.status)) completedThisPoll.add(member.name + ':' + item.id);
-        _externalToolRows.set(id + ':' + item.id, {...item, agentName: member.name});
-      }
-    } catch (_) { /* Foreign or removed agents expose no events. */ }
-  }));
-  if (currentGroupId !== groupId || !_externalToolRows.size) return;
-  let panel = document.getElementById('acp-mobile-tool-activity');
-  if (!panel) {
-    panel = document.createElement('div');
-    panel.id = 'acp-mobile-tool-activity';
-    panel.className = 'acp-mobile-tools';
-    panel.setAttribute('aria-live', 'polite');
-    document.getElementById('chat-body').appendChild(panel);
-  }
-  const rows = [..._externalToolRows.values()].slice(-6);
-  const previouslyOpen = new Set([...panel.querySelectorAll('details[open]')].map(el => el.dataset.key));
-  panel.innerHTML = rows.map(tool => `<details data-key="${esc(tool.agentName + ':' + tool.id)}" ${!['completed','failed'].includes(tool.status) || (previouslyOpen.has(tool.agentName + ':' + tool.id) && !completedThisPoll.has(tool.agentName + ':' + tool.id)) ? 'open' : ''}><summary>${esc(tool.agentName)} · ${esc(tool.title || '工具')} · ${tool.status === 'failed' ? '失败' : tool.status === 'completed' ? '完成' : '调用中'}</summary><pre>${esc(tool.output || '')}</pre></details>`).join('');
-  // Keep only the displayed recent calls, including pending calls.
-  if (_externalToolRows.size > 24) {
-    const pending = [..._externalToolRows.entries()].filter(([, e]) => !['failed', 'completed'].includes(e.status));
-    const recent = [..._externalToolRows.entries()].slice(-12);
-    _externalToolRows.clear();
-    [...pending, ...recent].forEach(([key, value]) => _externalToolRows.set(key, value));
   }
 }
 

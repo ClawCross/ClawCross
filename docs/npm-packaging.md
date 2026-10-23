@@ -3,7 +3,8 @@
 直接从当前源码目录打包，不需要维护另一份项目副本。
 
 ```bash
-npm run pack:clawcross
+npm run check:package     # 核对实际 npm 文件清单、版本及敏感文件排除
+npm run pack:clawcross    # 生成 dist/clawcross-<version>.tgz
 ```
 
 产物是 `dist/clawcross-<version>.tgz`；`dist/` 仅存放生成的压缩包，已从 Git 和 npm 文件清单排除。这个命令不发布、不安装组件，也不启动服务。
@@ -14,4 +15,16 @@ npm run pack:clawcross
 
 发布前验证生成包中的 CLI 版本/帮助、Python 服务和新前端文件是否齐全，使用临时 `CLAWCROSS_HOME`，避免接触实际用户数据。修改包版本不会修改现有运行目录。
 
-Windows 启动入口保留。当前 Windows 的限制是开启 SRT 沙盒后，由于资源限制未适配，沙盒命令会拒绝执行；这不代表 Windows 不能启动项目或聊天，也不能通过重新打包消除这项限制。
+npm 的 Node 入口只转交平台启动脚本，后续命令与交互界面由 Python 负责。版本与帮助无需 Python；普通 CLI 不启动服务，不安装完整后端依赖。运行目录独立于安装目录，升级包不会删除用户数据。
+
+CI 的 `cli-package` 在 Linux、Windows、macOS 检查帮助、身份认证、工作区传递、流式回复、取消与 npm 文件清单。Linux 本机还会将压缩包安装到临时目录，再通过安装后的入口执行同一组协议验证。
+
+本地安装产物：
+
+```bash
+npm install -g ./dist/clawcross-0.0.29.tgz
+clawcross --version
+clawcross
+```
+
+打包、验证和发布是独立操作；`pack:clawcross` 不会发布 npm，也没有安装后自动下载二进制的 hook。

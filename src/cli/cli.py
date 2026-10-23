@@ -51,15 +51,9 @@ def _load_env():
     env_path = str(ENV_FILE)
     if not os.path.exists(env_path):
         return
-    with open(env_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            k, v = k.strip(), v.strip()
-            if k and k not in os.environ:
-                os.environ[k] = v
+    from src.backend.common.env_settings import read_env_all
+    for key, value in read_env_all(env_path).items():
+        os.environ.setdefault(key, value)
 
 
 _load_env()
@@ -313,13 +307,17 @@ def _stream_req(url, headers=None, data=None, params=None, timeout=300):
         hdrs.update(headers)
     req = urllib.request.Request(url, data=body_bytes, headers=hdrs, method="POST")
     try:
-        resp = urllib.request.urlopen(req, timeout=timeout)
-        for raw_line in resp:
-            yield raw_line.decode("utf-8", errors="replace")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            for raw_line in resp:
+                yield raw_line.decode("utf-8", errors="replace")
     except urllib.error.HTTPError as e:
-        print(f"❌ HTTP {e.code}: {e.reason}", file=sys.stderr)
+        with e:
+            detail = e.read().decode("utf-8", errors="replace")[:1000]
+        raise RuntimeError(f"HTTP {e.code}: {detail or e.reason}") from e
     except urllib.error.URLError as e:
-        print(f"❌ 连接失败: {e.reason}", file=sys.stderr)
+        raise RuntimeError(f"连接失败: {e.reason}；可用 clawcross start 启动本地服务") from e
+    except (socket.timeout, TimeoutError) as e:
+        raise RuntimeError("等待回复超时；请检查 clawcross status") from e
 
 
 def _agent_headers():
@@ -428,7 +426,7 @@ def cmd_chat(args):
     """
     if not args.user:
         print("❌ 请指定 -u/--user 用户名", file=sys.stderr)
-        return
+        return 2
     _check_token()
     url = f"{AGENT_BASE}/v1/chat/completions"
     payload = {
@@ -439,27 +437,49 @@ def cmd_chat(args):
     }
     payload["session_id"] = args.session
     payload['cli_workspace'] = os.path.realpath(os.getcwd())
+    if getattr(args, "mode", None):
+        payload["session_mode"] = args.mode
     hdrs = {"Authorization": f"Bearer {INTERNAL_TOKEN}:{args.user}"}
 
-    collected = []
-    for line in _stream_req(url, headers=hdrs, data=payload):
-        line = line.strip()
-        if not line or not line.startswith("data:"):
-            continue
-        data_str = line[5:].strip()
-        if data_str == "[DONE]":
-            break
-        try:
-            chunk = json.loads(data_str)
-            delta = chunk.get("choices", [{}])[0].get("delta", {})
-            text = delta.get("content", "")
-            if text:
-                print(text, end="", flush=True)
-                collected.append(text)
-        except json.JSONDecodeError:
-            pass
-    if collected:
-        print()  # 换行
+    collected, received, completed = [], False, False
+    try:
+        for line in _stream_req(url, headers=hdrs, data=payload):
+            if getattr(args, "cancelled", None) is not None and args.cancelled.is_set():
+                return 130
+            line = line.strip()
+            if not line.startswith("data:"):
+                continue
+            data_str = line[5:].strip()
+            if data_str == "[DONE]":
+                completed = True
+                break
+            try:
+                chunk = json.loads(data_str)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("服务返回了无效的流式数据，请检查服务日志") from exc
+            if chunk.get("error"):
+                error = chunk["error"]
+                raise RuntimeError(error.get("message", str(error)) if isinstance(error, dict) else str(error))
+            received = True
+            for choice in chunk.get("choices") or []:
+                completed = completed or bool(choice.get("finish_reason"))
+                delta = choice.get("delta") or {}
+                meta = delta.get("meta") or {}
+                if getattr(args, "show_tools", False) and meta.get("type") in {"tool_start", "tool_end"}:
+                    print(f"\n{'工具' if meta['type'] == 'tool_start' else '完成'} · {meta.get('name', '')}", file=sys.stderr)
+                text = delta.get("content")
+                if isinstance(text, str) and text:
+                    print(text, end="", flush=True)
+                    collected.append(text)
+        if not completed:
+            raise RuntimeError("回复连接提前结束" if received else "服务没有返回流式回复")
+        return 0
+    except (RuntimeError, OSError) as exc:
+        print(f"\nClawCross: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        if collected:
+            print()
 
 
 # ── settings: 设置 ─────────────────────────────────────────────────────────
@@ -2609,11 +2629,11 @@ def build_parser():
 _cli_user = ""
 
 
-def main():
+def main(argv=None):
     """CLI 主入口函数"""
     global _cli_user
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     _cli_user = getattr(args, "user", "") or ""
 
     if not args.command:

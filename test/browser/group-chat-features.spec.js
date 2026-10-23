@@ -340,6 +340,53 @@ async function holdMessage(locator) {
   await locator.evaluate(target => target.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerType:'touch',pointerId:7,isPrimary:true})));
 }
 
+test('chat history loads despite an empty delivery cache and a stalled approval request', async({page})=>{
+  const {errors}=await mobileSetup(page);
+  await page.route('**/proxy_webot_tool_approvals?**',()=>{});
+  await page.route('**/proxy_groups/rg_history',route=>route.fulfill({json:{group_id:'rg_history',title:'历史群',members:[],messages:[]}}));
+  await page.route('**/proxy_groups/rg_history/history?**',route=>route.fulfill({json:{source:'server',messages:[{id:80,sender:'friend',sender_name:'朋友',content:'已经存在的群聊记录'}]}}));
+  await page.route('**/proxy_groups/rg_history/messages?**',route=>route.fulfill({json:{messages:[{id:81,sender:'friend',sender_name:'朋友',content:'新消息仍然正常加载'}]}}));
+  await page.evaluate(()=>openChat('rg_history','历史群'));
+  await expect(page.locator('#chat-body')).toContainText('已经存在的群聊记录');
+  await expect(page.locator('#chat-body')).toContainText('新消息仍然正常加载');
+  await expect(page.locator('.group-start')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('a late empty history from the previous group cannot overwrite the selected group', async({page})=>{
+  const {errors}=await mobileSetup(page);
+  let oldRequest;
+  await page.route('**/proxy_groups/rg_old/history?**',route=>{oldRequest=route;});
+  await page.route('**/proxy_groups/rg_new/history?**',route=>route.fulfill({json:{source:'server',messages:[{id:90,sender:'friend',sender_name:'朋友',content:'新群的聊天记录'}]}}));
+  await page.route('**/proxy_groups/rg_new/messages?**',route=>route.fulfill({json:{messages:[]}}));
+  await page.evaluate(()=>{void openChat('rg_old','旧群');});
+  await expect.poll(()=>!!oldRequest).toBe(true);
+  await page.evaluate(()=>openChat('rg_new','新群'));
+  await oldRequest.fulfill({json:{source:'server',messages:[]}});
+  await page.evaluate(()=>pollNewMessages());
+  await expect(page.locator('#chat-title')).toHaveText('新群');
+  await expect(page.locator('#chat-body')).toContainText('新群的聊天记录');
+  await expect(page.locator('.group-start')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('failed history shows retry instead of a welcome page and recovers', async({page})=>{
+  const {errors}=await mobileSetup(page);let available=false;
+  await page.route('**/proxy_groups/rg_retry',route=>route.fulfill({json:{group_id:'rg_retry',title:'重试群',members:[],messages:[]}}));
+  await page.route('**/proxy_groups/rg_retry/history?**',route=>route.fulfill(available
+    ? {json:{source:'server',messages:[{id:95,sender:'friend',sender_name:'朋友',content:'恢复后的记录'}]}}
+    : {status:503,json:{detail:'temporarily unavailable'}}));
+  await page.route('**/proxy_groups/rg_retry/messages?**',route=>route.fulfill({json:{messages:[]}}));
+  await page.evaluate(()=>openChat('rg_retry','重试群'));
+  await expect(page.locator('#chat-body')).toContainText('聊天记录暂时未能加载');
+  await expect(page.locator('#chat-body [data-i18n="group_start_title"]')).toHaveCount(0);
+  available=true;
+  await page.locator('#chat-body').getByRole('button',{name:'重试',exact:true}).click();
+  await expect(page.locator('#chat-body')).toContainText('恢复后的记录');
+  await expect(page.locator('.group-start')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test('an invitation enables Hub without installing a tunnel binary',async({page})=>{
   await mobileSetup(page);
   let enabled=false,installs=0;

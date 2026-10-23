@@ -1,0 +1,27 @@
+ClawCross — 与你的 Agent 在终端协作
+
+用法：clawcross [-u USER] [命令] [参数]
+
+  clawcross                         进入交互式对话
+  clawcross -u alice -s AGENT        继续指定 Agent 的对话
+  clawcross chat "你好" -s AGENT     发送一条消息，流式显示回复
+  clawcross run "你好" -p codex     使用指定平台，继续已保存的对话
+  clawcross chat - -s AGENT          从标准输入读取消息
+  clawcross agents list             列出 Agent
+  clawcross agents --help           创建、配置、历史、重置与删除
+  clawcross model                    模型配置与切换
+  clawcross team / workflow          团队与工作流
+  clawcross groups / skill / cron    群聊、技能与闹钟
+  clawcross start                    准备核心环境并启动本地服务
+  clawcross start --tunnel           启动并连接 Hub 公网入口
+  clawcross stop / status / doctor   服务控制与诊断
+  clawcross components              查看可选组件
+  clawcross install-component acpx   显式安装外部 Agent 组件
+  clawcross --version                显示 npm 包版本
+
+交互式命令：/help、/new session、/resume [ID]、/use、/agents、/history、
+/mode、/reset、/compact、/status、/start、/exit。Ctrl+C 中断当前回复。
+支持工具轨迹和人工审核 Y / N / KEEP Y；不回放历史问答给模型。
+
+首次启动不要求先填 API key，可在网页配置。日常对话不会自动启动服务。
+仅在缺少可用 Python 时由启动脚本安装 uv/Python；外部组件按需显式安装。

@@ -363,20 +363,27 @@ def _logs(arguments: list[str]) -> int:
 
 
 def _legacy_command(command: str, arguments: list[str]) -> int | None:
+    if command in {"cli", "clawcross"}:
+        # Keep the caller's cwd and Ctrl+C in one Python process. No core install
+        # is needed for the stdlib terminal client and local model configuration.
+        os.environ.update(_process_env())
+        if command == "clawcross":
+            from src.cli.clawcross import main as cli_main
+        else:
+            from src.cli.cli import main as cli_main
+        return cli_main(arguments)
     scripts = {
         "add-user": ("src/backend/ops/setup/adduser.py", []),
         "configure": ("src/backend/ops/setup/configure.py", []),
         "auto-model": ("src/backend/ops/setup/configure.py", ["--auto-model"]),
         "import-openclaw-llm": ("src/backend/ops/setup/configure_openclaw.py", ["--import-clawcross-llm-from-openclaw"]),
         "evolve-skill": ("tools/maintenance/evolve_skill.py", []),
-        "cli": ("src/cli/cli.py", []),
-        "clawcross": ("src/cli/clawcross.py", []),
     }
     if command in scripts:
         script, prefix = scripts[command]
         if command == "add-user" and len(arguments) != 2:
             raise ValueError("Usage: add-user <username> <password>")
-        if command in {"cli", "clawcross", "evolve-skill"}:
+        if command == "evolve-skill":
             ensure_core()
         return _run_python(script, prefix + arguments)
     if command == "logs":

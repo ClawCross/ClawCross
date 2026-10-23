@@ -70,7 +70,9 @@ function mount(root,{chat,bar,api,onChannel}){
  }
  navigate('home');showDesigner(true,'assistant');
  return{scene,attachTower(value){tower=value;},designTower(){designTask='tower';creating=false;showDesigner(true,'assistant');aside.querySelector('.designer-context').textContent='设计接下来尚未开始的 1–3 层星塔关卡';text.value='请为我设计接下来的星塔关卡：原创敌人形象、四个技能与领域特效，还有每层的冒险剧情。';text.focus({preventScroll:true});},attachGarden(value){garden=value;},navigate,update,newCreature,openDesigner(c){suggest('appearance',c);},openChat(){showDesigner(true,'group');},channel:()=>channel,canSend:()=>channel==='group'||!!select.value&&!snapshot.assistant?.pending,
-  async submit(content){if(channel==='group')return api('send',{content,mentions:[]});const c=designTask==='tower'?null:current();return api('assistant',{content,agent:select.value,task:designTask,creature:c?.id||'',create:designTask!=='tower'&&(creating||!snapshot.garden?.creatures.length)});}};
+  isBusy:()=>channel==='assistant'&&!!snapshot.assistant?.pending,
+  async cancel(){const assistant=await api('assistant/cancel',{});update({...snapshot,assistant});},
+  async submit(content){if(channel==='group')return api('send',{content,mentions:[]});const c=designTask==='tower'?null:current();const assistant=await api('assistant',{content,agent:select.value,task:designTask,creature:c?.id||'',create:designTask!=='tower'&&(creating||!snapshot.garden?.creatures.length)});update({...snapshot,assistant});history.scrollTop=history.scrollHeight;return assistant;}};
 }
 global.ClawCrossGameShell={mount,landscape};
 })(globalThis);

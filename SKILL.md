@@ -537,28 +537,29 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-05T09:22:25.336513+00:00`
-- Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-workspace-preflight-bounded-execution`
-- Heuristic score: `0.571`
+- Updated at: `2026-10-23T07:58:20.824679+00:00`
+- Strategy: `repair-only`
+- Heuristic candidate: `verification-loop-1`
+- Heuristic score: `0.886`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, bounded-execution. stdout was used as fallback failure evidence.
+Command exited with code 0. Command: /home/ubuntu/.clawcross/venv/bin/python -m pytest test/test_cli_entrypoints.py test/test_optional_bootstrap.py test/test_windows_bootstrap.py test/test_public_access.py -q. Signals: verification-loop. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
-- Intent mix: repair `0.4`, optimize `0.4`, innovate `0.2`
-- Shift toward stability, bounded retries, and verifier quality.
+- Intent mix: repair `0.8`, optimize `0.2`, innovate `0.0`
+- Emergency mode for repeated failures where repair guidance must dominate.
 
 ### Latest Trigger Command
 
-`(external failure context)`
+`/home/ubuntu/.clawcross/venv/bin/python -m pytest test/test_cli_entrypoints.py test/test_optional_bootstrap.py test/test_windows_bootstrap.py test/test_public_access.py -q`
 
 ### Latest Error Excerpt
 
 ```text
-Editor command failed: python was not found on PATH; use /home/ubuntu/.clawcross/venv/bin/python. Two patch attempts failed context matching and applied no changes; use complete ordered patch contexts.
+.......................                                                  [100%]
+23 passed in 7.84s
 ```
 
 ### Governance Snapshot
@@ -566,29 +567,27 @@ Editor command failed: python was not found on PATH; use /home/ubuntu/.clawcross
 - Suppressed signals: (none)
 - Consecutive repair cycles: `0`
 - Consecutive empty cycles: `0`
-- Recent failure ratio: `1.0`
+- Recent failure ratio: `0.0`
 
 ### Operating Adjustments
 
-1. Start from the narrowest reproducible failure before broad retries.
-2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
-3. End every fix attempt with an explicit verifier command and observed result.
+1. State the exact failure mode before editing anything.
+2. Choose the narrowest reproducer first, then a broader regression command.
+3. Record pass/fail status immediately after each attempted fix.
 
 ### Validation Loop
 
-1. Run the minimal reproducer first, then the broader regression command.
-2. Persist the command and result summary in the evolution report.
+1. Rerun the minimal reproducer before any broad test suite.
+2. When a fix passes, note the exact verifier command in the skill.
 
 ### Recent Evidence
 
-- `2026-10-05T09:22:25.336513+00:00` `repo-skill` — Editor command failed: python was not found on PATH; use /home/ubuntu/.clawcross/venv/bin/python. Two patch attempts failed context matching a ...[truncated]
+- `2026-10-23T07:58:20.824679+00:00` `repo-skill` — .......................                                                  [100%]
+23 passed in 7.84s
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-workspace-preflight-bounded-execution` score `0.571` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-2` score `0.531` — Tighten verification loops (intent `repair`)
-- `workspace-preflight-2` score `0.531` — Add repo/workspace preflight checks (intent `repair`)
-- `bounded-execution-1` score `0.475` — Bound long-running and flaky execution (intent `optimize`)
+- `verification-loop-1` score `0.886` — Tighten verification loops (intent `repair`)
 
 ### Local State Snapshot
 
