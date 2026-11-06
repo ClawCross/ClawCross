@@ -10,7 +10,7 @@ function runtimeSettingsCurrentAgent() {
     return window.ExternalAgentSettings?.currentTarget() || (typeof currentSessionId !== 'undefined' ? currentSessionId : '') || '';
 }
 
-async function openRuntimeSettings(sessionId = '', tab = 'context') {
+async function openRuntimeSettings(sessionId = '', tab = 'context', options = {}) {
     const targetSession = sessionId || runtimeSettingsCurrentAgent();
     if (!targetSession) {
         if (typeof toast === 'function') toast(runtimeSettingsText('请先选择一个 Agent。', 'Choose an Agent first.'));
@@ -49,7 +49,7 @@ async function openRuntimeSettings(sessionId = '', tab = 'context') {
             </select>
             <span>${external ? runtimeSettingsText('审核和沙盒仅约束 ClawCross 工具；原生工具由外部程序管理。', 'Approvals and sandbox govern ClawCross tools; native tools follow their own permissions.') : runtimeSettingsText('上下文、模式与沙盒均独立保存', 'Context, mode and sandbox are saved separately for each Agent')}</span>
         </div>
-        <div class="runtime-settings-scope-row"><button type="button" class="runtime-settings-btn runtime-settings-btn-secondary" onclick="openWorkspaceSettings(runtimeSettingsView.targetSession)">${runtimeSettingsText('工作区目录', 'Workspace folders')}</button></div>
+
         <div class="runtime-settings-tabs" role="tablist" aria-label="${runtimeSettingsText('设置分类', 'Settings categories')}">
             <button id="runtime-settings-context-tab" type="button" role="tab" aria-selected="true" aria-controls="runtime-settings-context" ${external ? 'disabled' : ''} onclick="showRuntimeSettingsTab('context')">${runtimeSettingsText('上下文压缩', 'Context')}</button>
             <button id="runtime-settings-approval-tab" type="button" role="tab" aria-selected="false" aria-controls="runtime-settings-approval" tabindex="-1" onclick="showRuntimeSettingsTab('approval')">${runtimeSettingsText('工具审核', 'Approvals')}</button>
@@ -62,6 +62,7 @@ async function openRuntimeSettings(sessionId = '', tab = 'context') {
                 <button id="runtime-settings-save" type="button" class="runtime-settings-btn runtime-settings-btn-primary" onclick="saveRuntimeSettingsForm()">${runtimeSettingsText('保存设置', 'Save settings')}</button>
             </div>
         </div></div>`;
+    window.AgentSettings?.attachBack(overlay, closeRuntimeSettings, options.onBack);
     runtimeSettingsView = { targetSession, original: null, activeTab: external ? 'approval' : tab, external, returnFocus: document.activeElement };
     overlay.querySelector('.runtime-settings-close').focus();
     await loadRuntimeSettingsScope();
@@ -89,12 +90,6 @@ async function loadRuntimeSettingsScope() {
         view.scope = scope;
         const context = payload.settings.context;
         const approval = payload.settings.approval;
-        const inference = payload.settings.inference || {reasoning_effort:''};
-        const capabilities = payload.model_capabilities || {};
-        const levels = capabilities.reasoning_effort_levels || [];
-        const levelMap = capabilities.reasoning_level_map || {};
-        const unified = window.ReasoningLevels && Object.keys(levelMap).length;
-        const selectedLevel = unified ? ReasoningLevels.selected(inference.reasoning_level, inference.reasoning_effort) : 0;
         const networkClosed = Array.isArray(payload.sandbox_network_maximum) && !payload.sandbox_network_maximum.length;
         if (scope === 'session' && ['chat', 'readonly', 'manual', 'auto', 'bypass'].includes(payload.effective_mode)) approval.mode = payload.effective_mode;
         const escape = value => escapeHtml(String(value)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -109,7 +104,7 @@ async function loadRuntimeSettingsScope() {
         const autoHint = text('0 表示自动，根据上面设置的窗口调整', '0 = automatic, based on the configured window');
         document.getElementById('runtime-settings-fields').innerHTML = `
             <section id="runtime-settings-context" role="tabpanel" aria-labelledby="runtime-settings-context-tab">
-                ${unified ? `<label class="runtime-settings-field"><span>${text('思考强度 · 7 级', 'Reasoning effort · 7 levels')}</span>${ReasoningLevels.slider({mapping:levelMap,level:selectedLevel,autoLabel:text('自动 · 模型预设','Automatic · Model preset') + (capabilities.reasoning_effort_default ? ' · ' + capabilities.reasoning_effort_default : ''),attributes:'data-section="inference" data-key="reasoning_level" data-value-type="number"'})}<small>${escape(capabilities.model || '')} · ${text('箭头后是实际原生档位；部分级别会重复。','The arrow shows the native setting; some levels repeat.')}</small></label>` : levels.length ? `<label class="runtime-settings-field"><span>${text('思考强度', 'Reasoning effort')}</span>${ReasoningLevels.slider({choices:[{value:'',label:text('使用模型预设', 'Use model preset') + (capabilities.reasoning_effort_default ? ' · ' + capabilities.reasoning_effort_default : '')},...levels.map(value=>({value,label:value}))],value:inference.reasoning_effort,attributes:'data-section="inference" data-key="reasoning_effort"'})}<small>${escape(capabilities.model || '')}</small></label>` : ''}
+
                 <div id="runtime-settings-usage">${renderRuntimeContextUsage(payload.context_usage || (typeof sessionContextUsageState !== 'undefined' ? sessionContextUsageState : {}), context.context_window_tokens)}</div>
                 <div class="runtime-settings-toggle-row">
                     <div><h3>${text('自动压缩', 'Automatic compaction')}</h3><p>${text('上下文变长时，整理早期对话并保留近期原文。', 'Summarize older conversations while keeping recent turns intact.')}</p></div>

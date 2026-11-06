@@ -1,6 +1,31 @@
 const {test,expect}=require('@playwright/test');
 const path=require('node:path');
 const fs=require('node:fs');
+test('a new Studio Agent can configure workspaces before its first conversation',async({page})=>{
+    let created=0;const writes=[];
+    const settings={companion:true,user_shared:false,cli:true,teams:true,paths:[]};
+    await page.route('**/studio',route=>route.fulfill({contentType:'text/html',body:'<html lang="zh"><body></body></html>'}));
+    await page.route('**/v1/agents/draft-agent/workspaces',route=>route.fulfill(created?{json:{settings,folders:[]}}:{status:404,json:{detail:'Agent not found'}}));
+    await page.route('**/v1/agents',route=>{created++;return route.fulfill({json:{agent_id:'draft-agent'}});});
+    await page.route('**/v1/agents/draft-agent',route=>{writes.push(route.request().postDataJSON());return route.fulfill({json:{agent_id:'draft-agent'}});});
+    await page.goto('/studio');
+    await page.addScriptTag({path:path.resolve('src/frontend/static/js/runtime-settings.js')});
+    await page.addScriptTag({path:path.resolve('src/frontend/static/js/workspace-settings.js')});
+    await page.evaluate(()=>{
+        window.currentSessionId='draft-agent';
+        window.studioEnsureAgent=(id,fields)=>fetch('/v1/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent_id:id,...fields})});
+        return openWorkspaceSettings('draft-agent');
+    });
+    expect(created).toBe(0);
+    const dialog=page.locator('#workspace-settings-modal');
+    await expect(dialog.locator('[name="companion"]')).toBeDisabled();
+    await dialog.getByRole('button',{name:'创建并配置工作区',exact:true}).click();
+    await expect(dialog.locator('[name="companion"]')).toBeEnabled();expect(created).toBe(1);
+    await dialog.locator('[name="paths"]').fill('/my/project');
+    await dialog.getByRole('button',{name:'保存',exact:true}).click();
+    await expect(dialog.getByRole('status')).toContainText('已保存');
+    expect(writes[0].settings.workspaces.paths).toEqual(['/my/project']);expect(created).toBe(1);
+});
 for(const [name,width,height] of [['studio',1100,800],['mobile',390,844]]) {
     test(`${name} workspace sources save switches and only custom paths`,async({page})=>{
         await page.setViewportSize({width,height});

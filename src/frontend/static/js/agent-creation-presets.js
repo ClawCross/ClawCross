@@ -3,6 +3,23 @@
   let catalog;const views=new Map();
   const english=()=>document.documentElement.lang.startsWith('en');
   const label=value=>value?.[english()?'en':'zh'] || value?.zh || '';
+  const basicViews=new Map();
+  const styles=[
+    {id:'warm',zh:'自然亲切',en:'Warm and natural',persona:'用自然、亲切的语气交流，清楚地回答，主动帮助用户理清想法。'},
+    {id:'brief',zh:'简洁直接',en:'Short and clear',persona:'回答简洁直接，优先给出结论与可执行的下一步，避免不必要的长篇解释。'},
+    {id:'patient',zh:'耐心细致',en:'Patient and thorough',persona:'耐心倾听，用容易理解的语言解释，必要时给出清晰的步骤与例子。'},
+  ];
+  window.AgentCreationBasics={
+    persona(id,role=''){const style=styles.find(row=>row.id===basicViews.get(id)) || styles[0];return (role || '你是用户的智能伙伴。跟随用户使用的语言，按当前工具权限帮助用户。')+'\n\n'+style.persona;},
+    mount(id){
+      const host=document.getElementById(id);if(!host)return;
+      basicViews.set(id,'warm');host.replaceChildren();host.className='agent-creation-basics';
+      const title=document.createElement('span');title.className='agent-creation-basic-label';title.textContent=english()?'Conversation style':'相处方式';host.appendChild(title);
+      const choices=document.createElement('div');choices.className='agent-creation-styles';choices.setAttribute('role','group');choices.setAttribute('aria-label',title.textContent);
+      styles.forEach((style,index)=>{const button=document.createElement('button');button.type='button';button.dataset.style=style.id;button.setAttribute('aria-pressed',String(index===0));button.textContent=english()?style.en:style.zh;button.onclick=()=>{basicViews.set(id,style.id);choices.querySelectorAll('button').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));};choices.appendChild(button);});
+      host.appendChild(choices);
+    },
+  };
   window.AgentCreationPresets={
     selected(id){return views.get(id)?.selected || null;},
     select(id,preset){const view=views.get(id);const row=view?.rows?.find(row=>row.id===preset);if(!row || !view.choose)return false;view.choose(row);return true;},

@@ -1,22 +1,21 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-23T07:58:20.824679+00:00`
-- Exit code: `0`
+- Generated at: `2026-11-04T04:32:55.443292+00:00`
+- Exit code: `1`
 
 ## Summary
 
-Command exited with code 0. Command: /home/ubuntu/.clawcross/venv/bin/python -m pytest test/test_cli_entrypoints.py test/test_optional_bootstrap.py test/test_windows_bootstrap.py test/test_public_access.py -q. Signals: verification-loop. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: Playwright mobile Agent creation scroll regression. Signals: verification-loop. stderr carried the strongest failure evidence.
 
 ## stderr
 
 ```text
-(empty)
+Regrouping the create-Agent form under Advanced left legacy .create-agent-drawer-body overflow:hidden and an inner-only scroll area. This clipped new fields. Use one outer scrolling form and place the action footer outside it. The regression must expand Advanced and reach its last field with actual wheel and touch gestures, not merely assert no horizontal overflow. Its first bottom-field assertion mixed mouse wheel immediately after emulated touch and failed; verify each input mode separately. The corrected expanded-form regression passed and the first-companion creation test passed. A read-only live Studio check also reached scrollTop=446/max=446.
 ```
 
 ## stdout
 
 ```text
-.......................                                                  [100%]
-23 passed in 7.84s
+(empty)
 ```

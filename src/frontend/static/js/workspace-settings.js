@@ -16,7 +16,7 @@
             ? `<option value="__default__">${escapeLabel(workspaceTeamLabel('__default__'))}</option>` : '';
         return fixed + (real.length ? `<optgroup label="${text('团队','Teams')}">${real.map(team => `<option value="${escape(team)}">${escapeLabel(team)}</option>`).join('')}</optgroup>` : '');
     };
-    window.openWorkspaceSettings = async target => {
+    window.openWorkspaceSettings = async (target, options = {}) => {
         const agent = target || (typeof runtimeSettingsCurrentAgent === 'function' ? runtimeSettingsCurrentAgent() : '');
         if (!agent) return;
         let overlay = document.getElementById('workspace-settings-modal');
@@ -35,6 +35,7 @@
             <details class="runtime-settings-advanced" open><summary>${text('当前可用目录','Available folders')}</summary><div class="workspace-folder-list"></div></details></div>
             <div class="runtime-settings-footer"><div class="workspace-settings-status" role="status"></div><button type="submit" class="runtime-settings-btn runtime-settings-btn-primary" disabled>${text('保存','Save')}</button></div></form></div>`;
         document.body.appendChild(overlay);
+        window.AgentSettings?.attachBack(overlay, close, options.onBack);
         overlay.querySelector('.runtime-settings-close').onclick = close;
         overlay.onclick = event => { if (event.target === overlay) close(); };
         overlay.addEventListener('keydown', event => {
@@ -64,17 +65,42 @@
             labels.user=labels.user_shared; labels.team=labels.teams; labels.custom=text('添加的目录','Added folder');
             list.innerHTML = (payload.folders || []).map(folder => `<div class="workspace-folder"><span>${escape(labels[folder.source] || folder.source)}${folder.team && folder.team !== '__default__' ? ' · ' + escape(folder.team) : ''}</span><code>${escape(folder.path)}</code></div>`).join('') || `<p>${escape(payload.error || text('暂无可用目录','No folders available'))}</p>`;
         };
-        status.textContent=text('加载中…','Loading…');
-        try {
+        for (const [key] of sources) form.elements[key].disabled = true;
+        form.elements.paths.disabled = true;
+        const load = async () => {
+          status.textContent=text('加载中…','Loading…');
+          try {
             const response=await fetch(url+'/workspaces'), payload=await response.json();
-            if (!response.ok) throw new Error(payload.detail || payload.error || response.statusText);
+            if (!response.ok) {
+                const error = new Error(payload.detail || payload.error || response.statusText);
+                error.status = response.status; throw error;
+            }
             if (!overlay.isConnected) return;
-            for (const [key] of sources) form.elements[key].checked=!!payload.settings[key];
+            for (const [key] of sources) { form.elements[key].checked=!!payload.settings[key]; form.elements[key].disabled=false; }
+            form.elements.paths.disabled=false;
             form.elements.paths.value=(payload.settings.paths || []).join('\n');
             render(payload); status.textContent=payload.error || ''; save.disabled=false;
-        } catch(error) { status.textContent=error.message; }
+          } catch(error) {
+            if (!overlay.isConnected) return;
+            const draft = error.status === 404 && typeof studioEnsureAgent === 'function'
+                && typeof runtimeSettingsCurrentAgent === 'function' && runtimeSettingsCurrentAgent() === agent
+                && (typeof _ocChatMode === 'undefined' || _ocChatMode !== 'acp');
+            status.textContent=draft ? text('尚未创建 Agent。可以先创建并配置目录，无需发送消息。','This Agent is not created yet. Create it to configure folders without sending a message.') : error.message;
+            if (draft) {
+                const create=document.createElement('button');create.type='button';create.className='runtime-settings-btn runtime-settings-btn-secondary';
+                create.textContent=text('创建并配置工作区','Create and configure workspaces');
+                create.onclick=async()=>{
+                    create.disabled=true;
+                    try { await studioEnsureAgent(agent,{platform:'webot'}); if(overlay.isConnected)await load(); }
+                    catch(failure) { if(overlay.isConnected){status.textContent=failure.message;status.appendChild(create);create.disabled=false;} }
+                };
+                status.appendChild(create);
+            }
+          }
+        };
+        await load();
         form.onsubmit=async event=>{
-            event.preventDefault(); save.disabled=true;
+            event.preventDefault(); if(save.disabled)return; save.disabled=true;
             const workspaces={paths:form.elements.paths.value.split('\n').map(value=>value.trim()).filter(Boolean)};
             for (const [key] of sources) workspaces[key]=form.elements[key].checked;
             try {

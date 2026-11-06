@@ -18,6 +18,18 @@ window.ClawcrossSettings = (() => {
         INTERNAL_TOKEN:['内部访问凭证','Internal access token'],
     };
     const icon = path => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}"/></svg>`;
+    const summaries = {
+        models:['默认模型、API 与语音','Default model, API and audio'],public:['从手机或其他设备访问','Access from a phone or another device'],
+        channels:['连接常用的消息平台','Connect your messaging platforms'],integrations:['外部 Agent 与可选组件','External Agents and optional components'],
+        account:['登录密码与访问凭证','Login password and access credentials'],advanced:['服务维护与运行参数','Service maintenance and runtime options'],
+    };
+    function loading(body, language) {
+        const modal=body.closest('.settings-modal');
+        modal.querySelector('.settings-navigation')?.remove();
+        modal.dataset.settingsView='loading';
+        const footer=modal.querySelector('.settings-footer');if(footer)footer.hidden=true;
+        body.innerHTML=`<div class="settings-skeleton" role="status" aria-live="polite"><span>${language.startsWith('zh')?'正在加载设置…':'Loading settings…'}</span><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></div>`;
+    }
 
     function mount(body, language) {
         const zh = language.startsWith('zh');
@@ -35,8 +47,22 @@ window.ClawcrossSettings = (() => {
         }
         layout.querySelector('.settings-navigation')?.remove();
         body.querySelector(':scope > .settings-hint')?.remove();
+        const restart = modal._settingsRestartButton ||= modal.querySelector('.settings-btn-restart');
+        if (restart) {
+            const maintenance=document.createElement('section');
+            maintenance.className='settings-group settings-maintenance';maintenance.dataset.settingsCategory='advanced';
+            maintenance.innerHTML=`<div class="settings-group-title">${text('服务维护','Service maintenance')}</div><div class="settings-group-body"><p class="settings-description">${text('需要应用主机配置变更时，重启 ClawCross 服务。','Restart ClawCross when needed to apply host configuration changes.')}</p></div>`;
+            maintenance.querySelector('.settings-group-body').appendChild(restart);body.appendChild(maintenance);
+        }
         const cards = [...body.children];
         for (const card of cards) card.dataset.settingsCategory ||= 'advanced';
+        let modelShown=false;
+        for(const card of cards){
+            if(!card.classList.contains('settings-group') || card.classList.contains('settings-maintenance'))continue;
+            const category=card.dataset.settingsCategory;
+            if(category==='advanced' || category==='account' && card.id!=='settings-user-password-section' || category==='models' && modelShown)card.classList.add('collapsed');
+            if(category==='models')modelShown=true;
+        }
         const importArea = body.querySelector('#settings-import-openclaw-btn')?.parentElement?.parentElement;
         if (importArea?.parentElement.classList.contains('settings-group-body')) {
             const details = document.createElement('details');
@@ -50,25 +76,46 @@ window.ClawcrossSettings = (() => {
         const nav = document.createElement('nav');
         nav.className = 'settings-navigation';
         nav.setAttribute('aria-label',text('设置分类','Settings sections'));
-        nav.innerHTML = `<label class="settings-search">${icon('M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0')}<input type="search" placeholder="${text('搜索设置','Search settings')}" aria-label="${text('搜索设置','Search settings')}"></label><div class="settings-nav-items">${sections.map(([id,cn,en,,,path])=>`<button type="button" data-settings-tab="${id}" aria-controls="settings-body">${icon(path)}<span>${text(cn,en)}</span></button>`).join('')}</div><p class="settings-nav-note">ClawCross</p>`;
+        nav.innerHTML = `<label class="settings-search">${icon('M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0')}<input type="search" placeholder="${text('搜索设置','Search settings')}" aria-label="${text('搜索设置','Search settings')}"></label><div class="settings-nav-items"><button type="button" data-settings-tab="overview" aria-controls="settings-body">${icon('M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z')}<span>${text('概览','Overview')}</span></button>${sections.map(([id,cn,en,,,path])=>`<button type="button" data-settings-tab="${id}" aria-controls="settings-body">${icon(path)}<span>${text(cn,en)}</span></button>`).join('')}</div><p class="settings-nav-note">ClawCross</p>`;
         layout.prepend(nav);
         const heading = document.createElement('div');
         heading.className = 'settings-page-heading';
-        heading.innerHTML = '<h3></h3><p></p>';
+        heading.innerHTML = `<button type="button" class="settings-back">${icon('M19 12H5M12 5l-7 7 7 7')}<span>${text('返回设置','All settings')}</span></button><h3 tabindex="-1"></h3><p></p>`;
         body.prepend(heading);
+        const overview=document.createElement('div');overview.className='settings-overview';
+        overview.innerHTML=sections.map(([id,cn,en,,,path])=>`<button type="button" class="settings-overview-item" data-open-settings="${id}"><span class="settings-category-icon" data-tone="${id}">${icon(path)}</span><span><strong>${text(cn,en)}</strong><small>${text(...summaries[id])}</small></span>${icon('M9 5l7 7-7 7')}</button>`).join('');
+        heading.after(overview);
         const empty = document.createElement('div');
         empty.className = 'settings-empty';
         empty.textContent = text('没有找到相关设置，试试“模型”或“公网”。','No matching settings. Try “model” or “public”.');
         empty.hidden = true;
         body.append(empty);
         const search = nav.querySelector('input');
-        let selected = 'models';
+        let selected = 'overview';
+        const footer=modal.querySelector('.settings-footer');
+        footer?.querySelector(':scope > div:empty')?.remove();
+        let note=footer?.querySelector('.settings-save-note');
+        if(footer && !note){note=document.createElement('span');note.className='settings-save-note';note.setAttribute('role','status');note.setAttribute('aria-live','polite');footer.prepend(note);}
+        let baseline=new Map([...body.querySelectorAll('[data-key]')].map(field=>[field,field.value]));
+        const dirtyKeys=()=>new Set([...baseline].filter(([field,value])=>field.isConnected && field.value!==value).map(([field])=>field.dataset.key));
+        function updateFooter(){
+            const count=dirtyKeys().size;
+            if(note)note.textContent=count?text(`${count} 项修改待保存`,`${count} unsaved ${count===1?'change':'changes'}`):'';
+            if(footer)footer.hidden=selected==='overview' && !search.value && !count;
+        }
+        body.oninput=body.onchange=()=>queueMicrotask(updateFooter);
+        body._settingsSaved=()=>{baseline=new Map([...body.querySelectorAll('[data-key]')].map(field=>[field,field.value]));updateFooter();};
         const searchable = card => [card.textContent,...[...card.querySelectorAll('[data-key]')].map(el=>el.dataset.key)].join(' ').toLowerCase();
         function show(category, query = '') {
             selected = category;
+            const home=category==='overview' && !query;
+            modal.dataset.settingsView=home?'overview':'category';
+            overview.hidden=!home;
+            heading.querySelector('.settings-back').hidden=home;
+            heading.querySelector('h3').textContent = home ? text('你想调整什么？','What would you like to change?') : query ? text('搜索结果','Search results') : text(...(sections.find(item=>item[0]===category) || sections[0]).slice(1,3));
             const section = sections.find(item=>item[0]===category) || sections[0];
-            heading.querySelector('h3').textContent = query ? text('搜索结果','Search results') : text(section[1],section[2]);
             heading.querySelector('p').textContent = query ? text('可按名称或配置项查找；切换分类不会丢失未保存的内容。','Search by name or setting key. Section changes preserve unsaved edits.') : text(section[3],section[4]);
+            heading.querySelector('p').hidden=home;
             let matches = 0;
             for (const card of cards) {
                 const meta = sections.find(item=>item[0]===card.dataset.settingsCategory);
@@ -82,10 +129,14 @@ window.ClawcrossSettings = (() => {
                     }
                 }
             }
-            empty.hidden = matches > 0;
+            empty.hidden = home || matches > 0;
             nav.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(!query && button.dataset.settingsTab===category)));
             body.scrollTop = 0;
+            updateFooter();
         }
+        const goHome=()=>{search.value='';show('overview');heading.querySelector('h3').focus({preventScroll:true});};
+        heading.querySelector('.settings-back').onclick=goHome;
+        overview.onclick=event=>{const button=event.target.closest('[data-open-settings]');if(button){show(button.dataset.openSettings);heading.querySelector('h3').focus({preventScroll:true});}};
         nav.addEventListener('click',event=>{
             const button = event.target.closest('[data-settings-tab]');
             if (!button) return;
@@ -109,7 +160,7 @@ window.ClawcrossSettings = (() => {
                 label.textContent = text(...labels[field.dataset.key]);
             }
         });
-        body.querySelectorAll('.settings-group-title').forEach(title=>{
+        body.querySelectorAll('.settings-group-title[onclick]').forEach(title=>{
             title.setAttribute('role','button');
             title.tabIndex = 0;
             title.setAttribute('aria-expanded',String(!title.parentElement.classList.contains('collapsed')));
@@ -142,5 +193,5 @@ window.ClawcrossSettings = (() => {
             setTimeout(()=>{button.textContent=original;},1800);
         } catch (_) {input.focus();input.select();}
     }
-    return {mount,publicAccessMarkup,copyPublicUrl,categoryForGroup:id=>categories[id] || 'advanced',reveal:target=>target && document.getElementById('settings-body')._revealSettings?.(target)};
+    return {mount,loading,publicAccessMarkup,copyPublicUrl,categoryForGroup:id=>categories[id] || 'advanced',reveal:target=>target && document.getElementById('settings-body')._revealSettings?.(target),saved:()=>document.getElementById('settings-body')?._settingsSaved?.()};
 })();

@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261023075820824549",
-  "candidate_id": "verification-loop-1",
+  "id": "vr_20261104043255443161",
+  "candidate_id": "verification-loop-4",
   "skill_name": "repo-skill",
   "strategy": "repair-only",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-23T07:58:20.824503+00:00"
+    "captured_at": "2026-11-04T04:32:55.443128+00:00"
   },
   "commands": [
     {
-      "command": "/home/ubuntu/.clawcross/venv/bin/python -m pytest test/test_cli_entrypoints.py test/test_optional_bootstrap.py test/test_windows_bootstrap.py test/test_public_access.py -q",
-      "ok": true,
-      "stdout": ".......................                                                  [100%]\n23 passed in 7.84s",
-      "stderr": ""
+      "command": "Playwright mobile Agent creation scroll regression",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Regrouping the create-Agent form under Advanced left legacy .create-agent-drawer-body overflow:hidden and an inner-only scroll area. This clipped new fields. Use one outer scrolling form and place the action footer outside it. The regression must expand Advanced and reach its last field with actual wheel and touch gestures, not merely assert no horizontal overflow. Its first bottom-field assertion mixed mouse wheel immediately after emulated touch and failed; verify each input mode separately. The corrected expanded-form regression passed and the first-companion creation test passed. A read-only live Studio check also reached scrollTop=446/max=446."
     }
   ],
-  "overall_ok": true,
-  "duration_ms": 8837,
-  "created_at": "2026-10-23T07:58:20.824580+00:00",
-  "asset_id": "sha256:ac20e0ff0ab7a4ce3fb278d26292afd9628693ac297bdfdecbf6433471dab6f4"
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-04T04:32:55.443182+00:00",
+  "asset_id": "sha256:85a1b23252fe90475556731fc3eab1e5a4bad89ad6df90a19c345acc149950f8"
 }

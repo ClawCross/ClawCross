@@ -18,8 +18,7 @@ window.AgentProfile=(()=>{
       ${remote?`<p class="ap-remote-note">${esc(text('由所属设备管理，仅显示群聊中共享的资料。','Managed by its own device. Only shared group information is shown.'))}</p>`:`<div class="ap-primary-actions">${action('chat',text('发消息','Message'),'message-plus',true)}${action('history',text('对话记录','History'),'history')}${action('settings',text('设置','Settings'),'settings')}</div>`}
       ${s.persona?`<section class="ap-card"><h3>${esc(text('关于这个伙伴','About this companion'))}</h3><p class="ap-bio">${esc(s.persona)}</p><details class="ap-persona"><summary>${esc(text('完整人设','Full persona'))}</summary><p>${esc(s.persona)}</p></details></section>`:''}
       <section class="ap-card"><h3>${esc(text('协作空间','Shared spaces'))}</h3>${groups.length?`<div class="ap-groups">${groups.map(g=>`<button type="button" data-profile-group="${esc(g.group_id)}">${icon('users')}<span>${esc(g.title||g.group_id)}</span>${icon('chevron-right')}</button>`).join('')}</div>`:`<p class="ap-muted">${esc(text('还没有加入群聊','No conversations yet'))}</p>`}${teams.length?`<div class="ap-teams">${teams.map(team=>`<span>${esc(team)}</span>`).join('')}</div>`:''}</section>
-      ${remote?`<section class="ap-card"><h3>${esc(text('所属设备','Hosted by'))}</h3><dl class="ap-facts"><dt>${esc(text('用户','User'))}</dt><dd>${esc(m.user_id||'—')}</dd><dt>${esc(text('设备','Device'))}</dt><dd>${esc(m.node_id||'—')}</dd></dl></section>`:`<section class="ap-card"><h3>${esc(text('能力','Capabilities'))}</h3><dl class="ap-facts"><dt>${esc(text('使用模型','Model'))}</dt><dd>${esc(model||text('尚未获取','Not available yet'))}</dd><dt>${esc(text('工具','Tools'))}</dt><dd>${esc(tools)}</dd></dl><details class="ap-skills"><summary>${esc(text('Skill 列表','Skills'))}<span data-profile-skill-count></span></summary><div data-profile-skills><p class="ap-muted">${esc(text('展开后加载','Expand to load'))}</p></div></details></section>
-      <section class="ap-card ap-advanced"><details><summary>${esc(text('高级设置','Advanced settings'))}</summary><div class="ap-setting-list">${action('workspaces',text('工作区','Workspaces'),'folder')}${action('approval',text('模式、沙盒与 KEEP Y','Mode, sandbox and KEEP Y'),'shield')}${action('model',text('模型与思考强度','Model and reasoning'),'settings')}${agent.platform==='webot'?action('context',text('上下文与压缩','Context and compaction'),'history'):''}</div></details></section>`}
+      ${remote?`<section class="ap-card"><h3>${esc(text('所属设备','Hosted by'))}</h3><dl class="ap-facts"><dt>${esc(text('用户','User'))}</dt><dd>${esc(m.user_id||'—')}</dd><dt>${esc(text('设备','Device'))}</dt><dd>${esc(m.node_id||'—')}</dd></dl></section>`:`<section class="ap-card"><h3>${esc(text('能力','Capabilities'))}</h3><dl class="ap-facts"><dt>${esc(text('使用模型','Model'))}</dt><dd>${esc(model||text('尚未获取','Not available yet'))}</dd><dt>${esc(text('工具','Tools'))}</dt><dd>${esc(tools)}</dd></dl><details class="ap-skills"><summary>${esc(text('Skill 列表','Skills'))}<span data-profile-skill-count></span></summary><div data-profile-skills><p class="ap-muted">${esc(text('展开后加载','Expand to load'))}</p></div></details></section>`}
       <section class="ap-card ap-address"><details><summary>${esc(text('Agent 标识','Agent identity'))}</summary><code>${esc(agent.agent_id)}</code><button type="button" data-profile-action="copy">${icon('copy')}<span>${esc(text('复制编号','Copy ID'))}</span></button></details></section>
       ${remote?'':`<div class="ap-danger">${action('delete',text('删除 Agent','Delete Agent'),'trash')}</div>`}`;
   }
@@ -33,11 +32,7 @@ window.AgentProfile=(()=>{
       switch(button.dataset.profileAction){
         case 'chat':closeAgentDetail();startPrivateChat(id);break;
         case 'history':showAgentHistory(id,agent.name);break;
-        case 'settings':openAgentSettingsSheet(id);break;
-        case 'workspaces':openWorkspaceSettings(id);break;
-        case 'approval':openRuntimeSettings(id,'approval');break;
-        case 'model':openAgentModelSettings(id);break;
-        case 'context':openRuntimeSettings(id,'context');break;
+        case 'settings':closeAgentDetail();AgentSettings.open(id);break;
         case 'delete':deleteAgentFromDetail(id);break;
         case 'copy':navigator.clipboard?.writeText(id).then(()=>toast(text('已复制','Copied'))).catch(()=>toast(id));break;
       }

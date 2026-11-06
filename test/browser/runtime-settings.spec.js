@@ -263,6 +263,7 @@ test('desktop new agent can select an external runtime and persists that platfor
   await page.route('**/v1/agents/creation-templates',route=>route.fulfill({json:{data:creation.templates}}));
   await page.goto('/studio');
   await page.evaluate(() => handleNewSession());
+  await page.locator('#studio-agent-advanced > summary').click();
   await page.locator('#agent-meta-platform').selectOption('codex');
   await page.locator('#agent-meta-name').fill('中文助手');
   await expect(page.locator('#agent-meta-component')).toContainText('尚未安装');
@@ -286,33 +287,13 @@ test('compacted context displays the smaller estimate instead of claiming the ol
   await expect(page.locator('#session-context-detail')).not.toContainText('合计为 API 实测值');
 });
 
-test('known reasoning levels save a session override while unknown models hide the field', async ({page}) => {
-  const requests = await setup(page, {capabilities:{model:'known-model',reasoning_effort_levels:['low','high'],reasoning_effort_default:'low'}});
+test('context settings preserve reasoning and do not duplicate model or workspace editors', async ({page}) => {
+  const requests=await setup(page,{session:{inference:{reasoning_level:7,reasoning_effort:''}},capabilities:{reasoning_effort_levels:['low','high'],reasoning_level_map:{'1':'low','7':'high'}}});
   await page.evaluate(()=>openRuntimeSettings('session-1'));
-  await expect(page.locator('[data-key="reasoning_effort"]')).toBeVisible();
-  await page.locator('[data-key="reasoning_effort"]').press('End');
+  await expect(page.locator('[data-section="inference"]')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'工作区目录'})).toHaveCount(0);
+  await page.locator('[data-key="preserve_recent_turns"]').fill('2');
   await page.locator('#runtime-settings-save').click();
   await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
-  expect(requests[0].settings).toEqual({inference:{reasoning_effort:'high'}});
-  await page.route('**/proxy_webot_runtime_settings**', route=>route.fulfill({json:{settings:defaults,model_capabilities:{model:'unknown',reasoning_effort_levels:[]}}}));
-  await page.evaluate(()=>loadRuntimeSettingsScope());
-  await expect(page.locator('[data-key="reasoning_effort"]')).toHaveCount(0);
-});
-
-test('unified effort saves a numeric Agent level without changing retained turns', async ({page}) => {
-  const map={'1':'low','2':'low','3':'low','4':'medium','5':'high','6':'high','7':'max'};
-  const requests=await setup(page,{capabilities:{model:'claude-opus-4-6',reasoning_effort_levels:['low','medium','high','max'],reasoning_level_map:map}});
-  await page.evaluate(()=>openRuntimeSettings('session-1'));
-  const slider=page.locator('[data-key="reasoning_level"]');
-  await expect(slider).toHaveAttribute('type','range');
-  await expect(page.locator('[data-reasoning-stop]')).toHaveCount(8);
-  await slider.press('End');
-  await expect(page.locator('[data-reasoning-stop][data-selected=true]')).toHaveAttribute('data-reasoning-stop','7');
-  await page.screenshot({path:'/tmp/clawcross-effort-slider.png'});
-  await expect(page.locator('[data-reasoning-output]')).toContainText('max');
-  await page.locator('#runtime-settings-save').click();
-  await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
-  expect(requests[0]).toMatchObject({session_id:'session-1',settings:{inference:{reasoning_level:7,reasoning_effort:''}}});
-  expect(requests[0].settings.context).toBeUndefined();
-  await expect(page.locator('[data-key="preserve_recent_turns"]')).toHaveValue('4');
+  expect(requests[0].settings).toEqual({context:{preserve_recent_turns:2}});
 });

@@ -13,11 +13,11 @@
     }
     return data;
   }
-  async function open(id = runtimeSettingsCurrentAgent()) {
+  async function open(id = runtimeSettingsCurrentAgent(), options = {}) {
     if (!id) { window.alert(text('请先选择一个本地 Agent。', 'Choose a local Agent first.')); return; }
     // An unsaved external profile still uses its native settings and explicit creation.
     if (window.ExternalAgentSettings?.currentTarget() === id && typeof _ocChatMode !== 'undefined' && _ocChatMode === 'acp') {
-      return openExternalAgentSettings(id);
+      return openExternalAgentSettings(id, options);
     }
     const token = ++sequence;
     let card, library, runtime;
@@ -32,7 +32,7 @@
       ]);
     } catch (error) { window.alert(error.message); return; }
     if (token !== sequence) return;
-    if (!['webot', 'http', 'llm'].includes(card.platform)) return openExternalAgentSettings(id);
+    if (!['webot', 'http', 'llm'].includes(card.platform)) return openExternalAgentSettings(id, options);
     if (card.platform !== 'webot') { window.alert(text('此 Agent 使用自己的 API 连接配置。', 'This Agent uses its own API connection settings.')); return; }
     document.getElementById('agent-model-settings')?.remove();
     const overlay = document.createElement('div');
@@ -101,6 +101,7 @@
       renderSelectedEffort();
     };
     const close = () => { ++sequence; overlay.remove(); previousFocus?.focus(); };
+    window.AgentSettings?.attachBack(overlay, close, options.onBack);
     overlay.querySelector('[data-close]').onclick = close;
     overlay.onclick = event => { if (event.target === overlay) close(); };
     overlay.onkeydown = event => {

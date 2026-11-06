@@ -62,22 +62,19 @@ test('Claude uses its own effort key and the dialog fits a mobile viewport', asy
   expect(box.y + box.height).toBeLessThanOrEqual(844);
 });
 
-test('external mode persists for the chosen Agent and workspace opens for that Agent', async ({page}) => {
+test('external settings delegate run mode and workspaces to their dedicated editors', async ({page}) => {
   await setup(page);
-  const modes=[];
-  await page.route('**/proxy_webot_runtime_settings', route=>{
-    const body=route.request().postDataJSON(); modes.push(body);
-    return route.fulfill({json:{effective_mode:body.settings.approval.mode}});
-  });
   await page.evaluate(()=>{
+    window.openRuntimeSettings=(id,tab)=>{window.__runtimeTarget={id,tab};};
     window.openWorkspaceSettings=id=>{window.__workspaceTarget=id;};
     return openExternalAgentSettings('session-1');
   });
   await expect(page.locator('[data-status]')).toContainText('连接成功');
-  await page.locator('#external-run-mode').selectOption('readonly');
-  await page.locator('[data-save]').click();
-  await expect(page.locator('[data-status]')).toContainText('已保存');
-  expect(modes).toEqual([{session_id:'session-1',settings:{approval:{mode:'readonly'}}}]);
+  await expect(page.locator('#external-run-mode')).toHaveCount(0);
+  await page.locator('[data-runtime]').click();
+  expect(await page.evaluate(()=>window.__runtimeTarget)).toEqual({id:'session-1',tab:'approval'});
+  await expect(page.locator('#external-agent-settings')).toHaveCount(0);
+  await page.evaluate(()=>openExternalAgentSettings('session-1'));
   await page.locator('summary').filter({hasText:'工作区'}).click();
   await page.locator('[data-workspaces]').click();
   expect(await page.evaluate(()=>window.__workspaceTarget)).toBe('session-1');
@@ -163,6 +160,25 @@ test('custom ACP launcher is saved per Agent and selecting it does not create a 
   await expect(page.locator('[data-status]')).toContainText('已保存');
   expect(created.platform).toBe('acp');
   expect(created.meta.acp).toEqual({agent_name:'',agent_command:'node "/Apps/MyAgent/Server.js" --stdio'});
+});
+
+test('an ACP draft can explicitly create its workspace settings without connecting or sending a message',async({page})=>{
+  await setup(page);let created=0,probes=0;
+  await page.route('**/v1/agents/draft-workspace/capabilities',route=>route.fulfill({status:404,json:{detail:'no Agent'}}));
+  await page.route('**/v1/agents',route=>{created++;return route.fulfill({json:{agent_id:'draft-workspace'}});});
+  await page.route('**/v1/agents/draft-workspace/test-connection',route=>{probes++;return route.fulfill({json:{}});});
+  await page.evaluate(()=>{
+    window._ocChatMode='acp';window._acpTool='codex';window.acpResolveSessionName=()=> 'draft-workspace';
+    window.studioEnsureAgent=(id,fields)=>fetch('/v1/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent_id:id,...fields})});
+    window.openWorkspaceSettings=id=>{window.__workspaceAgent=id;};
+    return openExternalAgentSettings();
+  });
+  expect(created).toBe(0);
+  await page.getByText('工作区',{exact:true}).click();
+  await page.getByRole('button',{name:'创建并配置工作区',exact:true}).click();
+  expect(created).toBe(1);expect(probes).toBe(0);
+  expect(await page.evaluate(()=>window.__workspaceAgent)).toBe('draft-workspace');
+  await expect(page.locator('#external-agent-settings')).toHaveCount(0);
 });
 
 

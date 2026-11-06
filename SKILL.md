@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-23T07:58:20.824679+00:00`
+- Updated at: `2026-11-04T04:32:55.443292+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `verification-loop-1`
+- Heuristic candidate: `verification-loop-4`
 - Heuristic score: `0.886`
 
 ### Trigger Summary
 
-Command exited with code 0. Command: /home/ubuntu/.clawcross/venv/bin/python -m pytest test/test_cli_entrypoints.py test/test_optional_bootstrap.py test/test_windows_bootstrap.py test/test_public_access.py -q. Signals: verification-loop. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: Playwright mobile Agent creation scroll regression. Signals: verification-loop. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -553,13 +553,12 @@ Command exited with code 0. Command: /home/ubuntu/.clawcross/venv/bin/python -m 
 
 ### Latest Trigger Command
 
-`/home/ubuntu/.clawcross/venv/bin/python -m pytest test/test_cli_entrypoints.py test/test_optional_bootstrap.py test/test_windows_bootstrap.py test/test_public_access.py -q`
+`Playwright mobile Agent creation scroll regression`
 
 ### Latest Error Excerpt
 
 ```text
-.......................                                                  [100%]
-23 passed in 7.84s
+Regrouping the create-Agent form under Advanced left legacy .create-agent-drawer-body overflow:hidden and an inner-only scroll area. This clipped new fields. Use one outer scrolling form and place the action footer outside it. The regression must expand Advanced and reach its last field with actual wheel and touch gestures, not merely assert no horizontal overflow. Its first bottom-field assertion mixed mouse wheel immediately after emulated touch and failed; verify each input mode separately. The corrected expanded-form regression passed and the first-companion creation test passed. A read-only live Studio check also reached scrollTop=446/max=446.
 ```
 
 ### Governance Snapshot
@@ -567,7 +566,7 @@ Command exited with code 0. Command: /home/ubuntu/.clawcross/venv/bin/python -m 
 - Suppressed signals: (none)
 - Consecutive repair cycles: `0`
 - Consecutive empty cycles: `0`
-- Recent failure ratio: `0.0`
+- Recent failure ratio: `1.0`
 
 ### Operating Adjustments
 
@@ -582,12 +581,11 @@ Command exited with code 0. Command: /home/ubuntu/.clawcross/venv/bin/python -m 
 
 ### Recent Evidence
 
-- `2026-10-23T07:58:20.824679+00:00` `repo-skill` — .......................                                                  [100%]
-23 passed in 7.84s
+- `2026-11-04T04:32:55.443292+00:00` `repo-skill` — Regrouping the create-Agent form under Advanced left legacy .create-agent-drawer-body overflow:hidden and an inner-only scroll area. This clip ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `verification-loop-1` score `0.886` — Tighten verification loops (intent `repair`)
+- `verification-loop-4` score `0.886` — Tighten verification loops (intent `repair`)
 
 ### Local State Snapshot
 

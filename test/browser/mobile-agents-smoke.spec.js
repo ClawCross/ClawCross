@@ -1,6 +1,79 @@
 const { test, expect } = require('@playwright/test');
 const creation=require('./agent-creation-fixture');
 
+test('new Agent advanced fields scroll as one page while creation actions stay visible',async({page})=>{
+  await page.setViewportSize({width:390,height:568});
+  await stub(page,{posts:[],control:[]});
+  await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
+  await page.goto('/mobile/group_chat');await page.evaluate(()=>showCreateAgentModal());
+  await page.locator('#create-agent-name').fill('我的伙伴');
+  await page.locator('#mobile-create-agent-advanced > summary').click();
+  await page.locator('#mobile-create-agent-advanced').evaluate(el=>el.querySelectorAll('details').forEach(details=>{details.open=true;}));
+  const body=page.locator('#create-agent-modal .create-agent-drawer-body');
+  const footer=page.locator('#create-agent-modal > .create-agent-footer');
+  await expect(footer).toBeInViewport();
+  const metrics=await body.evaluate(el=>({height:el.clientHeight,scroll:el.scrollHeight,overflow:getComputedStyle(el).overflowY}));
+  expect(metrics.overflow).toBe('auto');expect(metrics.scroll).toBeGreaterThan(metrics.height);
+  await expect(page.locator('#create-agent-panels-scroll')).toHaveCSS('overflow-y','visible');
+  const box=await body.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.wheel(0,1000);
+  await expect.poll(()=>body.evaluate(el=>el.scrollTop)).toBeGreaterThan(100);
+  await page.mouse.move(box.x+box.width-24,box.y+box.height/2);await page.mouse.wheel(0,2000);
+  await expect(page.locator('#create-agent-team')).toBeInViewport();
+  await body.evaluate(el=>el.scrollTop=0);
+  const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
+  const x=box.x+box.width-24,start=box.y+box.height*.8,end=box.y+box.height*.2;
+  for(let swipe=0;swipe<6;swipe++){
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:start}]});
+    for(let step=1;step<=6;step++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:start+(end-start)*step/6}]});
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  }
+  await expect.poll(()=>body.evaluate(el=>el.scrollTop)).toBeGreaterThan(50);
+  await expect(page.locator('#create-agent-team')).toBeInViewport();
+  await expect(footer).toBeInViewport();await expect(page.locator('#create-agent-name')).toHaveValue('我的伙伴');
+  await page.setViewportSize({width:390,height:420});await expect(footer).toBeInViewport();
+  await page.screenshot({path:'/tmp/clawcross-new-agent-scroll-fixed.png'});
+  await cdp.detach();
+});
+
+test('Contacts expose every ACP platform immediately and create a configurable Agent without a first prompt',async({page})=>{
+  await stub(page,{posts:[],control:[]});
+  await page.setViewportSize({width:390,height:844});
+  await page.route('**/proxy_acpx_status',route=>route.fulfill({json:{tools:['codex','claude']}}));
+  await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
+  await page.route('**/v1/connections',route=>route.fulfill({json:{data:[]}}));
+  const created=[],errors=[];let probes=0;
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.route(/\/v1\/agents(\?.*)?$/,route=>{
+    if(route.request().method()!=='POST')return route.fulfill({json:{data:[LEAD,CODEX]}});
+    const fields=route.request().postDataJSON();created.push(fields);return route.fulfill({json:{agent_id:'new-configurable-acp',...fields}});
+  });
+  await page.route('**/v1/agents/new-configurable-acp/capabilities',route=>route.fulfill({json:{platform:'acp',transport:'acpx',settings:{clawcross_tools:true},config_options:[],launcher:{agent_command:'my-agent --acp'}}}));
+  await page.route('**/v1/agents/new-configurable-acp/test-connection',route=>{probes++;return route.fulfill({json:{}});});
+  await page.goto('/mobile/group_chat');
+  await page.evaluate(()=>{window.startPrivateChat=async()=>true;return showCreateAgentModal();});
+  const companion=page.locator('#create-agent-companion');
+  for(const platform of ['codex','claude','codebuddy','zcode','acp'])await expect(companion.locator(`option[value="${platform}"]`)).toHaveCount(1);
+  let release;const pending=new Promise(resolve=>{release=resolve;});
+  await page.route(/\/proxy_visual\/experts/,async route=>{await pending;return route.fulfill({json:[]});});
+  await companion.evaluate(select=>{select.closest('details').open=true;});
+  await companion.selectOption('acp');
+  await companion.selectOption('webot');release();
+  await expect(page.locator('#create-agent-panel-acp')).toHaveAttribute('data-ready','true');
+  await expect(companion).toHaveValue('webot');await expect(page.locator('#create-agent-panel-webot')).toBeVisible();
+  await companion.selectOption('acp');
+  await page.locator('#ca-acp-launch [data-launch-value]').fill('my-agent --acp');
+  await companion.selectOption('codebuddy');await companion.selectOption('acp');
+  await expect(page.locator('#ca-acp-launch [data-launch-value]')).toHaveValue('my-agent --acp');
+  await page.locator('#create-agent-name').fill('待配置伙伴');expect(created).toHaveLength(0);
+  await page.locator('#ca-acp-submit').click();
+  await expect(page.locator('#external-agent-settings')).toBeVisible();
+  expect(created).toHaveLength(1);expect(probes).toBe(0);
+  expect(created[0]).toMatchObject({name:'待配置伙伴',platform:'acp',meta:{acp:{clawcross_tools:true,agent_command:'my-agent --acp'}}});
+  await page.getByText('工作区',{exact:true}).click();
+  await expect(page.locator('[data-workspaces]')).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
 test('partner profiles keep common actions simple, load skills on demand and keep remote agents read-only',async({page})=>{
   await stub(page,{posts:[],control:[]});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/v1/agents/s_lead',route=>route.fulfill({json:{...LEAD,name:'负责跨设备协作的伙伴',status:{state:'running'},settings:{...LEAD.settings,llm:{model:'test-model'},persona:'认真负责的协作伙伴。'.repeat(30)},groups:[{group_id:'g_dev',title:'Dev'}]}}));
@@ -166,10 +239,12 @@ test('contact creation offers group roles and keeps capabilities in advanced set
   expect(await page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets').id)).toBe('personal');
   await page.evaluate(()=>setCreateAgentMode('webot'));
   await expect.poll(()=>page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets').id)).toBe('group');
+  if(!await page.locator('#mobile-create-agent-advanced').evaluate(el=>el.open))await page.locator('#mobile-create-agent-advanced > summary').click();
   await page.locator('#mobile-agent-capability-presets > summary').click();
   await page.locator('#mobile-agent-creation-presets [data-preset="admin"]').click();
   expect(await page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets').id)).toBe('admin');
   await page.locator('#mobile-agent-creation-presets [data-preset="group"]').click();
+  if(!await page.locator('#mobile-create-agent-advanced').evaluate(el=>el.open))await page.locator('#mobile-create-agent-advanced > summary').click();
   await page.locator('#mobile-agent-capability-presets > summary').click();
   await page.locator('#create-agent-name').fill('科学顾问');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -275,15 +350,25 @@ test('mobile empty chats create a first companion once and open its private conv
   expect(created).toHaveLength(0);expect(privateChats).toHaveLength(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.locator('#first-companion-create').click();
+  await expect(page.locator('#create-agent-modal')).toHaveClass(/show/);
+  await expect(page.locator('#create-agent-name')).toBeFocused();
+  await expect(page.locator('#mobile-create-agent-advanced')).not.toHaveAttribute('open','');
+  await expect(page.locator('#mobile-agent-creation-basics [data-style=warm]')).toHaveAttribute('aria-pressed','true');
+  expect(created).toHaveLength(0);
+  await page.locator('#create-agent-name').fill('小星');
+  await page.screenshot({path:'/tmp/clawcross-first-companion-name.png'});
+  await page.locator('#create-agent-submit').click();
   await expect.poll(()=>created.length).toBe(1);
-  await expect(page.locator('#first-companion-create')).toBeDisabled();
+  await expect(page.locator('#create-agent-submit')).toBeDisabled();
   await page.evaluate(()=>createFirstCompanion());
   expect(created).toHaveLength(1);
   release();
   await expect.poll(()=>privateChats.length).toBe(1);
-  expect(created[0]).toMatchObject({name:'我的伙伴',platform:'webot',creation_template:'personal'});
+  expect(created[0]).toMatchObject({name:'小星',platform:'webot',creation_template:'personal'});
+  expect(created[0].persona).toContain('自然、亲切');
+  expect(created[0].tools).not.toContain('manage_team');
   expect(privateChats[0]).toEqual({kind:'direct',agents:['first-companion']});
-  await expect(page.locator('#chat-title')).toHaveText('我的伙伴');
+  await expect(page.locator('#chat-title')).toHaveText('小星');
   await expect(page.locator('#first-companion-create')).toHaveCount(0);
 });
 

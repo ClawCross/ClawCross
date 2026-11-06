@@ -169,3 +169,47 @@
         flex-shrink: 0;
     }
 }
+
+/* A directory first; individual sections keep the original form elements. */
+#settings-modal .settings-title-block>span{display:none}
+#settings-modal .settings-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+#settings-modal .settings-overview-item{display:flex;align-items:center;gap:13px;min-width:0;min-height:108px;padding:18px;border:1px solid var(--ui-hairline);border-radius:16px;background:var(--ui-surface);color:var(--ui-text);text-align:left;font:inherit;cursor:pointer;transition:background .15s,border-color .15s,transform .15s}
+#settings-modal .settings-overview-item:hover{background:var(--ui-canvas);border-color:var(--ui-accent-ring);transform:translateY(-1px)}
+#settings-modal .settings-overview-item>span:nth-child(2){display:grid;gap:7px;flex:1;min-width:0}
+#settings-modal .settings-overview-item strong{font-size:14px;font-weight:600;line-height:1.4}
+#settings-modal .settings-overview-item small{font-size:12px;line-height:1.6;color:var(--ui-text-2)}
+#settings-modal .settings-overview-item>svg{width:15px;height:15px;flex-shrink:0;color:var(--ui-text-3)}
+#settings-modal .settings-category-icon{display:grid;place-items:center;width:43px;height:43px;border-radius:13px;flex-shrink:0;background:#eaf3ff;color:#1675e7}
+#settings-modal .settings-category-icon svg{width:22px;height:22px}
+#settings-modal [data-tone=public]{background:#e5f6ef;color:#188765}
+#settings-modal [data-tone=channels]{background:#f0eaff;color:#7953cb}
+#settings-modal [data-tone=integrations]{background:#fff2e6;color:#bc7429}
+#settings-modal [data-tone=account]{background:#e7f4fa;color:#237d9d}
+#settings-modal [data-tone=advanced]{background:var(--ui-surface-2);color:var(--ui-text-2)}
+#settings-modal .settings-back{display:flex;align-items:center;gap:6px;margin:0 0 15px;padding:0;min-height:32px;border:0;background:transparent;color:var(--ui-accent);font:inherit;font-size:13px;cursor:pointer}
+#settings-modal .settings-back svg{width:17px;height:17px}
+#settings-modal .settings-page-heading h3:focus{outline:none}
+#settings-modal .settings-save-note{flex:1;min-width:0;font-size:12px;line-height:1.5;color:var(--ui-accent)}
+#settings-modal .settings-maintenance .settings-btn-restart{min-height:40px;padding:10px 16px;background:var(--ui-surface-2);color:var(--ui-text);border:1px solid var(--ui-hairline)}
+#settings-modal .settings-body{animation:settings-content-in .18s ease-out}
+#settings-modal [data-settings-view=loading] .settings-body{grid-column:1/-1}
+#settings-modal .settings-skeleton{display:grid;gap:14px;padding:8px 0;color:var(--ui-text-2);font-size:13px}
+#settings-modal .settings-skeleton>span{margin-bottom:14px}
+#settings-modal .settings-skeleton i{display:block;height:76px;border-radius:14px;background:linear-gradient(100deg,var(--ui-surface-2) 25%,var(--ui-canvas) 50%,var(--ui-surface-2) 75%);background-size:200% 100%;animation:settings-loading 1.3s linear infinite}
+@keyframes settings-loading{to{background-position:-200% 0}}
+@keyframes settings-content-in{from{opacity:.6;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(max-width:700px){
+  #settings-modal .settings-navigation{padding:12px 16px;border-bottom:1px solid var(--ui-hairline);gap:0;background:var(--ui-surface)}
+  #settings-modal .settings-nav-items,#settings-modal .settings-nav-note{display:none}
+  #settings-modal .settings-body{padding:20px 16px 28px;scrollbar-gutter:auto}
+  #settings-modal .settings-page-heading{margin-bottom:18px}
+  #settings-modal .settings-page-heading h3{font-size:21px}
+  #settings-modal .settings-overview{grid-template-columns:minmax(0,1fr);gap:9px}
+  #settings-modal .settings-overview-item{min-height:76px;padding:13px 14px;border-radius:14px}
+  #settings-modal .settings-overview-item>span:nth-child(2){gap:3px}
+  #settings-modal .settings-overview-item strong{font-size:14px}
+  #settings-modal .settings-overview-item small{font-size:12px}
+  #settings-modal .settings-save-note{flex:1 0 100%;font-size:12px}
+  #settings-modal .settings-save-note:empty{display:none}
+}
+@media(prefers-reduced-motion:reduce){#settings-modal .settings-body,#settings-modal .settings-skeleton i{animation:none}#settings-modal .settings-overview-item{transition:none;transform:none}}

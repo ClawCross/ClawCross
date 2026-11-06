@@ -30,7 +30,7 @@
     cache.set(id, {value, at: Date.now()});
     return value;
   }
-  async function open(id = currentTarget(), refreshed = null) {
+  async function open(id = currentTarget(), refreshed = null, options = {}) {
     if (!id) return;
     const sequence = ++openSequence;
     let card;
@@ -69,10 +69,10 @@
     };
     const settings = card.settings || {};
     const connections=window.DeviceConnections ? await DeviceConnections.list().catch(()=>[]) : [];
-    const options = Array.isArray(card.config_options) ? card.config_options : [];
+    const configOptions = Array.isArray(card.config_options) ? card.config_options : [];
     const platformLabel = {acp:'自定义 ACP',codebuddy:'CodeBuddy',zcode:'ZCode'}[card.platform] || card.platform;
     overlay.innerHTML = `<section class="external-settings-dialog">
-      <header><h2 id="external-settings-title">${escape(platformLabel)} · Agent 设置</h2><button type="button" data-close aria-label="关闭">×</button></header>
+      <header><h2 id="external-settings-title">${escape(platformLabel)} · 模型、工具与连接</h2><button type="button" data-close aria-label="关闭">×</button></header>
       ${uncreated ? '<p role="status" data-uncreated>此 Agent 尚未创建。点击下方创建按钮后才会创建。</p>' : ''}
       <p>设置仅用于这个 Agent，从下一轮调用生效。原生模式和权限由外部 Agent 执行。</p>
       <div class="external-settings-fields">
@@ -80,14 +80,12 @@
       <label>运行设备<select id="external-connection"><option value="">本机</option>${connections.map(row=>`<option value="${escape(row.id)}" ${card.connection_id===row.id?'selected':''}>${escape(row.name)} · SSH</option>`).join('')}</select></label>
       <label>远端原生工作目录<input id="external-remote-cwd" value="${escape(card.remote_cwd||'')}" placeholder="留空使用远端独立工作目录"></label>
       <button type="button" data-devices>管理设备与 SSH 连接</button>
-      <label>ClawCross 运行模式<select id="external-run-mode">
-        ${[['chat','交流 · 不调用工具'],['readonly','只读 · 阅读与查询'],['manual','人工审核'],['auto','自动审核'],['bypass','不审核']].map(([value,label])=>`<option value="${value}" ${value === (refreshed?.runMode || card.mode || 'auto') ? 'selected' : ''}>${label}</option>`).join('')}
-      </select><small>仅此 Agent 生效，约束 ClawCross 工具及本轮 acpx 权限；原生模式在下方适配器选项中单独设置。</small></label>
+      <button type="button" data-runtime>模式、沙盒与授权 →</button>
       <details><summary>工作区</summary><p>原生 CLI 当前目录：<code>${escape(card.native_workspace?.cwd || '连接后显示')}</code></p>
         <small>${card.native_workspace?.pinned ? '已连接的会话保留原生目录，避免丢失历史。下方可以调整 ClawCross 文件和命令工具可用的目录。' : '首次连接使用 Agent 工作区作为 acpx 工作目录。可以先设置目录，再测试连接。'}</small>
-        <button type="button" data-workspaces ${uncreated ? 'disabled' : ''}>配置这个 Agent 的工作区</button>
+        <button type="button" data-workspaces>${uncreated ? '创建并配置工作区' : '配置这个 Agent 的工作区'}</button>
       </details>
-      ${options.length ? options.map((item, index) => {
+      ${configOptions.length ? configOptions.map((item, index) => {
         const selected = settings.config_options?.[item.id] ?? item.currentValue ?? '';
         if (window.ReasoningLevels && Object.keys(item.reasoning_level_map || {}).length) {
           const level = settings.reasoning_level === 0 ? 0 : ReasoningLevels.selected(settings.reasoning_level,selected);
@@ -122,7 +120,9 @@
         else if (!event.shiftKey && document.activeElement === elements.at(-1)) { event.preventDefault(); elements[0]?.focus(); }
       }
     });
+    window.AgentSettings?.attachBack(overlay, close, options.onBack);
     overlay.querySelector('[data-close]').onclick = close;
+    overlay.querySelector('[data-runtime]').onclick = () => { close(); openRuntimeSettings(id, 'approval', {onBack:() => open(id, null, options)}); };
     overlay.querySelector('[data-devices]').onclick = async () => {
       await DeviceConnections.open();
       const select=overlay.querySelector('#external-connection'),selected=select.value;
@@ -167,7 +167,7 @@
         const toolList = overlay.querySelector('#external-tool-list').value;
         const display = {...fresh, settings:{...fresh.settings, ...draft,
           config_options:{...fresh.settings?.config_options, ...changed}}};
-        await open(id, {card:display, runMode:overlay.querySelector('#external-run-mode').value, focus:previousFocus, status:'连接成功，配置已更新'});
+        await open(id, {card:display, focus:previousFocus, status:'连接成功，配置已更新'}, options);
         document.querySelector('#external-tool-list').value = toolList;
         document.querySelector('#external-agent-settings [data-test]').focus();
         syncMenu();
@@ -190,24 +190,26 @@
           config_options, ...(effortInput ? {reasoning_level:Number(effortInput.value)} : {}), clawcross_tools: overlay.querySelector('#external-tools').checked,
           timeout_sec: Number(overlay.querySelector('#external-timeout').value),
           ttl_sec: Number(overlay.querySelector('#external-ttl').value), tools: names.length ? names : null});
-        const runMode = overlay.querySelector('#external-run-mode').value;
-        if (runMode !== (card.mode || 'auto')) {
-          const runtime = await request('/proxy_webot_runtime_settings', 'POST', {session_id:id, settings:{approval:{mode:runMode}}});
-          saved.mode = runtime.effective_mode || runMode;
-        }
         cache.set(id, {value: saved, at: Date.now()});
         card = saved;
-        if (typeof getMobileRuntimeAgentId === 'function' && getMobileRuntimeAgentId() === id && typeof setRunMode === 'function') setRunMode(saved.mode || runMode);
         status.textContent = '已保存，下一轮生效';
         syncMenu();
       } catch (error) { status.textContent = error.message; }
       finally { this.disabled = false; if (overlay.isConnected) this.focus(); }
     };
-    overlay.querySelector('[data-workspaces]').onclick = () => { close(); openWorkspaceSettings(id); };
+    overlay.querySelector('[data-workspaces]').onclick = async function () {
+      this.disabled = true;
+      try {
+        await createIfNeeded();
+        await saveConnection();
+        if (overlay.isConnected) { close(); await openWorkspaceSettings(id, {onBack:() => open(id, null, options)}); }
+      } catch (error) { if (overlay.isConnected) overlay.querySelector('[data-status]').textContent = error.message; }
+      finally { if (overlay.isConnected) this.disabled = false; }
+    };
     document.body.appendChild(overlay);
     AcpLaunchSettings.mount('external-acp-launch',card.platform,card.launcher || {},Boolean(card.native_workspace?.pinned));
     overlay.querySelector('[data-close]').focus();
-    if (!uncreated && !refreshed) overlay.querySelector('[data-test]').click();
+    if (!uncreated && !refreshed && options.testConnection !== false) overlay.querySelector('[data-test]').click();
   }
   async function syncMenu(id = currentTarget()) {
     let card;
@@ -238,5 +240,5 @@
     if (typeof syncAgentRunMode === 'function') syncAgentRunMode(id);
   }
   window.ExternalAgentSettings = {open, capabilities, syncMenu, currentTarget, peek: id => cache.get(id)?.value};
-  window.openExternalAgentSettings = id => open(id || currentTarget());
+  window.openExternalAgentSettings = (id, options) => open(id || currentTarget(), null, options);
 })();

@@ -1948,18 +1948,7 @@ function renderAgentCenterDetail() {
     const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
     const context = agent.status?.context || {};
     const contextPercent = Math.max(0, Math.min(100, Number(context.percent || 0)));
-    const toolsSetting = agent.settings?.tools;  // the agent's own tools; null: all of them
-    const unrestricted = toolsSetting == null;
-    const noTools = Array.isArray(toolsSetting) && toolsSetting.length === 0;
-    const enabledTools = new Set(unrestricted ? allTools.map(tool => tool.name) : toolsSetting);
     const personaText = agent.settings?.persona || '';
-    const toolsMarkup = webot
-        ? (allTools.length ? allTools.map(tool => `
-            <label class="agent-dex-tool" title="${agentCenterEscape(tool.description || '')}">
-                <input class="agent-dex-tool-checkbox" type="checkbox" value="${agentCenterEscape(tool.name)}" ${enabledTools.has(tool.name) ? 'checked' : ''}>
-                <span>${agentCenterEscape(tool.name)}</span>
-            </label>`).join('') : `<span class="agent-dex-note">${agentCenterEscape(t('loading'))}</span>`)
-        : '';
     const button = (action, label, extra = '') => actions.includes(action)
         ? `<button class="agent-center-btn ${extra}" type="button" onclick="controlAgentFromCenter('${action}', this)">${agentCenterEscape(t(label))}</button>` : '';
 
@@ -1982,6 +1971,7 @@ function renderAgentCenterDetail() {
                     <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(state)}</dd>
                 </dl>
             </section>
+            <section class="agent-dex-section"><button class="agent-center-btn primary" type="button" onclick="AgentSettings.open('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? 'Agent 设置' : 'Agent settings'}</button></section>
             ${webot ? `
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_context'))}</div>
@@ -1989,27 +1979,10 @@ function renderAgentCenterDetail() {
                 <div class="agent-dex-context-meter"><span style="width:${contextPercent}%"></span></div>
                 <div class="agent-dex-context-row"><span>${agentCenterFormatTokens(context.tokens)} / ${agentCenterFormatTokens(context.budget)} tokens</span><span>${agentCenterEscape(t('agent_center_remaining'))} ${agentCenterFormatTokens(context.remaining)}</span></div>
                 <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button></div>
-            </section>` : !['http', 'llm'].includes(agent.platform) ? `<section class="agent-dex-section"><button class="agent-center-btn" type="button" onclick="openExternalAgentSettings('${agent.agent_id}')">${agentCenterEscape(t('agent_center_native_settings'))}</button></section>` : ''}
-            <details class="agent-dex-section agent-dex-advanced" data-agent-id="${agentCenterEscape(agent.agent_id)}" ontoggle="if(this.open) loadAgentCenterRuntimeSettings(this)">
-                <summary><svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg><span>${currentLang === 'zh-CN' ? '高级设置' : 'Advanced settings'}</span><svg class="ui-icon"><use href="/static/icons.svg#chevron-down"/></svg></summary>
-                <div data-runtime-summary role="status"></div>
-                <p class="agent-dex-note">${currentLang === 'zh-CN' ? 'Y 仅允许一次；KEEP Y 记住当前 Agent 的具体授权。沙盒授权限定目标和读写类型，其他工具限定完整参数；严格模式不使用提权记录。' : 'Y allows once; KEEP Y remembers a specific grant for this Agent. Sandbox grants cover a target and access type; other tools cover exact arguments. Strict mode ignores escalation grants.'}</p>
-                <div class="agent-dex-actions"><button type="button" class="agent-center-btn" onclick="openWorkspaceSettings('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? '工作区' : 'Workspaces'}</button><button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('approval')">${currentLang === 'zh-CN' ? '配置模式、沙盒与授权' : 'Configure mode, sandbox and grants'}</button>${webot ? `<button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('context')">${currentLang === 'zh-CN' ? '上下文与压缩' : 'Context and compaction'}</button><button type="button" class="agent-center-btn" onclick="openAgentModelSettings('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? '模型与思考' : 'Model and reasoning'}</button>` : ''}</div>
-            </details>
+            </section>` : ''}
             <section class="agent-dex-section agent-dex-skills-section">
                 <div class="agent-dex-section-title">${currentLang === 'zh-CN' ? '工作区 Skills' : 'Workspace skills'}</div>
                 <div id="agent-dex-skills-list" class="agent-dex-skills-list" data-agent-id="${agentCenterEscape(agent.agent_id)}"><span class="agent-dex-note">${agentCenterEscape(t('loading'))}</span></div>
-            </section>
-            <section class="agent-dex-section">
-                <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
-                <div class="agent-dex-fields">
-                    <label>Name<input id="agent-dex-name" value="${agentCenterEscape(agent.name)}" maxlength="120"></label>
-                    <label>Persona<textarea id="agent-dex-persona" rows="5">${agentCenterEscape(personaText)}</textarea></label>
-                </div>
-                ${webot ? `
-                <div class="agent-dex-context-row" style="margin:12px 0 7px;"><span>${agentCenterEscape(unrestricted ? t('agent_center_unrestricted_tools') : (noTools ? t('agent_center_no_tools') : `${enabledTools.size}/${allTools.length}`))}</span><span><button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=true)">All</button> <button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=false)">None</button></span></div>
-                <div class="agent-dex-tools">${toolsMarkup}</div>` : ''}
-                <button class="agent-center-btn primary" style="margin-top:11px;width:100%;" type="button" onclick="saveAgentCenterSettings(this)">${agentCenterEscape(t('agent_center_save'))}</button>
             </section>
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_runtime_control'))}</div>
@@ -2128,32 +2101,6 @@ async function ensureAgent(fields) {
     } catch (error) {
         if (error.status === 409 && error.payload?.detail?.agent) return error.payload.detail.agent;
         throw error;
-    }
-}
-
-async function saveAgentCenterSettings(button) {
-    const agent = agentCenterSelectedAgent();
-    if (!agent) return;
-    const settings = {persona: document.getElementById('agent-dex-persona')?.value?.trim() || ''};
-    if (agent.platform === 'webot') {
-        const checked = [...document.querySelectorAll('.agent-dex-tool-checkbox:checked')].map(el => el.value);
-        settings.tools = checked.length < allTools.length ? checked : null;
-    }
-    button.disabled = true;
-    try {
-        const updated = await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agent.agent_id)}`, {
-            name: document.getElementById('agent-dex-name')?.value?.trim() || agent.name,
-            settings,
-        });
-        Object.assign(agent, updated);
-        renderAgentCenterGrid();
-        renderAgentCenterDetail();
-        setAgentCenterDetailNotice(t('agent_center_save_ok'));
-        await refreshStudioConversations();
-    } catch (error) {
-        setAgentCenterDetailNotice(`${t('agent_center_save_failed')}: ${error.message || error}`, true);
-    } finally {
-        button.disabled = false;
     }
 }
 
@@ -2891,9 +2838,19 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
     agentMetaPlatformChanged();
     const modal = document.getElementById('agent-meta-modal');
     document.getElementById('agent-meta-modal-title').textContent =
-        mode === 'edit' ? '✏️ Edit Agent Settings' : '🤖 New Agent Settings';
+        currentLang === 'zh-CN' ? (mode === 'edit' ? '伙伴设置' : '认识你的新伙伴') : (mode === 'edit' ? 'Companion settings' : 'Meet your new companion');
+    document.getElementById('studio-agent-advanced').open=false;
+    document.querySelector('#studio-agent-advanced > summary').textContent=currentLang==='zh-CN'?'高级设置':'Advanced settings';
+    document.getElementById('agent-meta-name-label').textContent=currentLang==='zh-CN'?'伙伴叫什么？':'What shall we call your companion?';
+    document.getElementById('agent-meta-name').placeholder=currentLang==='zh-CN'?'例如：小曼、阿星':'For example: Luna or Nova';
+    document.querySelector('#agent-meta-modal .agent-meta-btn-save').textContent=currentLang==='zh-CN'?'开始认识':'Meet my companion';
+    document.querySelector('#agent-meta-modal .agent-meta-btn-cancel').textContent=currentLang==='zh-CN'?'取消':'Cancel';
+    AgentCreationBasics.mount('studio-agent-creation-basics');
     document.getElementById('agent-meta-name').value = (existingMeta && existingMeta.name) || '';
     document.getElementById('agent-meta-title').value = (existingMeta && existingMeta.title) || '';
+    document.getElementById('agent-meta-title').hidden = mode === 'create';
+    document.querySelector('[data-agent-conversation-title]').hidden = mode === 'create';
+    document.querySelectorAll('#agent-meta-modal .agent-meta-category').forEach(section => { section.open = false; });
 
     // ── Populate tools checkbox list ──
     const toolsContainer = document.getElementById('agent-meta-tools-container');
@@ -2921,18 +2878,16 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
     // The agent's persona is its own text; a library persona is copied into it.
     document.getElementById('agent-meta-persona').value = (existingMeta && existingMeta.persona) || '';
     const librarySelect = document.getElementById('agent-meta-persona-library');
-    try {
-        const params = new URLSearchParams({ full: '1' });
-        if (_currentAgentTeam) params.set('team', _currentAgentTeam);
-        const r = await fetch('/proxy_visual/experts?' + params);
-        _agentMetaPersonas = (await r.json()).filter(e => e.tag && e.persona);
-        librarySelect.innerHTML = '<option value="">—</option>' + _agentMetaPersonas.map((e, i) =>
-            `<option value="${i}">${escapeHtml(e.name || e.tag)} (${escapeHtml(e.tag)})</option>`).join('');
-    } catch (e) {
-        console.warn('Failed to load the persona library', e);
-    }
-    librarySelect.value = '';
-    if(mode==='create' && window.AgentCreationPresets)await AgentCreationPresets.mount('studio-agent-creation-presets',row=>{
+    _agentMetaPersonas=[];
+    librarySelect.innerHTML='<option value="">—</option>';
+    const params = new URLSearchParams({full:'1'});
+    if (_currentAgentTeam) params.set('team',_currentAgentTeam);
+    void fetch('/proxy_visual/experts?' + params).then(r=>r.json()).then(rows=>{
+        if (_agentMetaSessionId!==sessionId || modal.style.display==='none') return;
+        _agentMetaPersonas=(Array.isArray(rows)?rows:[]).filter(e=>e.tag && e.persona);
+        librarySelect.innerHTML='<option value="">—</option>'+_agentMetaPersonas.map((e,i)=>`<option value="${i}">${escapeHtml(e.name || e.tag)}</option>`).join('');
+    }).catch(error=>console.warn('Failed to load the persona library',error));
+    if(mode==='create' && window.AgentCreationPresets)void AgentCreationPresets.mount('studio-agent-creation-presets',row=>{
         if(!row){_syncAgentMetaTemplatePlatform();return;}
         document.querySelectorAll('.agent-meta-tool-cb').forEach(checkbox=>{checkbox.checked=row.tools===null || row.tools.includes(checkbox.value);});
         document.getElementById('studio-agent-template-hint').textContent=currentLang==='zh-CN'?(row.id==='admin'?'高权限管理能力，默认人工审核。':row.id==='group'?'严格沙盒与独立工作区，不开放跨会话指挥。':'模式、沙盒与工具范围会随模板保存。'):(row.id==='admin'?'Administrative capabilities with human review.':row.id==='group'?'Strict isolation and a private workspace, without cross-session control.':'The template saves mode, sandbox and tool scope.');
@@ -2980,7 +2935,8 @@ function closeAgentMetaModal() {
 
 function _collectAgentMeta() {
     const name = document.getElementById('agent-meta-name').value.trim() || null;
-    const persona = document.getElementById('agent-meta-persona').value.trim();
+    const role = document.getElementById('agent-meta-persona').value.trim();
+    const persona = _agentMetaMode==='create'?AgentCreationBasics.persona('studio-agent-creation-basics',role):role;
 
     // The agent's own tools: all of them (null), or the ones checked.
     const checkboxes = [...document.querySelectorAll('.agent-meta-tool-cb')];
@@ -2996,6 +2952,12 @@ function _collectAgentMeta() {
 }
 
 async function submitAgentMeta() {
+    if (document.querySelector('#agent-meta-modal .agent-meta-btn-save').disabled) return;
+    if (_agentMetaMode==='create' && !document.getElementById('agent-meta-name').value.trim()) {
+        document.getElementById('agent-meta-error').textContent=currentLang==='zh-CN'?'先给伙伴取个名字吧。':'Give your companion a name first.';
+        document.getElementById('agent-meta-name').focus();
+        return;
+    }
     const meta = _collectAgentMeta();
     if (_agentMetaMode === 'edit' && _agentMetaSessionId) {
         try {
@@ -3214,13 +3176,7 @@ function _sortAgentEntriesByTime(agents) {
 }
 
 async function editAgentMeta(sessionId) {
-    // Load current meta from backend
-    let existingMeta = {};
-    try {
-        const agentResult = await _loadAgentMetaMap(_currentAgentTeam);
-        existingMeta = agentResult.map[sessionId] || {};
-    } catch (e) { /* ignore */ }
-    await openAgentMetaModal('edit', sessionId, existingMeta);
+    return AgentSettings.open(sessionId);
 }
 
 function handleNewSession() {
@@ -5786,7 +5742,7 @@ async function openSettings(options = {}) {
     const body = document.getElementById('settings-body');
     _settingsFocusTarget = options && options.focus ? String(options.focus) : '';
     modal.style.display = 'flex';
-    body.innerHTML = `<div class="settings-loading">${t('loading')}</div>`;
+    ClawcrossSettings.loading(body,currentLang);
     try {
         const r = await fetch('/proxy_settings_full');
         const data = await r.json();
@@ -5794,7 +5750,7 @@ async function openSettings(options = {}) {
         _settingsCache = data.settings;
         renderSettings(data.settings);
     } catch (e) {
-        body.innerHTML = `<div class="settings-error">${t('settings_load_fail')}: ${e.message}</div>`;
+        body.innerHTML = `<div class="settings-error" role="alert"><p>${t('settings_load_fail')}: ${escapeHtml(e.message)}</p><button type="button" onclick="openSettings()">${currentLang==='zh-CN'?'重试':'Retry'}</button></div>`;
     }
 }
 
@@ -6752,6 +6708,7 @@ async function saveSettings() {
                 const inp = document.querySelector(`#settings-body .settings-input[data-key="${k}"]`);
                 if (inp) _settingsCache[k] = (inp.tagName === 'SELECT' ? inp.value : inp.value.trim());
             }
+            ClawcrossSettings.saved();
             await refreshLlmBannerFromSetupStatus();
         } else {
             alert(t('settings_save_fail'));

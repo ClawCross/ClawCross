@@ -32,9 +32,9 @@
     <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
     <link rel="stylesheet" href="/static/css/style.css?v=20261010-ui-workspace">
     <link rel="stylesheet" href="/static/css/agent-turns.css?v=20261020-turns">
-    <link rel="stylesheet" href="/static/css/agent-creation-presets.css?v=20261006-agent-templates">
+    <link rel="stylesheet" href="/static/css/agent-creation-presets.css?v=20261104-simple-create">
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261019-scan">
-<link rel="stylesheet" href="/static/css/settings-polish.css?v=20261017-settings-navigation">
+<link rel="stylesheet" href="/static/css/settings-polish.css?v=20261104-settings-directory">
 <link rel="stylesheet" href="/static/css/conversation-polish.css?v=20261018-view-switch-right">
 <link rel="stylesheet" href="/static/css/workspace-pages.css?v=20261018-workspace-polish">
 </head>
@@ -1008,34 +1008,41 @@
     </script>
 
     <!-- Agent Meta Modal -->
-    <div id="agent-meta-modal" class="agent-meta-overlay" style="display:none;" onclick="if(event.target===this)closeAgentMetaModal()">
+    <div id="agent-meta-modal" role="dialog" aria-modal="true" aria-labelledby="agent-meta-modal-title" class="agent-meta-overlay" style="display:none;" onclick="if(event.target===this)closeAgentMetaModal()">
         <div class="agent-meta-dialog">
             <div class="agent-meta-header">
                 <h3 id="agent-meta-modal-title">🤖 Agent Settings</h3>
                 <button onclick="closeAgentMetaModal()" class="agent-meta-close">&times;</button>
             </div>
             <div class="agent-meta-body">
+                <div class="agent-creation-emblem" aria-hidden="true"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg></div>
+                <label class="agent-meta-label" id="agent-meta-name-label" for="agent-meta-name">伙伴叫什么？</label>
+                <input type="text" id="agent-meta-name" class="agent-meta-input" maxlength="120" autocomplete="off" placeholder="例如：小曼、阿星" onkeydown="if(event.key==='Enter'){event.preventDefault();submitAgentMeta();}">
+                <div id="studio-agent-creation-basics"></div>
+                <div id="agent-meta-error" role="status" style="color:#dc2626;font-size:12px"></div>
+                <details id="studio-agent-advanced" class="agent-meta-advanced"><summary>高级设置</summary>
                 <div id="agent-meta-template-field"><div id="studio-agent-creation-presets"></div><p id="studio-agent-template-hint" class="agent-creation-preset-hint"></p></div>
                 <div id="agent-meta-platform-field">
                     <label class="agent-meta-label">连接方式</label>
                     <select id="agent-meta-platform" class="agent-meta-input" onchange="agentMetaPlatformChanged()"><option value="webot">WeBot</option></select>
                     <div id="agent-meta-component"></div>
                 </div>
-                <div id="agent-meta-error" role="status" style="color:#dc2626;font-size:12px"></div>
-                <label class="agent-meta-label">Name</label>
-                <input type="text" id="agent-meta-name" class="agent-meta-input" placeholder="(None)">
-                <label class="agent-meta-label" data-i18n="agent_meta_title">会话标题</label>
+                <label class="agent-meta-label" data-agent-conversation-title data-i18n="agent_meta_title">会话标题</label>
                 <input type="text" id="agent-meta-title" class="agent-meta-input" maxlength="80" data-i18n-placeholder="agent_meta_title_placeholder" placeholder="留空则显示第一条消息">
+                <details class="agent-meta-category"><summary>工具范围 · Tool access</summary>
                 <label class="agent-meta-label">Tools</label>
                 <div id="agent-meta-tools-container" class="agent-meta-tools-container" style="max-height:150px;overflow-y:auto;border:1px solid #d1d5db;border-radius:8px;padding:8px;">
                     <span style="color:#9ca3af;font-size:12px;">Loading tools...</span>
                 </div>
                 <input type="hidden" id="agent-meta-tools">
+                </details>
+                <details class="agent-meta-category"><summary>人设 · Persona</summary>
                 <label class="agent-meta-label">Persona</label>
                 <select id="agent-meta-persona-library" class="agent-meta-input" title="Copy a persona from the library" onchange="_agentMetaCopyPersona(this.value)">
                     <option value="">—</option>
                 </select>
-                <textarea id="agent-meta-persona" class="agent-meta-input" rows="5" style="resize:vertical;margin-top:6px;" placeholder="(None)"></textarea>
+                <textarea id="agent-meta-persona" class="agent-meta-input" rows="5" style="resize:vertical;margin-top:6px;" placeholder="(None)"></textarea></details>
+                </details>
             </div>
             <div class="agent-meta-footer">
                 <button onclick="closeAgentMetaModal()" class="agent-meta-btn agent-meta-btn-cancel">Cancel</button>
@@ -1381,11 +1388,11 @@
     <script src="/static/js/approval-ui.js?v=20261017-approval-dedup"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
-<script src="/static/js/settings-navigation.js?v=20261017-settings-navigation"></script>
+<script src="/static/js/settings-navigation.js?v=20261104-settings-directory"></script>
 
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
 <script src="/static/js/native-session-browser.js?v=20261017-custom-acp"></script>
-<script src="/static/js/agent-creation-presets.js?v=20261006-group-roles"></script>
+<script src="/static/js/agent-creation-presets.js?v=20261104-simple-create"></script>
     <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
     <script src="/static/js/tinyfish-live-shared.js"></script>
     <script src="/static/js/tool-catalog.js?v=20261006-agent-templates"></script>
@@ -1396,7 +1403,7 @@
     <script src="/static/js/components.js?v=20261004-windows-sandbox"></script>
     <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
     <script src="/static/js/conversation-start.js?v=20261018-create"></script>
-    <script src="/static/js/main.js?v=20261020-acp-turns"></script>
+    <script src="/static/js/main.js?v=20261104-settings-directory"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
     <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
     <script src="/static/js/runtime-presentation.js?v=20261008-inbox"></script>
@@ -1405,11 +1412,13 @@
     <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
     <script src="/static/js/connections.js?v=20261011"></script>
     <script src="/static/js/acp-launch-settings.js?v=20261017-custom-acp"></script>
-    <script src="/static/js/external-agent-settings.js?v=20261017-custom-acp"></script>
-<script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
+    <script src="/static/js/external-agent-settings.js?v=20261104-hierarchy"></script>
+<link rel="stylesheet" href="/static/css/agent-settings.css?v=20261104-hierarchy">
+<script src="/static/js/agent-settings.js?v=20261104-hierarchy"></script>
+<script src="/static/js/model-profiles.js?v=20261104-hierarchy"></script>
     <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
-    <script src="/static/js/runtime-settings.js?v=20261017-visible-dialogs"></script>
-<script src="/static/js/workspace-settings.js?v=20261017-visible-dialogs"></script>
+    <script src="/static/js/runtime-settings.js?v=20261104-hierarchy"></script>
+<script src="/static/js/workspace-settings.js?v=20261104-hierarchy"></script>
 <link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005-team-skills">
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>

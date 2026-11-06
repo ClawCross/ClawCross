@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Agent 消息中心</title>
-<script src="/static/js/agent-profile.js?v=20261019"></script>
+<script src="/static/js/agent-profile.js?v=20261104-hierarchy"></script>
 <script src="/static/js/human-profile.js?v=20261019-portrait-images"></script>
 <script src="/static/js/user-portrait.js?v=20261019-images"></script>
 <link rel="stylesheet" href="/static/css/human-profile.css?v=20261019-portrait-images">
@@ -47,12 +47,14 @@
 <script src="/static/js/connections.js?v=20261011"></script>
 <script src="/static/js/mobile-rooms.js?v=20261017-preserve-focus"></script>
 <script src="/static/js/acp-launch-settings.js?v=20261017-custom-acp"></script>
-<script src="/static/js/external-agent-settings.js?v=20261017-custom-acp"></script>
-<script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
+<script src="/static/js/external-agent-settings.js?v=20261104-hierarchy"></script>
+<link rel="stylesheet" href="/static/css/agent-settings.css?v=20261104-hierarchy">
+<script src="/static/js/agent-settings.js?v=20261104-hierarchy"></script>
+<script src="/static/js/model-profiles.js?v=20261104-hierarchy"></script>
 <script src="/static/js/approval-ui.js?v=20261017-approval-dedup"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
-<script src="/static/js/settings-navigation.js?v=20261017-settings-navigation"></script>
+<script src="/static/js/settings-navigation.js?v=20261104-settings-directory"></script>
 
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
 <script src="/static/js/native-session-browser.js?v=20261017-custom-acp"></script>
@@ -4076,21 +4078,21 @@
 .tool-policy-category small { float: right; color: var(--text-hint); font-weight: 400; }
 .tool-policy-category-items { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 </style>
-<link rel="stylesheet" href="/static/css/mobile-agent-create.css?v=20261006-group-roles">
-<link rel="stylesheet" href="/static/css/agent-creation-presets.css?v=20261006-agent-templates">
-<script src="/static/js/agent-creation-presets.js?v=20261006-group-roles"></script>
+<link rel="stylesheet" href="/static/css/mobile-agent-create.css?v=20261104-create-scroll">
+<link rel="stylesheet" href="/static/css/agent-creation-presets.css?v=20261104-simple-create">
+<script src="/static/js/agent-creation-presets.js?v=20261104-simple-create"></script>
 <script src="/static/js/tool-catalog.js?v=20261006-agent-templates"></script>
 <script src="/static/js/mobile-agent-create-tools.js?v=20261006-tool-table"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
 <script src="/static/js/group-network-ui.js?v=20261019-human-profile"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261020-receipts">
-<link rel="stylesheet" href="/static/css/settings-polish.css?v=20261017-settings-navigation">
+<link rel="stylesheet" href="/static/css/settings-polish.css?v=20261104-settings-directory">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
 <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
-<script src="/static/js/runtime-settings.js?v=20261017-visible-dialogs"></script>
-<script src="/static/js/workspace-settings.js?v=20261017-visible-dialogs"></script>
+<script src="/static/js/runtime-settings.js?v=20261104-hierarchy"></script>
+<script src="/static/js/workspace-settings.js?v=20261104-hierarchy"></script>
 <link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005-team-skills">
 <link rel="stylesheet" href="/static/css/mobile-panel-layout.css?v=20261008">
 <script defer src="/static/js/mobile-panel-layout.js?v=20261008"></script>
@@ -4579,7 +4581,7 @@
   <div class="settings-modal">
     <div class="settings-header">
       <button onclick="closeSettings()" class="settings-close-btn" aria-label="关闭设置 / Close settings">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
       <div class="settings-title-block"><span>ClawCross</span><h2 data-i18n="settings_title">设置</h2></div>
     </div>
@@ -4683,34 +4685,40 @@
   </div>
   <div class="drawer-body create-agent-drawer-body">
     <p class="create-agent-intro" data-i18n="agent_creation_intro">取个名字，就可以开始对话。</p>
-    <div class="create-agent-form">
-      <label class="side-panel-label" for="create-agent-name" data-i18n="agent_name_label">伙伴名称</label>
-      <input type="text" id="create-agent-name" class="side-panel-input" maxlength="160" autocomplete="off" data-i18n="agent_creation_name_placeholder" placeholder="例如：写作助手" onkeydown="if(event.key==='Enter'){if(mobileCreateAgentMode==='acp')mobileSubmitCreateAcpAgent();else submitCreateAgent();}">
-      <details class="create-agent-advanced"><summary data-i18n="choose_companion">选择伙伴 · 可选</summary>
+    <div class="create-agent-form create-agent-basics-form">
+      <div class="agent-creation-emblem" aria-hidden="true"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg></div>
+      <label class="side-panel-label" for="create-agent-name" data-i18n="companion_name_question">伙伴叫什么？</label>
+      <input type="text" id="create-agent-name" class="side-panel-input" maxlength="160" autocomplete="off" data-i18n="agent_creation_name_placeholder" placeholder="例如：小曼、阿星" onkeydown="if(event.key==='Enter'){if(mobileCreateAgentMode==='acp')mobileSubmitCreateAcpAgent();else submitCreateAgent();}">
+      <div id="mobile-agent-creation-basics"></div>
+    </div>
+    <div id="mobile-group-role-picker" hidden></div>
+    <details id="mobile-create-agent-advanced" class="create-agent-advanced"><summary data-i18n="agent_creation_settings">高级设置</summary>
+      <div class="create-agent-form">
         <label class="side-panel-label" for="create-agent-companion" data-i18n="companion_source">使用的伙伴</label>
+
         <select id="create-agent-companion" class="side-panel-input" onchange="chooseMobileCompanion(this.value)">
           <option value="webot" data-i18n="builtin_companion">ClawCross 内置伙伴</option><option value="codex">Codex</option><option value="claude">Claude Code</option>
         </select>
-      </details>
-    </div>
+      </div>
     <div id="create-agent-mode-bar" style="display:none" aria-hidden="true" onkeydown="handleCreateAgentTabKey(event)">
       <button type="button" class="add-agent-mode-btn active" data-mode="webot" role="tab" aria-selected="true" aria-controls="create-agent-panel-webot" onclick="setCreateAgentMode('webot')"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#bot"/></svg><span>WeBot</span></button>
       <button type="button" class="add-agent-mode-btn" data-mode="acp" role="tab" aria-selected="false" aria-controls="create-agent-panel-acp" tabindex="-1" onclick="setCreateAgentMode('acp')"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#plug"/></svg><span data-i18n="mobile_create_agent_mode_acp">外部 Agent</span></button>
     </div>
     <div id="create-agent-panels-scroll">
-      <div id="mobile-group-role-picker" hidden></div>
-      <details id="mobile-agent-capability-presets" class="create-agent-advanced"><summary id="mobile-agent-capability-summary">能力与工具 · 高级设置</summary>
+      <details id="mobile-agent-capability-presets" class="create-agent-advanced"><summary id="mobile-agent-capability-summary">能力模板</summary>
         <div id="mobile-agent-creation-presets"></div>
         <p id="mobile-agent-template-hint" class="agent-creation-preset-hint"></p>
       </details>
       <div id="create-agent-panel-webot" role="tabpanel">
         <div class="create-agent-form">
-            <details class="create-agent-advanced"><summary data-i18n="agent_creation_advanced">人设与工具 · 高级设置</summary>
+            <details class="create-agent-advanced"><summary data-i18n="agent_creation_advanced">人设 · 可选</summary>
               <label class="side-panel-label" data-i18n="agent_creation_persona">希望这个 Agent 怎么帮助你？</label>
               <textarea id="create-agent-persona" class="side-panel-input" rows="3"></textarea>
               <label class="side-panel-label" data-i18n="agent_creation_library">或选择已有的人设</label>
               <input type="hidden" id="create-agent-tag" value="">
               <div id="create-agent-tag-list" class="side-panel-tag-list"></div>
+            </details>
+            <details class="create-agent-advanced"><summary data-i18n="agent_creation_tool_options">自定义工具范围</summary>
               <label class="side-panel-label" data-i18n="agent_creation_tools">允许的工具</label>
               <div id="create-agent-tools-picker" class="create-agent-tools-picker"></div>
               <input id="create-agent-tools" type="hidden">
@@ -4729,15 +4737,16 @@
         <button type="button" class="create-agent-native-btn" onclick="openMobileNativeSessions()"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#history"/></svg><span data-i18n="native_session_register">登记已有外部会话</span><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#chevron-right"/></svg></button>
       </div>
     </div>
+    </details>
+  </div>
     <div class="create-agent-footer">
       <p class="side-panel-hint" data-i18n="create_agent_hint">创建后直接进入与这个 Agent 的对话</p>
       <div class="create-agent-footer-actions">
         <button type="button" class="create-agent-cancel" onclick="closeCreateAgentModal()" data-i18n="cancel">取消</button>
         <button type="button" id="create-agent-submit" onclick="submitCreateAgent()" class="side-panel-primary-btn" data-i18n="create_agent_btn">创建 Agent</button>
-        <button type="button" id="ca-acp-submit" onclick="mobileSubmitCreateAcpAgent()" class="side-panel-primary-btn" data-i18n="create_agent_btn" hidden>创建 Agent</button>
+        <button type="button" id="ca-acp-submit" onclick="mobileSubmitCreateAcpAgent()" class="side-panel-primary-btn" data-i18n="create_acp_configure" hidden>创建并配置</button>
       </div>
     </div>
-  </div>
 </div>
 
 <!-- ═══════════════ Mobile Alarm Manager ═══════════════ -->
@@ -5439,12 +5448,15 @@ const I18N = {
     builtin_companion: 'ClawCross 内置伙伴',
     create_new_agent: '新建 Agent',
     agent_creation_intro: '取个名字，就可以开始对话。',
-    agent_creation_name_placeholder: '例如：写作助手',
+    agent_creation_name_placeholder: '例如：小曼、阿星',
     agent_creation_team_options: '加入 Team · 可选',
-    agent_creation_advanced: '人设与工具 · 高级设置',
+    companion_name_question: '伙伴叫什么？',
+    agent_creation_settings: '高级设置',
+    agent_creation_advanced: '人设 · 可选',
     agent_creation_persona: '希望这个 Agent 怎么帮助你？',
     agent_creation_library: '或选择已有的人设',
     agent_creation_tools: '允许的工具',
+    agent_creation_tool_options: '自定义工具范围',
     agent_creation_tools_hint: '填写工具名，用逗号分隔；以后也可以在 Agent 设置中调整。',
     create_new_group: '创建新聊天',
     agent_name_label: 'Agent 名称',
@@ -5454,7 +5466,9 @@ const I18N = {
     create_agent_team_tags: 'Team 人设',
     agent_tag_placeholder: '例如：assistant, coder, analyst',
     agent_team_label: '所属团队',
-    create_agent_hint: '创建后直接进入与这个 Agent 的对话',
+    create_agent_hint: '创建后就能和它聊天。',
+    create_acp_hint: '创建后先配置工具和工作区，再测试连接选择模型与思考强度。无需先发消息。',
+    create_acp_configure: '创建并配置',
     create_agent_btn: '创建 Agent',
     native_session_register: '登记已有外部会话',
     agent_name_required: '请输入 Agent 名称',
@@ -6116,12 +6130,15 @@ const I18N = {
     builtin_companion: 'ClawCross companion',
     create_new_agent: 'New Agent',
     agent_creation_intro: 'Give your Agent a name to start chatting.',
-    agent_creation_name_placeholder: 'For example: Writing assistant',
+    agent_creation_name_placeholder: 'For example: Luna or Nova',
     agent_creation_team_options: 'Join a Team · Optional',
-    agent_creation_advanced: 'Persona and tools · Advanced',
+    companion_name_question: 'What shall we call your companion?',
+    agent_creation_settings: 'Advanced settings',
+    agent_creation_advanced: 'Persona · Optional',
     agent_creation_persona: 'How should this Agent help you?',
     agent_creation_library: 'Or choose an existing persona',
     agent_creation_tools: 'Allowed tools',
+    agent_creation_tool_options: 'Customize tool access',
     agent_creation_tools_hint: 'Comma-separated tool names. You can change these in Agent settings later.',
     create_new_group: 'Create New Chat',
     agent_name_label: 'Agent Name',
@@ -6132,6 +6149,8 @@ const I18N = {
     agent_tag_placeholder: 'e.g. assistant, coder, analyst',
     agent_team_label: 'Team',
     create_agent_hint: 'Open a conversation with this Agent after creation',
+    create_acp_hint: 'Configure tools and workspaces first, then test the connection to choose a model and reasoning effort. No message is required.',
+    create_acp_configure: 'Create & configure',
     create_agent_btn: 'Create Agent',
     native_session_register: 'Register existing external session',
     agent_name_required: 'Please enter an Agent name',
@@ -7393,27 +7412,10 @@ let firstCompanionCreating = false;
 let firstCompanionAgent = null;
 
 async function createFirstCompanion() {
-  if (firstCompanionCreating) return;
+  if (mobileCreateAgentSubmitting) return;
   if (!window.__currentUser) { toast(t('not_logged_in')); return; }
-  firstCompanionCreating = true;
-  renderGroupList(groups);
-  try {
-    if (!firstCompanionAgent) {
-      firstCompanionAgent = await registerAgent({
-        name: t('first_chat_name'), platform: 'webot', creation_template: 'personal',
-        persona: '你是用户的智能伙伴。用自然、清楚的语言交流，帮助用户整理想法和处理事情。跟随用户使用的语言，按当前工具权限完成任务。'
-      });
-    }
-    if (await startPrivateChat(firstCompanionAgent.agent_id)) {
-      invalidateContactsPrefetch();
-      await refreshGroups({silent:true});
-    }
-  } catch (error) {
-    toast(t('first_chat_failed') + ': ' + error.message);
-  } finally {
-    firstCompanionCreating = false;
-    renderGroupList(groups);
-  }
+  if (firstCompanionAgent) return startPrivateChat(firstCompanionAgent.agent_id);
+  return showCreateAgentModal('', 'first');
 }
 const PINNED_KEY = 'clawcross_pinned_groups';
 
@@ -8391,11 +8393,35 @@ let mobileCreateAgentPurpose = '';
 let mobileCreationPermissionsCustomized = false;
 let mobileGroupRole = 'companion';
 let mobileCompanionPlatform = 'codex';
+const mobileCompanionLaunchDrafts = new Map();
+function rememberMobileCompanionLaunch() {
+  const platform=document.getElementById('ca-acp-platform')?.value;
+  const host=document.getElementById('ca-acp-launch');
+  const input=host?.querySelector('[data-launch-value]');
+  if(platform&&input)mobileCompanionLaunchDrafts.set(platform,{kind:host.querySelector('[data-launch-kind]').value,value:input.value});
+}
+function mountMobileCompanionLaunch(platform) {
+  AcpLaunchSettings.mount('ca-acp-launch',platform);
+  const saved=mobileCompanionLaunchDrafts.get(platform),host=document.getElementById('ca-acp-launch');
+  if(saved&&host?.querySelector('[data-launch-value]')){
+    host.querySelector('[data-launch-kind]').value=saved.kind;
+    host.querySelector('[data-launch-value]').value=saved.value;
+  }
+}
+function renderMobileCompanionOptions(platforms = _mobileAcpPlatformsCache || MOBILE_ACP_PLATFORM_FALLBACK) {
+  const select=document.getElementById('create-agent-companion');
+  const values=[...new Set(['codex','claude',...platforms])].filter(Boolean);
+  select.innerHTML='<option value="webot">'+esc(_currentLang==='zh'?'ClawCross 内置伙伴':'ClawCross companion')+'</option>'+
+    values.map(platform=>`<option value="${esc(platform)}">${esc(getPlatformBadgeInfo(platform).label)}</option>`).join('');
+  select.value=mobileCreateAgentMode==='acp'?mobileCompanionPlatform:'webot';
+}
 function chooseMobileCompanion(platform) {
+  rememberMobileCompanionLaunch();
+  const previous=document.getElementById('ca-acp-platform')?.value;
   if (platform !== 'webot') mobileCompanionPlatform = platform;
   setCreateAgentMode(platform === 'webot' ? 'webot' : 'acp');
   const field=document.getElementById('ca-acp-platform');
-  if (field && platform !== 'webot') { field.value=platform; AcpLaunchSettings.mount('ca-acp-launch',platform); }
+  if (field && platform !== 'webot' && previous !== platform) { field.value=platform; mountMobileCompanionLaunch(platform); }
 }
 const mobileGroupRoles = {
   companion:{zh:'聊天伙伴',en:'Chat companion',hintZh:'一起聊天，把话题说清楚',hintEn:'Join conversations and clarify ideas',persona:'你是一位友好的群聊伙伴，用清楚自然的语言交流，认真回应问题，帮助大家把话题说清楚。'},
@@ -8453,13 +8479,15 @@ function _syncCreateAgentModeButtons() {
     btn.tabIndex = active ? 0 : -1;
   });
   const external = mobileCreateAgentMode === 'acp';
+  const hint=document.querySelector('.create-agent-footer .side-panel-hint');
+  if(hint){hint.dataset.i18n=external?'create_acp_hint':'create_agent_hint';hint.textContent=t(hint.dataset.i18n);}
   const incompatible = external && ['chat','group'].includes(AgentCreationPresets.selected('mobile-agent-creation-presets')?.id);
   AgentCreationPresets.platform('mobile-agent-creation-presets',external);
   if(incompatible)document.getElementById('mobile-agent-template-hint').textContent=_currentLang==='zh'?'此隔离模板适用于内置伙伴，请选择其他能力模板。':'This isolation preset applies to the built-in companion. Choose another capability preset.';
   const internalButton = document.getElementById('create-agent-submit');
   const externalButton = document.getElementById('ca-acp-submit');
   const ready=!!AgentCreationPresets.selected('mobile-agent-creation-presets');
-  if (internalButton) { internalButton.hidden = external; internalButton.disabled = mobileCreateAgentSubmitting || !ready; }
+  if (internalButton) { internalButton.textContent=mobileCreateAgentPurpose==='first'?(_currentLang==='zh'?'开始认识':'Meet my companion'):t('create_agent_btn'); internalButton.hidden = external; internalButton.disabled = mobileCreateAgentSubmitting || !ready; }
   if (externalButton) { externalButton.hidden = !external; externalButton.disabled = mobileCreateAgentSubmitting || !ready || incompatible || document.getElementById('create-agent-panel-acp').dataset.ready !== 'true'; }
   document.getElementById('create-agent-native-entry').hidden = !external || incompatible;
 }
@@ -8483,7 +8511,7 @@ function setCreateAgentMode(mode) {
   if (pWebot) pWebot.style.display = mode === 'webot' ? '' : 'none';
   if (pAcp) {
     pAcp.style.display = mode === 'acp' ? '' : 'none';
-    if (mode === 'acp' && !pAcp.dataset.ready) void renderCreateAgentAcpPanel();
+    if (mode === 'acp' && !['true','loading'].includes(pAcp.dataset.ready)) void renderCreateAgentAcpPanel();
   }
   const template=AgentCreationPresets.selected('mobile-agent-creation-presets');
   if(template)applyMobileCreationTemplate(template,false);
@@ -8495,8 +8523,8 @@ async function renderCreateAgentAcpPanel() {
   const generation = Number(panel.dataset.generation || 0) + 1;
   panel.dataset.generation = String(generation); panel.dataset.ready = 'loading';
   panel.innerHTML = `<div class="agent-detail-loading">${t('loading')}</div>`;
-  const tagOpts = await _mobilePersonaTagOptionsHtml(mobileGetCreateAgentTeam());
-  const platformOpts = await _mobileAcpPlatformOptionsHtml();
+  try {
+  const [tagOpts,platformOpts] = await Promise.all([_mobilePersonaTagOptionsHtml(mobileGetCreateAgentTeam()),_mobileAcpPlatformOptionsHtml()]);
   if (Number(panel.dataset.generation) !== generation) return;
   panel.innerHTML = `
     <div class="create-agent-form">
@@ -8509,6 +8537,8 @@ async function renderCreateAgentAcpPanel() {
         <label class="side-panel-label" for="ca-acp-tag">${esc(t('agent_creation_library'))}</label>
         <select id="ca-acp-tag" class="side-panel-input">${tagOpts}</select>
         <input type="text" id="ca-acp-tag-custom" class="side-panel-input" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
+      </details>
+      <details class="create-agent-advanced"><summary>${esc(t('agent_creation_tool_options'))}</summary>
         <label class="side-panel-label">${esc(t('agent_creation_tools'))}</label>
         <div id="ca-acp-tools-picker" class="create-agent-tools-picker"></div><input id="ca-acp-tools" type="hidden">
         <label class="side-panel-label" for="ca-acp-runtime">${esc(t('mobile_add_runtime_name'))}</label>
@@ -8516,12 +8546,10 @@ async function renderCreateAgentAcpPanel() {
       </details>
     </div>`;
   initComponentControls(panel);
-  const companion=document.getElementById('create-agent-companion');
   const native=document.getElementById('ca-acp-platform');
-  companion.innerHTML='<option value="webot">'+esc(_currentLang==='zh'?'ClawCross 内置伙伴':'ClawCross companion')+'</option>'+platformOpts;
+  renderMobileCompanionOptions();
   native.value=mobileCompanionPlatform;
-  companion.value=mobileCompanionPlatform;
-  AcpLaunchSettings.mount('ca-acp-launch',mobileCompanionPlatform);
+  mountMobileCompanionLaunch(mobileCompanionPlatform);
   void MobileAgentCreationTools.mount('ca-acp');
   const tagSel = document.getElementById('ca-acp-tag');
   const tagCust = document.getElementById('ca-acp-tag-custom');
@@ -8530,6 +8558,12 @@ async function renderCreateAgentAcpPanel() {
   const template=AgentCreationPresets.selected('mobile-agent-creation-presets');
   if(template)applyMobileCreationTemplate(template,false);
   _syncCreateAgentModeButtons();
+  } catch(error) {
+    if(Number(panel.dataset.generation)!==generation)return;
+    panel.dataset.ready='error';
+    panel.innerHTML=`<p role="alert">${esc(error.message || t('load_failed'))}</p><button type="button" class="side-panel-primary-btn" onclick="renderCreateAgentAcpPanel()">${esc(_currentLang==='zh'?'重试':'Retry')}</button>`;
+    _syncCreateAgentModeButtons();
+  }
 }
 
 function _mobilePickedTag(selectId, customId) {
@@ -8540,6 +8574,9 @@ function _mobilePickedTag(selectId, customId) {
 
 async function mobileSubmitCreateAcpAgent() {
   if (mobileCreateAgentSubmitting) return;
+  if(mobileCreateAgentMode!=='acp' || document.getElementById('create-agent-panel-acp').dataset.ready!=='true' || !AgentCreationPresets.selected('mobile-agent-creation-presets')){
+    toast(t('loading'));return;
+  }
   const team = mobileGetCreateAgentTeam();
   const btn = document.getElementById('ca-acp-submit');
   const name = String((document.getElementById('create-agent-name') || {}).value || '').trim();
@@ -8567,6 +8604,7 @@ async function mobileSubmitCreateAcpAgent() {
     invalidateContactsPrefetch();
     await startPrivateChat(agent.agent_id);
     if (typeof loadContactsForTeam === 'function') loadContactsForTeam();
+    await openExternalAgentSettings(agent.agent_id,{testConnection:false});
   } catch (e) {
     toast((e && e.message) ? e.message : t('add_failed'));
   } finally {
@@ -8586,6 +8624,7 @@ async function onCreateAgentTeamChange() {
 
 function _resetCreateAgentPanels() {
   mobileCreateAgentMode = 'webot';
+  mobileCompanionLaunchDrafts.clear();
   MobileAgentCreationTools.reset();
   document.querySelectorAll('#create-agent-modal .create-agent-advanced').forEach(details=>{details.open=false;});
   _syncCreateAgentModeButtons();
@@ -8593,6 +8632,7 @@ function _resetCreateAgentPanels() {
   const pAcp = document.getElementById('create-agent-panel-acp');
   if (pWebot) pWebot.style.display = '';
   if (pAcp) { pAcp.style.display = 'none'; pAcp.innerHTML = ''; delete pAcp.dataset.ready; pAcp.dataset.generation = String(Number(pAcp.dataset.generation || 0) + 1); }
+  renderMobileCompanionOptions();
 }
 
 async function showCreateAgentModal(preferredTeam = '', purpose = '') {
@@ -8603,10 +8643,17 @@ async function showCreateAgentModal(preferredTeam = '', purpose = '') {
   createAgentTagOptions = [];
   mobileCreateAgentPurpose=purpose;mobileGroupRole='companion';mobileCreationPermissionsCustomized=false;
   _resetCreateAgentPanels();
+  AgentCreationBasics.mount('mobile-agent-creation-basics');
+  document.getElementById('create-agent-title').textContent=purpose==='first'?(_currentLang==='zh'?'给第一个伙伴取个名字':'Name your first companion'):t('create_new_agent');
+  document.getElementById('create-agent-name').focus();
+  const platformGeneration=document.getElementById('create-agent-panel-acp').dataset.generation;
+  void _mobileFetchAcpPlatforms().then(platforms=>{
+    if(document.getElementById('create-agent-modal').classList.contains('show')&&document.getElementById('create-agent-panel-acp').dataset.generation===platformGeneration)renderMobileCompanionOptions(platforms);
+  });
   renderMobileGroupRoles();
   const capability=document.getElementById('mobile-agent-capability-presets');
-  capability.open=purpose!=='group';capability.classList.toggle('is-general-create',purpose!=='group');
-  document.getElementById('mobile-agent-capability-summary').textContent=_currentLang==='zh'?'能力与工具 · 高级设置':'Capabilities and tools · Advanced';
+  capability.open=false;capability.classList.remove('is-general-create');
+  document.getElementById('mobile-agent-capability-summary').textContent=_currentLang==='zh'?'能力模板':'Capability template';
   const presetHost=document.getElementById('mobile-agent-creation-presets');
   presetHost.removeEventListener('click',markMobileCreationPermissions,true);
   presetHost.addEventListener('click',markMobileCreationPermissions,true);
@@ -8623,6 +8670,7 @@ async function showCreateAgentModal(preferredTeam = '', purpose = '') {
   }
   const createTeamSel = document.getElementById('create-agent-team');
   if (preferredTeam && preferredTeam !== '__default__' && createTeamSel) {
+    document.getElementById('mobile-create-agent-advanced').open=true;
     createTeamSel.value = preferredTeam;
     document.getElementById('create-agent-team-row').open = true;
   }
@@ -8656,6 +8704,7 @@ function mobileCreateAgentExtras(prefix) {
   let persona = document.getElementById(prefix + '-persona')?.value.trim() || '';
   const tag=prefix==='ca-acp'?_mobilePickedTag('ca-acp-tag','ca-acp-tag-custom'):document.getElementById('create-agent-tag')?.value;
   if(!persona && !tag && mobileCreateAgentPurpose==='group')persona=mobileGroupRoles[mobileGroupRole].persona;
+  if(persona || !tag)persona=AgentCreationBasics.persona('mobile-agent-creation-basics',persona);
   const names = (document.getElementById(prefix + '-tools')?.value || '').split(/[,，\s]+/).filter(Boolean);
   const picked = MobileAgentCreationTools.value(prefix);
   const tools = picked === undefined ? names.length ? [...new Set(names)] : null : picked;
@@ -8664,7 +8713,7 @@ function mobileCreateAgentExtras(prefix) {
 }
 
 async function submitCreateAgent() {
-  if (mobileCreateAgentSubmitting) return;
+  if (mobileCreateAgentSubmitting || document.getElementById('create-agent-submit').disabled) return;
   const name = document.getElementById('create-agent-name').value.trim();
   const tag = document.getElementById('create-agent-tag').value.trim();
   const team = document.getElementById('create-agent-team').value;
@@ -8677,6 +8726,7 @@ async function submitCreateAgent() {
   _syncCreateAgentModeButtons();
   try {
     const agent = await registerAgent({ name, platform: 'webot', ...mobileCreateAgentExtras('create-agent') }, team, tag);
+    if(mobileCreateAgentPurpose==='first')firstCompanionAgent=agent;
     toast(t('agent_created') + ': ' + name);
     closeCreateAgentModal();
     await startPrivateChat(agent.agent_id);
@@ -13148,98 +13198,10 @@ async function deleteAgentFromDetail(agentId) {
   }
 }
 
-// Name and settings of any agent; ACP runtime options live in settings.meta.acp.
-async function openAgentSettingsSheet(agentId) {
-  let agent;
-  try {
-    agent = await api('GET', `/v1/agents/${encodeURIComponent(agentId)}`);
-  } catch (e) {
-    toast(e.message);
-    return;
-  }
-  const s = agent.settings || {};
-  const webot = agent.platform === 'webot';
-  let externalAcp = false;
-  if (!webot && window.ExternalAgentSettings) {
-    try { externalAcp = (await ExternalAgentSettings.capabilities(agentId)).transport === 'acpx'; }
-    catch (_) { /* Leave common settings available if capability lookup fails. */ }
-  }
-  const meta = (s.meta && typeof s.meta === 'object') ? s.meta : {};
-  const acp = (meta.acp && typeof meta.acp === 'object') ? meta.acp : {};
-  const zh = _currentLang === 'zh';
+// Contacts and group member details share the same settings directory.
+function openAgentSettingsSheet(agentId) {
   closeAgentDetail();
-  const sheetId = 'agent-settings-sheet';
-  const overlayId = 'agent-settings-sheet-overlay';
-  document.getElementById(sheetId)?.remove();
-  document.getElementById(overlayId)?.remove();
-  const overlay = document.createElement('div');
-  overlay.id = overlayId;
-  overlay.className = 'tc-sheet-overlay show';
-  const sheet = document.createElement('div');
-  sheet.id = sheetId;
-  sheet.className = 'tc-sheet show';
-  const field = (id, label, value, extra = '') =>
-    `<label>${esc(label)}</label><input id="${id}" type="text" value="${escapeHtml(value == null ? '' : String(value))}" autocomplete="off" ${extra}>`;
-  sheet.innerHTML = `
-      <div class="tc-sheet-handle"></div>
-      <div class="tc-sheet-header">
-        <div style="font-weight:700;">${esc(agentPlatformLabel(agent.platform))} · ${esc(agent.name)}</div>
-        <button class="tc-sheet-close" id="agent-settings-close">✕</button>
-      </div>
-      <div class="tc-sheet-body" style="display:flex;flex-direction:column;gap:10px;">
-        ${field('agent-settings-name', zh ? '名称' : 'Name', agent.name)}
-        <label>${esc(zh ? '人设' : 'Persona')}</label><textarea id="agent-settings-persona" rows="5" style="resize:vertical;">${esc(s.persona || '')}</textarea>
-        ${externalAcp ? '<button type="button" id="agent-native-settings">模型、思考强度与 ClawCross 工具</button>' : webot ? '' : `
-          ${field('agent-settings-model', zh ? '模型' : 'Model', s.model || '')}
-          ${field('agent-settings-timeout', zh ? '超时（秒）' : 'Timeout (seconds)', acp.timeout_sec || '', 'inputmode="numeric" placeholder="180"')}
-          ${field('agent-settings-perms', zh ? '无人值守权限策略' : 'Non-interactive permission policy', acp.non_interactive_permissions || '', 'placeholder="deny / fail"')}
-          <label>${esc(zh ? '自动批准' : 'Approve all')}</label>
-          <select id="agent-settings-approve">
-            <option value="" ${typeof acp.approve_all === 'boolean' ? '' : 'selected'}>${esc(zh ? '使用环境默认' : 'Use env default')}</option>
-            <option value="true" ${acp.approve_all === true ? 'selected' : ''}>${esc(zh ? '开启' : 'On')}</option>
-            <option value="false" ${acp.approve_all === false ? 'selected' : ''}>${esc(zh ? '关闭' : 'Off')}</option>
-          </select>
-          ${field('agent-settings-ttl', 'TTL', acp.ttl_sec || '', 'inputmode="numeric" placeholder="300"')}`}
-        <div class="field-note">${esc(agent.agent_id)}</div>
-      </div>
-      <div class="tc-sheet-footer">
-        <button class="tc-btn-primary" id="agent-settings-save">${esc(zh ? '保存' : 'Save')}</button>
-      </div>`;
-  document.body.appendChild(overlay);
-  document.body.appendChild(sheet);
-  const close = () => { overlay.remove(); sheet.remove(); };
-  overlay.addEventListener('click', close);
-  sheet.querySelector('#agent-settings-close').addEventListener('click', close);
-  sheet.querySelector('#agent-native-settings')?.addEventListener('click', () => ExternalAgentSettings.open(agentId));
-  const val = (id) => String((document.getElementById(id) || {}).value || '').trim();
-  sheet.querySelector('#agent-settings-save').addEventListener('click', async () => {
-    const name = val('agent-settings-name');
-    if (!name) {
-      toast(zh ? '名称不能为空' : 'Name is required');
-      return;
-    }
-    const settings = { persona: val('agent-settings-persona') };
-    if (!webot && !externalAcp) {
-      const nextAcp = Object.assign({}, acp);
-      const setOrDrop = (key, value) => { if (value === '' || value == null) delete nextAcp[key]; else nextAcp[key] = value; };
-      setOrDrop('timeout_sec', val('agent-settings-timeout') ? Number(val('agent-settings-timeout')) : '');
-      setOrDrop('ttl_sec', val('agent-settings-ttl') ? Number(val('agent-settings-ttl')) : '');
-      setOrDrop('non_interactive_permissions', val('agent-settings-perms'));
-      setOrDrop('approve_all', val('agent-settings-approve') ? val('agent-settings-approve') === 'true' : '');
-      settings.model = val('agent-settings-model');
-      settings.meta = Object.assign({}, meta, { acp: nextAcp });
-    }
-    try {
-      await api('PATCH', `/v1/agents/${encodeURIComponent(agentId)}`, { name, settings });
-      toast(zh ? '已保存' : 'Saved');
-      close();
-      invalidateContactsPrefetch();
-      if (currentGroupId) reloadGroupDetail().catch(() => {});
-      if (typeof loadContactsForTeam === 'function') await loadContactsForTeam();
-    } catch (e) {
-      toast((e && e.message) ? e.message : t('save_failed'));
-    }
-  });
+  return AgentSettings.open(agentId);
 }
 
 function formatTime(ts) {
@@ -14457,7 +14419,7 @@ async function openSettings(scrollToGroup) {
     const body = document.getElementById('settings-body');
     modal.style.display = 'flex';
     requestAnimationFrame(() => { modal.classList.add('open'); });
-    body.innerHTML = `<div class="settings-loading">${t('loading')}</div>`;
+    ClawcrossSettings.loading(body,_currentLang);
     try {
         const r = await fetch('/proxy_settings_full');
         const data = await r.json();
@@ -14475,7 +14437,7 @@ async function openSettings(scrollToGroup) {
             }
         }
     } catch (e) {
-        body.innerHTML = `<div class="settings-error">${t('settings_load_failed')}: ${escapeHtml(e.message)}</div>`;
+        body.innerHTML = `<div class="settings-error" role="alert"><p>${t('settings_load_failed')}: ${escapeHtml(e.message)}</p><button type="button" onclick="openSettings()">${_currentLang==='zh'?'重试':'Retry'}</button></div>`;
     }
 }
 
@@ -15246,6 +15208,7 @@ async function saveSettings() {
                 const inp = document.querySelector('#settings-body .settings-input[data-key="' + k + '"]');
                 if (inp) _settingsCache[k] = inp.value.trim();
             }
+            ClawcrossSettings.saved();
             await refreshLlmBannerFromSetupStatus();
         } else {
             toast(t('settings_save_failed'));
