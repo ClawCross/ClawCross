@@ -1,21 +1,21 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-11-07T13:32:29.252339+00:00`
+- Generated at: `2026-11-07T17:44:19.841939+00:00`
 - Exit code: `0`
 
 ## Summary
 
-Command exited with code 0. Command: Verify Studio recovery, dedicated main-API avatar generation and targeted regression tests. Signals: verification-loop. stdout was used as fallback failure evidence.
+Command exited with code 0. Command: Forwarding deploy readiness and installed-package smoke. Signals: verification-loop, approval-auth, structured-output. stderr carried the strongest failure evidence.
 
 ## stderr
 
 ```text
-(empty)
+Readiness-only probe /openapi.json returned 404 because this deployment disables OpenAPI. Use a known health route plus the authenticated forwarding route; do not wait on optional documentation endpoints.
 ```
 
 ## stdout
 
 ```text
-Recovered /studio and /mobile/group_chat: HTTP 200. User systemd service enabled, active/running; lingering enabled. Initial dedicated avatar call returned HTTP 502 with an empty model response at provider-default reasoning. After selecting the lowest supported reasoning level, the real frontend proxy returned HTTP 200 in 5.82s with a validated 3025-byte SVG. Backend regression suite: 182 passed and 57 subtests passed; added PUT forwarding and quiet second-cycle avatar sync regressions: 11 passed and 8 subtests passed. Avatar browser cases: 4 passed; Studio/mobile/Dynamic UI cases: 8 passed. Initial browser failures were incorrect selectors and test navigation, corrected without weakening application checks.
+Installed package: 8 passed; source forwarding/relay/native suites: 53 passed, 1 opt-in skipped; CLI/bootstrap: 52 passed. Earlier opt-in real bridge boot confirmed only Agent/group ports and clean child termination. Deployment waited for 24 Agents across 4 owners to be idle, reloaded via restart_flag, new /groups/{gid}/connection returned expected 403 for a nonexistent group, public /studio returned 200. Initial restore test tried immutable ClientStore.update(via=...); fixed fixture SQL only, then passed.
 ```

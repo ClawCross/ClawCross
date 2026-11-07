@@ -1,4 +1,30 @@
-# ClawCross 交接（2026-11-07）
+# ClawCross 交接（2026-11-08）
+
+
+## 本轮完成：转接模式与可选自启动（2026-11-08）
+
+- 用户命名为「转接模式」，参数 `start --bridge`；不叫客户端模式。
+- `join --prepare` 全程命令行：只启动本机 Agent / 群消息服务，不启动前端、OASIS、调度器、渠道或隧道，不要求填写主模型 Key。
+- 保留 `--agent` / `--current` / `--native-session` / `--new` 的显式身份选择。准备时 ACP 初始化检查不发模型 prompt；原生适配器下载需要明确准备请求和本机 host proof，普通原生列表保持离线。
+- 新增 `/groups/{gid}/connection`；只有后台收到有效群响应后 `join` 才报告 `ok=true`，成员已入群但接收未就绪会非零退出。连接状态/心跳不唤醒模型。
+- `join --autostart`、`autostart enable --bridge` / `status` / `disable`。Linux 用户 systemd + 可用时 linger；macOS LaunchAgent、Windows 当前用户计划任务在登录后启动。启用/关闭不打断当前运行。临时 npx 安装不能登记为持久自启动。
+- 官网当前仍是每 2 秒 HTTP 同步，由后台主动送入持久 inbox；直接 relay 支持 WebSocket。本轮没有改 Hub 仓库、没有向真实群发送测试消息，没有改动本机既有 systemd 自启动登记。
+- 验证：CLI/bootstrap/autostart/ACP **52 passed**；relay/native/join/autostart/bridge **53 passed, 1 opt-in skipped**。单独开启真实启动测试时，已验证只开放 Agent/group 两个临时端口，关闭后全部子进程退出；同轮其余回归 **26 passed**，唯一初始失败是测试错误地调用不可变字段 `update(via=...)`，已仅修正临时 fixture，并复验通过。
+- 生成本地 npm 包 `dist/clawcross-0.0.29.tgz`（826 个运行文件，约 14.9 MB），安装到临时目录后再验证真实入口 **8 passed**。包不含交接、自演进、真实配置或数据库。npm registry 尚未发布新版；GitHub 源码/本地包可用。
+- 当前服务已在确认 24 个 Agent 空闲后通过既有 restart_flag 加载新代码；新 connection 路由对不存在的群返回预期 403，公网 Studio 200。`/openapi.json` 在此部署关闭（404），不要将其当作启动就绪探针。
+- 文档与复制 Prompt 见 `docs/agent-join.md`。本节随本轮实现提交；提交号以 `git log -1 --oneline` 为准。以下是前序阶段的历史记录。
+
+## 前序：命令行入群（2026-11-08）
+
+- 上一批 `49c6493` 已按用户授权推送到 `origin/main`，远端 SHA 已核对。下面旧段落的「未推送」属于当时记录。
+- 用户新增需求：评估包内 acpx、核对 npm 安装，并允许给 Codex 一个 prompt 后，按邀请链接把 Agent 加入官网/其他群。用户进一步明确希望支持复用同一个 Agent 和原有上下文。
+- 新的未提交源码：`src/cli/commands/join.py`，由 npm / 源码统一入口分发。`--agent` 复用原 ClawCross Agent；`--native-session` 按准确原生 ID 登记恢复；`--current` 只读取 `CODEX_THREAD_ID`。找不到或无法恢复时失败，禁止猜最近会话或新建替身。`--new` 是明确创建模式，重复执行使用确定 ID。
+- `--prepare` 才允许缺少时启动本机服务、安装 acpx。未启用公网、未修改运行服务或向实际群发送测试消息。原生会话需要适配器支持列举和恢复，其他客户端不能与 ClawCross 同时写该会话。
+- 文档和可复制 Prompt：`docs/agent-join.md`。新入口尚未发布 npm。2026-11-08 核对 npm 官方最新 ClawCross 仍是 `0.0.26`，源码为待发布 `0.0.29`；最新 acpx `0.22.0` 需 Node `22.13+`，当前未改变独立组件策略或强制捆绑。
+- 验证：源码 join / 原生会话 / CLI 共 **30 passed**；将 `.tgz` 安装到临时目录再通过安装入口验证，**7 passed**。临时安装新增 3 个包、耗时约 4 秒；产物约 14.9 MB，真实 npm 文件清单检查通过。
+- 初次回归中的两处失败为旧 mock 少了启动参数，以及测试继承宿主 `PUBLIC_DOMAIN`；已保持原校验意图修复并复验。
+- 真实 Codex 原生恢复实测最终 **1 passed, 1 subtests passed**，52.22 秒：独立会话保存随机代号，关闭旧 ACP 连接，用同一原生 ID 恢复并成功回忆代号。没有读取已有用户会话或加入真实群。最初因离线缓存缺适配器 ENOTCACHED、测试硬编码了账号不支持的型号而失败；显式缓存官方适配器 2.5.0、改用本机 CLI 默认模型后通过。探针中 `codex-acp --help` 会等待 ACP 输入，已终止该探针专用进程；不要把它当作普通命令帮助反复运行。
+- npm 文件清单检查发现旧 `docs/handoff-20261003.md` 被通配符选入；已增加忽略规则和发布清单硬性检查，交接、self-evolution、真实配置与用户数据不进入安装包。
 
 ## 当前状态
 

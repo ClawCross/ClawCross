@@ -121,7 +121,7 @@ class NativeSessionTests(unittest.IsolatedAsyncioTestCase):
              patch.object(runtime, '_native_session', return_value=(None, None, {})), \
              patch('external.history.get_store', return_value=history):
             await runtime.test_connection(agent)
-            factory.assert_called_with(cwd=str(self.root))
+            factory.assert_called_with(cwd=str(self.root), agent_name='', agent_command='')
             self.assertEqual(adapter.ensure_session.call_args.kwargs['resume_session_id'], 'native-one')
             adapter.prompt_with_trace.assert_not_awaited()
             reply = await runtime.ask(agent, AgentMessage(text='new question'), context={}, mode='auto',
@@ -155,3 +155,20 @@ class NativeSessionTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict('os.environ', {'CLAWCROSS_NATIVE_SESSION_USERS':'alice'}), patch.object(native_sessions,'catalog',new=self.adapter.list_native_sessions):
             self.assertEqual(client.get('/v1/agents/native-sessions',headers={'Authorization':'Bearer bob:pass'}).status_code,403)
             self.assertEqual(client.get('/v1/agents/native-sessions',headers={'Authorization':'Bearer alice:pass'}).status_code,200)
+
+    async def test_adapter_download_requires_explicit_local_host_proof(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from agents.routes import create_agents_router
+        app=FastAPI();app.include_router(create_agents_router(internal_token='internal',verify_password=lambda u,p:p=='pass',store=self.store,gateway=AsyncMock()))
+        client=TestClient(app)
+        with patch.object(native_sessions,'catalog',new=AsyncMock(return_value={'sessions':[]})) as catalog:
+            for headers in ({}, {'Authorization':'Bearer alice:pass'},
+                            {'Authorization':'Bearer internal:alice'},
+                            {'Authorization':'Bearer alice:pass','X-ClawCross-Host-Browse':'internal'}):
+                self.assertIn(client.post('/v1/agents/native-sessions/prepare?platform=codex',headers=headers).status_code,(401,403))
+            catalog.assert_not_awaited()
+            result=client.post('/v1/agents/native-sessions/prepare?platform=codex',headers={
+                'Authorization':'Bearer internal:alice','X-ClawCross-Host-Browse':'internal'})
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertTrue(catalog.await_args.kwargs['allow_install'])

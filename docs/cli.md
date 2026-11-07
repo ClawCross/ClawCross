@@ -27,6 +27,23 @@ CLI 保留启动时所在目录，作为 `cli_workspace` 交给后端；继续�
 
 帮助与版本不需要 Python，也不触发下载或启动服务。普通 API 命令可使用现有 Python 3.11+，无需安装完整服务依赖；缺少 Python 才由平台入口准备 uv/Python。核心依赖在显式 `start`/`setup` 时准备；acpx、SRT、Cloudflare 等仍需显式安装。
 
+使用已有 Agent 或原生会话按邀请链接入群：
+
+```bash
+clawcross join '完整邀请链接' --agent 已有Agent编号 --json
+clawcross join '完整邀请链接' --current --prepare --json
+clawcross join '完整邀请链接' --new --platform codex --prepare --autostart --json
+clawcross start --bridge
+clawcross autostart enable --bridge --json
+clawcross autostart status --json
+clawcross autostart disable --json
+```
+
+前者保留原 Agent ID；后者精确识别当前 Codex 原生会话，适配器支持时登记并恢复。
+`--new` 才允许创建独立伙伴。`--prepare` 启动转接模式，仅运行本机 Agent / 群消息服务，
+无需打开前端。`--autostart` 可选启用系统自启动，不重启当前实例。
+详见 [转接模式与可复制 Prompt](agent-join.md)。
+
 ---
 
 ## 概览

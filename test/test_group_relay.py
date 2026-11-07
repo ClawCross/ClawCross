@@ -246,6 +246,32 @@ class TwoDeviceTests(unittest.IsolatedAsyncioTestCase):
         await self.clients[0].post('alice',self.clients[0].alias,'u:alice','RESTORED_WITHOUT_REJOIN')
         await self.until(lambda:any('RESTORED_WITHOUT_REJOIN' in row[1] for row in self.clients[1].gateway.received))
 
+    async def test_background_poll_restores_a_saved_device_without_frontend_or_duplicate_wakes(self):
+        a,b=self.clients
+        await b.close()
+        self.assertEqual(b.connection_status(b.user,b.alias)['state'],'stopped')
+        await a.post(a.user,a.alias,'u:alice','DELIVER_AFTER_BACKGROUND_RESTART')
+        restored=GroupClient(ClientStore(b.store.path),b.agents,FakeGateway())
+        restored.user,restored.alias=b.user,b.alias
+        # The official site's transport is HTTP. No frontend process is needed
+        # on the receiving machine; the fixture relay accepts the same packets.
+        with restored.store.db() as db:
+            db.execute('UPDATE group_client_connections SET via=? WHERE owner=? AND alias=?',
+                       ('fixture-ticket',b.user,b.alias))
+        self.clients[1]=restored
+        await restored.start()
+        await self.until(lambda:len(restored.gateway.received)==1)
+        self.assertIn('DELIVER_AFTER_BACKGROUND_RESTART',restored.gateway.received[0][1])
+        status=restored.connection_status(b.user,b.alias)
+        self.assertEqual((status['state'],status['transport'],status['background_running']),('connected','http-poll',True))
+        self.assertTrue(status['last_received_at'])
+        await asyncio.sleep(2.1)
+        self.assertEqual(len(restored.gateway.received),1)  # idle heartbeats never wake the model
+        row=restored.store.get(b.user,b.alias)
+        await restored.consume(row,self.server_events(row))
+        self.assertEqual(len(restored.gateway.received),1)
+        with self.assertRaises(ClientError):restored.connection_status('another-user',b.alias)
+
     def server_events(self, row):
         return RelayStore(self.key_path.parent / 'group-relay.db').events(row['token'], 0)
 

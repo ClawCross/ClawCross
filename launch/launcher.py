@@ -73,6 +73,7 @@ if not os.path.exists(ENV_FILE_PATH):
 
 # 加载 .env 配置
 load_dotenv(dotenv_path=ENV_FILE_PATH)
+BRIDGE_MODE = (os.getenv('CLAWCROSS_BRIDGE_MODE') or '').lower() in ('1', 'true', 'yes', 'on')
 
 _require_llm_model = (os.getenv("CLAWCROSS_REQUIRE_LLM_MODEL") or "").strip().lower()
 _allow_empty_llm_model = (os.getenv("CLAWCROSS_ALLOW_EMPTY_LLM_MODEL") or "").strip().lower()
@@ -577,6 +578,8 @@ services = [
         "pid_name": "mainagent",
     },
 ]
+if BRIDGE_MODE:
+    services = [service for service in services if service['pid_name'] in {'group_server', 'mainagent'}]
 
 # 渠道启动（可选组件）
 is_headless = os.getenv("WEBOT_HEADLESS", "0") == "1"
@@ -772,7 +775,7 @@ def _check_nonebot_deps(adapter_names):
 
 
 channel_platforms = _detect_channel_platforms()
-has_channel_config = bool(channel_platforms) and not _channel_disabled()
+has_channel_config = bool(channel_platforms) and not _channel_disabled() and not BRIDGE_MODE
 
 channels_main = os.path.join(PROJECT_ROOT, "src", "backend", "channels", "main.py")
 should_start_channels = has_channel_config and os.path.exists(channels_main)
@@ -786,7 +789,9 @@ if should_start_channels:
         print("💬 [skip] NoneBot 依赖未就绪，跳过渠道（不影响其他服务）")
         should_start_channels = False
 
-if should_start_channels:
+if BRIDGE_MODE:
+    print('ClawCross bridge mode: no frontend, scheduler, OASIS, channels or public tunnel.')
+elif should_start_channels:
     services.append(
         {
             "message": f"🌐 [5/5] 启动前端 Web UI (port {PORT_FRONTEND})...",
@@ -815,14 +820,18 @@ else:
 
 # 启动所有服务
 launch_services(services)
-start_fleet_conductor_if_configured()
+if not BRIDGE_MODE:
+    start_fleet_conductor_if_configured()
 if should_start_channels:
     start_channels_if_configured(channel_platforms)
 
 print()
 print("============================================")
 print("  ✅ WeBot 已全部启动！")
-print(f"  🌐 访问: http://127.0.0.1:{PORT_FRONTEND}")
+if BRIDGE_MODE:
+    print('  ClawCross bridge is receiving group messages; no browser is required.')
+else:
+    print(f"  🌐 访问: http://127.0.0.1:{PORT_FRONTEND}")
 print("  按 Ctrl+C 停止所有服务")
 print("============================================")
 print()
@@ -887,6 +896,7 @@ try:
             restart_channel_platforms = _detect_channel_platforms()
             restart_should_start_channels = (
                 bool(restart_channel_platforms)
+                and not BRIDGE_MODE
                 and not _channel_disabled()
                 and os.path.exists(channels_main)
             )
@@ -896,7 +906,8 @@ try:
                     print("💬 [skip] NoneBot 依赖未就绪，跳过渠道（不影响其他服务）")
                     restart_should_start_channels = False
             launch_services(services)
-            start_fleet_conductor_if_configured()
+            if not BRIDGE_MODE:
+                start_fleet_conductor_if_configured()
             if restart_should_start_channels:
                 start_channels_if_configured(restart_channel_platforms)
             print()

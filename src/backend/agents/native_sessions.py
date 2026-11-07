@@ -57,14 +57,14 @@ def _foreign_native_ids(platform: str, owner: str, store=None) -> set[str]:
     return result
 
 
-async def catalog(owner: str, platform: str, *, cursor: str = '', adapter=None, store=None) -> dict:
+async def catalog(owner: str, platform: str, *, cursor: str = '', adapter=None, store=None, allow_install: bool = False) -> dict:
     platform = canonical_platform(platform)
     if driver_for_platform(platform) != ACPX:
         raise ValueError('Choose an ACP platform available in the platform list')
     if adapter is None:
         from external.acpx import get_acpx_adapter
         adapter = get_acpx_adapter()
-    result = await adapter.list_native_sessions(tool=platform, cursor=cursor)
+    result = await adapter.list_native_sessions(tool=platform, cursor=cursor, **({'allow_install':True} if allow_install else {}))
     hidden = _foreign_native_ids(platform, owner, store)
     rows = []
     with database() as db:

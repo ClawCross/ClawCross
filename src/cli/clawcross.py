@@ -2864,6 +2864,13 @@ def main(argv: list[str] | None = None) -> int:
             launcher = ["bash", str(PROJECT_ROOT / "launch/run.sh")]
         return subprocess.call([*launcher, *raw[command_index:]])
     api_commands = {"agents", "teams", "groups", "settings", "tools", "tts", "profile", "visual", "topics", "personas", "workflows", "token"}
+    if command == 'autostart':
+        from launch.autostart import main as autostart_main
+        return autostart_main(raw[command_index+1:])
+    if command == 'join':
+        from src.cli.commands.join import main as join_main
+        user = raw[1] if command_index == 2 else raw[0].split('=', 1)[1] if command_index == 1 else DEFAULT_USER
+        return join_main(raw[command_index+1:], default_user=user)
     if command == "tunnel":
         return _cmd_tunnel(raw[command_index + 1] if len(raw) > command_index + 1 else "status")
     if command in api_commands:

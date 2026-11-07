@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 from pathlib import Path
 import re
@@ -246,17 +247,56 @@ def _start_tunnel(env: dict[str, str]) -> bool:
     return process.poll() is None
 
 
+def _health_urls(env: dict[str, str], *, bridge: bool) -> list[str]:
+    urls = [f"http://127.0.0.1:{_port(env, 'PORT_GROUPS', 51203)}/relay/health",
+            f"http://127.0.0.1:{_port(env, 'PORT_AGENT', 51200)}/health"]
+    if not bridge:
+        urls += [f"http://127.0.0.1:{_port(env, 'PORT_OASIS', 51202)}/experts",
+                 f"http://127.0.0.1:{_port(env, 'PORT_FRONTEND', 51209)}/"]
+    return urls
+
+
+def _started(env: dict[str, str], *, bridge: bool, tunnel: bool = False) -> None:
+    if bridge:
+        print("ClawCross bridge ready; receiving group messages in the background (no web UI).", flush=True)
+    else:
+        print(f"Local web UI: http://127.0.0.1:{_port(env, 'PORT_FRONTEND', 51209)}", flush=True)
+        _magic_links(env, tunnel=tunnel)
+
+
 def start(args: argparse.Namespace) -> int:
+    bridge = bool(getattr(args, 'bridge', False))
+    supervised = bool(getattr(args, 'supervised', False))
     use_openclaw = bool(getattr(args, "with_openclaw", False) and not args.no_openclaw)
     use_tunnel = bool(getattr(args, "tunnel", False) and not args.no_tunnel)
-    _migrate_if_needed()
-    ensure_core()
-    _ensure_config()
+    if bridge and use_tunnel:
+        raise ValueError('--bridge does not serve a web UI; use start --tunnel for a public device page')
+    if supervised:
+        # A boot task never installs packages, opens a login flow, or interrupts a
+        # manually running instance. It observes that instance until it exits.
+        existing = _pid(LAUNCHER_PID)
+        if existing:
+            print('ClawCross is already running; observing the existing process.', flush=True)
+            while _pid(LAUNCHER_PID) == existing:
+                time.sleep(1)
+            return 0
+        if not ENV_FILE.is_file():
+            raise RuntimeError('Runtime not prepared. Run clawcross join --prepare before enabling autostart.')
+    else:
+        _migrate_if_needed()
+        ensure_core()
+        _ensure_config()
     env = _process_env(no_channel=args.no_channel)
+    if bridge:
+        env.update(CLAWCROSS_BRIDGE_MODE='1', CLAWCROSS_NO_CHANNEL='1',
+                   CLAWCROSS_ALLOW_EMPTY_LLM_MODEL='1', GROUP_SERVER_HOST='127.0.0.1')
+    else:
+        env['CLAWCROSS_BRIDGE_MODE'] = '0'
     if use_openclaw:
         _maybe_import_openclaw(env)
         env = _process_env(no_channel=args.no_channel)
-    _check_model(env)
+    if not bridge:
+        _check_model(env)
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
@@ -264,50 +304,58 @@ def start(args: argparse.Namespace) -> int:
     _clear_public_domain()
     _stop_pid(LAUNCHER_PID)
     command = [sys.executable, str(ROOT / "launch/launcher.py")]
+    urls = _health_urls(env, bridge=bridge)
+    def remember(process):
+        LAUNCHER_PID.write_text(str(process.pid) + "\n", encoding="ascii")
+        (RUN_DIR / 'profile.json').write_text(json.dumps({'pid':process.pid, 'mode':'bridge' if bridge else 'full'}) + '\n', encoding='utf-8')
+
     if args.foreground:
         process = None
+        previous_term = signal.getsignal(signal.SIGTERM)
+        def terminate(_signum, _frame):
+            raise KeyboardInterrupt
+        signal.signal(signal.SIGTERM, terminate)
         try:
             process = subprocess.Popen(command, cwd=WORKSPACE_DIR, env=env)
-            LAUNCHER_PID.write_text(str(process.pid) + "\n", encoding="ascii")
+            remember(process)
             deadline = time.monotonic() + 120
-            agent = _port(env, "PORT_AGENT", 51200)
-            oasis = _port(env, "PORT_OASIS", 51202)
-            frontend = _port(env, "PORT_FRONTEND", 51209)
-            groups = _port(env, "PORT_GROUPS", 51203)
             while process.poll() is None and time.monotonic() < deadline:
-                if (_probe(f"http://127.0.0.1:{groups}/relay/health") and
-                _probe(f"http://127.0.0.1:{agent}/health") and
-                        _probe(f"http://127.0.0.1:{oasis}/experts") and
-                        _probe(f"http://127.0.0.1:{frontend}/")):
-                    print(f"Local web UI: http://127.0.0.1:{frontend}", flush=True)
-                    _magic_links(_process_env(no_channel=args.no_channel), tunnel=False)
+                if all(_probe(url) for url in urls):
+                    tunnel = _start_tunnel(env) if supervised and use_tunnel else False
+                    _started(env, bridge=bridge, tunnel=tunnel)
                     break
                 time.sleep(0.5)
+            else:
+                print('Services did not become ready.', file=sys.stderr)
+                return 1
             return process.wait()
         except KeyboardInterrupt:
-            return 130
+            return 0 if supervised else 130
         finally:
+            signal.signal(signal.SIGTERM, previous_term)
             if process is not None:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=12)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
                 _remove_owned_pid(LAUNCHER_PID, process.pid)
+                if supervised and use_tunnel:
+                    _stop_pid(TUNNEL_PID)
     with (LOG_DIR / "launcher.log").open("a", encoding="utf-8") as log:
         kwargs = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
                   else {"start_new_session": True})
         process = subprocess.Popen(command, cwd=WORKSPACE_DIR, env=env, stdin=subprocess.DEVNULL,
                                    stdout=log, stderr=subprocess.STDOUT, **kwargs)
-    LAUNCHER_PID.write_text(str(process.pid) + "\n", encoding="ascii")
-    agent = _port(env, "PORT_AGENT", 51200)
-    oasis = _port(env, "PORT_OASIS", 51202)
-    frontend = _port(env, "PORT_FRONTEND", 51209)
-    groups = _port(env, "PORT_GROUPS", 51203)
+    remember(process)
     deadline = time.monotonic() + 120
     ready = False
     while time.monotonic() < deadline:
         if process.poll() is not None:
             break
-        if (_probe(f"http://127.0.0.1:{groups}/relay/health") and
-                _probe(f"http://127.0.0.1:{agent}/health") and
-                _probe(f"http://127.0.0.1:{oasis}/experts") and
-                _probe(f"http://127.0.0.1:{frontend}/")):
+        if all(_probe(url) for url in urls):
             ready = True
             break
         time.sleep(0.5)
@@ -322,9 +370,8 @@ def start(args: argparse.Namespace) -> int:
         _remove_owned_pid(LAUNCHER_PID, process.pid)
         print(f"Services did not become ready; see {LOG_DIR / 'launcher.log'}", file=sys.stderr)
         return 1
-    print(f"Local web UI: http://127.0.0.1:{frontend}")
     tunnel = _start_tunnel(env) if use_tunnel else False
-    _magic_links(env, tunnel=tunnel)
+    _started(env, bridge=bridge, tunnel=tunnel)
     return 0
 
 
@@ -335,8 +382,15 @@ def status() -> int:
         print("ClawCross is not running.")
         return 1
     print(f"ClawCross launcher PID: {pid}")
-    for name, default in (("PORT_AGENT", 51200), ("PORT_SCHEDULER", 51201),
-                          ("PORT_OASIS", 51202), ("PORT_GROUPS", 51203), ("PORT_FRONTEND", 51209)):
+    try:
+        profile = json.loads((RUN_DIR / 'profile.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        profile = {}
+    bridge = profile.get('pid') == pid and profile.get('mode') == 'bridge'
+    print('Mode: bridge (no web UI)' if bridge else 'Mode: full')
+    ports = (("PORT_AGENT", 51200), ("PORT_GROUPS", 51203)) if bridge else (
+        ("PORT_AGENT", 51200), ("PORT_SCHEDULER", 51201), ("PORT_OASIS", 51202), ("PORT_GROUPS", 51203), ("PORT_FRONTEND", 51209))
+    for name, default in ports:
         print(f"{name}: {_port(env, name, default)}")
     return 0
 
@@ -372,6 +426,9 @@ def _legacy_command(command: str, arguments: list[str]) -> int | None:
         else:
             from src.cli.cli import main as cli_main
         return cli_main(arguments)
+    if command == 'autostart':
+        from autostart import main as autostart_main
+        return autostart_main(arguments)
     scripts = {
         "add-user": ("src/backend/ops/setup/adduser.py", []),
         "configure": ("src/backend/ops/setup/configure.py", []),
@@ -402,6 +459,7 @@ def _legacy_command(command: str, arguments: list[str]) -> int | None:
         options.add_argument("--no-tunnel", action="store_true")
         options.add_argument("--no-openclaw", action="store_true")
         options.add_argument("--no-channel", action="store_true")
+        options.add_argument("--bridge", action="store_true")
         parsed = options.parse_args(arguments)
         parsed.foreground = False
         return start(parsed)
@@ -414,7 +472,7 @@ def main() -> int:
         print("ClawCross commands: start, start-foreground, restart, setup, stop, status, "
               "configure, add-user, auto-model, import-openclaw-llm, components, "
               "install-component, start-tunnel, stop-tunnel, tunnel-status, logs, "
-              "doctor, cli, clawcross, evolve-skill")
+              "doctor, cli, clawcross, autostart, evolve-skill")
         return 0
     if len(sys.argv) > 1:
         try:
@@ -426,13 +484,14 @@ def main() -> int:
             return 1
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("start", "start-foreground", "start-fg"):
+    for name in ("start", "start-foreground", "start-fg", "run-service"):
         command = sub.add_parser(name)
         command.add_argument("--tunnel", action="store_true")
         command.add_argument("--with-openclaw", action="store_true")
         command.add_argument("--no-tunnel", action="store_true")
         command.add_argument("--no-openclaw", action="store_true")
         command.add_argument("--no-channel", action="store_true")
+        command.add_argument("--bridge", action="store_true", help="Only run local Agent/group services; no web UI")
     sub.add_parser("setup")
     sub.add_parser("status")
     sub.add_parser("stop")
@@ -445,8 +504,9 @@ def main() -> int:
     sub.add_parser("tunnel-status")
     args = parser.parse_args()
     try:
-        if args.command in {"start", "start-foreground", "start-fg"}:
+        if args.command in {"start", "start-foreground", "start-fg", "run-service"}:
             args.foreground = args.command != "start"
+            args.supervised = args.command == 'run-service'
             return start(args)
         if args.command == "setup":
             _migrate_if_needed()

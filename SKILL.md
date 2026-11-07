@@ -19,6 +19,7 @@ metadata:
 
 1. After you have read this file (or the sections needed for the user’s task), you **must ask the user** whether they want to **start Clawcross** now (background `start` or foreground `start-foreground`), and **wait for their answer** before running those commands.
 2. **Exception:** if the user already clearly asked to start in the same turn (e.g. “帮我启动 Clawcross”“run start”“执行 start”), you may run `start` / `start-foreground` without asking again.
+   An explicitly requested `join --prepare` authorizes preparing and starting forwarding mode (`--bridge`) as part of joining. Honor existing session authorization; do not ask a second time. This mode has no local web UI, login link or main-model setup wizard.
 3. When Clawcross **is** started, copy the **local URL**, Magic link lines, and (if present) **remote** Tunnel URL from the terminal output into your reply — see [`AGENTS.md`](./AGENTS.md) Zero-Question Install Flow.
 
 ### Self-Evolution Protocol
@@ -537,14 +538,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-07T13:32:29.252339+00:00`
+- Updated at: `2026-11-07T17:44:19.841939+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `verification-loop-4`
-- Heuristic score: `0.886`
+- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
+- Heuristic score: `0.722`
 
 ### Trigger Summary
 
-Command exited with code 0. Command: Verify Studio recovery, dedicated main-API avatar generation and targeted regression tests. Signals: verification-loop. stdout was used as fallback failure evidence.
+Command exited with code 0. Command: Forwarding deploy readiness and installed-package smoke. Signals: verification-loop, approval-auth, structured-output. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -553,12 +554,12 @@ Command exited with code 0. Command: Verify Studio recovery, dedicated main-API 
 
 ### Latest Trigger Command
 
-`Verify Studio recovery, dedicated main-API avatar generation and targeted regression tests`
+`Forwarding deploy readiness and installed-package smoke`
 
 ### Latest Error Excerpt
 
 ```text
-Recovered /studio and /mobile/group_chat: HTTP 200. User systemd service enabled, active/running; lingering enabled. Initial dedicated avatar call returned HTTP 502 with an empty model response at provider-default reasoning. After selecting the lowest supported reasoning level, the real frontend proxy returned HTTP 200 in 5.82s with a validated 3025-byte SVG. Backend regression suite: 182 passed and 57 subtests passed; added PUT forwarding and quiet second-cycle avatar sync regressions: 11 passed and 8 subtests passed. Avatar browser cases: 4 passed; Studio/mobile/Dynamic UI cases: 8 passed. Initial browser failures were incorrect selectors and test navigation, corrected without weakening application checks.
+Readiness-only probe /openapi.json returned 404 because this deployment disables OpenAPI. Use a known health route plus the authenticated forwarding route; do not wait on optional documentation endpoints.
 ```
 
 ### Governance Snapshot
@@ -570,22 +571,25 @@ Recovered /studio and /mobile/group_chat: HTTP 200. User systemd service enabled
 
 ### Operating Adjustments
 
-1. State the exact failure mode before editing anything.
-2. Choose the narrowest reproducer first, then a broader regression command.
-3. Record pass/fail status immediately after each attempted fix.
+1. Start from the narrowest reproducible failure before broad retries.
+2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
+3. End every fix attempt with an explicit verifier command and observed result.
 
 ### Validation Loop
 
-1. Rerun the minimal reproducer before any broad test suite.
-2. When a fix passes, note the exact verifier command in the skill.
+1. Run the minimal reproducer first, then the broader regression command.
+2. Persist the command and result summary in the evolution report.
 
 ### Recent Evidence
 
-- `2026-11-07T13:32:29.252339+00:00` `repo-skill` — Recovered /studio and /mobile/group_chat: HTTP 200. User systemd service enabled, active/running; lingering enabled. Initial dedicated avatar ...[truncated]
+- `2026-11-07T17:44:19.841939+00:00` `repo-skill` — Readiness-only probe /openapi.json returned 404 because this deployment disables OpenAPI. Use a known health route plus the authenticated forw ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `verification-loop-4` score `0.886` — Tighten verification loops (intent `repair`)
+- `blended-verification-loop-approval-auth-structured-output` score `0.722` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-2` score `0.682` — Tighten verification loops (intent `repair`)
+- `approval-auth-2` score `0.682` — Preflight auth and approval constraints (intent `repair`)
+- `structured-output-1` score `0.614` — Harden structured-output handling (intent `repair`)
 
 ### Local State Snapshot
 

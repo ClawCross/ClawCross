@@ -617,13 +617,13 @@ await fn(process.argv[2]);'''
             )
         return out
 
-    async def list_native_sessions(self, *, tool: str, cursor: str = '') -> dict:
+    async def list_native_sessions(self, *, tool: str, cursor: str = '', allow_install: bool = False) -> dict:
         """Explicit native metadata query; never used by passive status polling."""
         args = self._command_prefix(tool=tool, session_key='') + ['sessions', 'list']
         if cursor:
             args.extend(['--cursor', cursor])
-        raw = await self._run_json(args, timeout_sec=30, allow_nonzero=False,
-                                   approve_all=False, permission_policy='deny-all', non_interactive_permissions='deny', offline=True)
+        raw = await self._run_json(args, timeout_sec=90 if allow_install else 30, allow_nonzero=False,
+                                   approve_all=False, permission_policy='deny-all', non_interactive_permissions='deny', offline=not allow_install)
         try:
             data = json.loads(raw)
         except ValueError:

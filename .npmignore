@@ -109,6 +109,7 @@ test/
 playwright.config.mjs
 pytest.ini
 HANDOFF.md
+docs/handoff*.md
 docs/self-evolution/
 
 # 显式排除大体积二进制（npm 对 bin/ 字段所在目录有强制保留）

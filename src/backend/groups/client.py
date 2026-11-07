@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import secrets
 import sqlite3
+import time
 from urllib.parse import unquote, urlsplit
 
 import httpx
@@ -242,6 +243,17 @@ class GroupClient:
         self.outbox_task = None
         self.receives = {}
         self.avatar_tasks = {}
+        self.connections = {}
+
+    def connection_status(self, owner, alias):
+        row = self.require(owner, alias)
+        task = self.tasks.get((owner, alias))
+        running = bool(task and not task.done() and not self.closed)
+        status = self.connections.get((owner, alias), {})
+        return {'group_id':alias, 'background_running':running,
+                'state':status.get('state', 'connecting') if running else 'stopped',
+                'transport':'http-poll' if row['via'] else 'websocket',
+                'last_received_at':status.get('last_received_at')}
 
     @staticmethod
     def headers(row):
@@ -708,6 +720,7 @@ class GroupClient:
                     self.avatar_tasks.pop(key, None)
             avatar_task.add_done_callback(avatar_finished)
         if key not in self.tasks or self.tasks[key].done():
+            self.connections[key] = {'state':'connecting', 'last_received_at':None}
             task = asyncio.create_task(self.worker(owner, alias))
             self.tasks[key] = task
             def finished(done):
@@ -753,6 +766,7 @@ class GroupClient:
             if member['connection_id'] == row['connection_id'] and member.get('agent_id') and self.agents.get(owner, member['agent_id']) is None:
                 packet['group'] = await asyncio.to_thread(self.request, row, 'POST', '/manage/remove_member', {'principal': member['principal']})
         await self.consume(self.require(owner, alias), packet)
+        self.connections[(owner, alias)] = {'state':'connected', 'last_received_at':time.time()}
         return self.require(owner, alias)['cursor']
 
     async def _stream(self, owner, alias, connected):
@@ -827,10 +841,12 @@ class GroupClient:
                 revoked = (isinstance(exc, ConnectionClosed) and exc.rcvd and exc.rcvd.code == 1008) or (
                     isinstance(exc, ClientError) and exc.status in {401, 403})
                 if revoked:
+                    self.connections[(owner, alias)] = {'state':'revoked'}
                     self.store.update(owner, alias, active=0, error='群凭证已失效或成员关系已撤销')
                     return
                 paused = (isinstance(exc, ClientError) and exc.status == 503 and '暂停外部联网' in str(exc)) or (
                     isinstance(exc, ConnectionClosed) and exc.rcvd and exc.rcvd.code == 1013 and '暂停外部联网' in exc.rcvd.reason)
+                self.connections[(owner, alias)] = {'state':'paused' if paused else 'reconnecting'}
                 self.store.update(owner, alias, error='群主已暂停外部联网，等待恢复' if paused else '连接中断，正在重连')
                 await asyncio.sleep(delay)
                 delay = min(30, delay * 2)

@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(not NODE, reason="Node is required for the npm e
 
 
 def env_for(home):
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAWCROSS_", "PORT_")) and k not in {"INTERNAL_TOKEN", "CLAW_USER", "CLI_USER"}}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAWCROSS_", "PORT_")) and k not in {"INTERNAL_TOKEN", "CLAW_USER", "CLI_USER", "PUBLIC_DOMAIN"}}
     return {**env, "CLAWCROSS_HOME": str(home), "CLAWCROSS_USE_LEGACY_PATHS": "0", "CLAW_USER": "alice", "PYTHONDONTWRITEBYTECODE": "1"}
 
 

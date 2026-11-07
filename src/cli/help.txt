@@ -12,7 +12,13 @@ ClawCross — 与你的 Agent 在终端协作
   clawcross model                    模型配置与切换
   clawcross team / workflow          团队与工作流
   clawcross groups / skill / cron    群聊、技能与闹钟
+  clawcross join LINK --agent ID     用已有 Agent 加入邀请群，保留上下文
+  clawcross join LINK --current      复用当前 Codex 原生会话（需要适配器支持）
+  clawcross join LINK --new --prepare 新建伙伴，准备转接模式并入群
+  clawcross join LINK --new --prepare --autostart  入群并启用系统自启动
   clawcross start                    准备核心环境并启动本地服务
+  clawcross start --bridge           转接模式：后台接群，不运行前端
+  clawcross autostart enable|disable|status  设置、关闭或查看自启动
   clawcross start --tunnel           启动并连接 Hub 公网入口
   clawcross stop / status / doctor   服务控制与诊断
   clawcross components              查看可选组件

@@ -19,6 +19,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `launch/` | launch, environment preparation, runtime control, tunnel and runtime migration only |
 | `src/cli/` | interactive CLI and API command interface |
 | `src/cli/commands/` | CLI subcommands, profiles, pickers and API client |
+| `src/cli/commands/join.py` | invitation join with an existing Agent or exact native session; see `docs/agent-join.md` |
 | `src/backend/ops/setup/` | runtime configuration, user setup and the read-only OpenClaw LLM import |
 | `tools/build/` | development and frontend/preset build tools |
 | `package.json` / `docs/npm-packaging.md` | npm runtime file list and direct source packaging; tarballs go to `dist/` |
@@ -61,6 +62,7 @@ Read these first for setup or environment changes:
 | `launch/run.sh` | Linux / macOS uv and Python bootstrap |
 | `launch/run.ps1` | Windows uv and Python bootstrap |
 | `launch/runtime_control.py` | shared Python start, stop, status, and tunnel lifecycle |
+| `launch/autostart.py` | optional per-user startup: systemd, LaunchAgent or scheduled task; `start --bridge` skips the frontend |
 | `src/backend/ops/hub_tunnel.py`, `src/backend/common/hub_access.py` | outbound Hub device entry, private credentials and runtime URL; `launch/tunnel.py` selects Hub or explicit Cloudflare |
 | `launch/environment.py` | core Python dependencies and explicit optional component installs |
 | `config/requirements-channels.txt` | optional QQ, Telegram, and media dependencies |

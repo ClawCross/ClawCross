@@ -28,3 +28,23 @@ clawcross
 ```
 
 打包、验证和发布是独立操作；`pack:clawcross` 不会发布 npm，也没有安装后自动下载二进制的 hook。
+
+## acpx 的分发选择
+
+可以将 acpx 作为 npm 依赖，或通过 `bundleDependencies` 将依赖一起装入 tarball；
+这两种方式仍需让 Python 服务找到包内的可执行入口，并携带其许可证。
+`bundleDependencies` 只解决包的分发，不会包含用户的 Codex / Claude 登录，或自动
+安装每个平台的 CLI / ACP 适配器。
+
+2026-11-08 核对：npm 官方源 ClawCross 最新为 `0.0.26`，仓库待发布版本为
+`0.0.29`；最新 acpx 为 `0.22.0`，要求 Node `>=22.13.0`。当前项目支持 Node 18+，
+直接把最新 acpx 设为强制依赖会增加兼容性要求。推荐先固定经过协议验证的版本，
+再选择提高 Node 要求的完整分发包，或保留轻客户端按明确请求安装的方式。
+当前仍采用独立组件安装，没有把未验证的最新 acpx 强行内置。
+
+## 转接模式与自启动
+
+`join --prepare` 按明确请求准备服务与适配器，默认使用无前端的转接模式。
+`join --autostart` 或 `autostart enable --bridge` 注册当前用户的系统启动任务。
+需要持久安装目录；临时 `npx` 缓存不用于自启动。
+完整命令与平台启动时机见 [转接模式](agent-join.md)。

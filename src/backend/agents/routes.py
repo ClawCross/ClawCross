@@ -475,6 +475,26 @@ def create_agents_router(
         except (AcpxError, ValueError) as exc:
             raise HTTPException(502, str(exc)) from None
 
+    @router.post('/v1/agents/native-sessions/prepare')
+    async def prepare_native_sessions(platform: str = Query('codex', pattern='^[a-z0-9_-]{1,50}$'),
+                                      cursor: str = Query('', max_length=4096),
+                                      authorization: str | None = Header(None),
+                                      x_clawcross_host_browse: str | None = Header(None)):
+        # Downloading an adapter is an explicit local CLI action. Passive lists
+        # remain offline, including requests from browser-authenticated accounts.
+        user = user_of(authorization)
+        import hmac
+        if not (internal_token and x_clawcross_host_browse
+                and hmac.compare_digest(x_clawcross_host_browse, internal_token)
+                and is_internal_bearer(parse_bearer_parts(authorization) or [], internal_token)):
+            raise HTTPException(403, '准备适配器需要本机 CLI 凭证')
+        from agents.native_sessions import catalog
+        from external.acpx import AcpxError
+        try:
+            return await catalog(user, platform, cursor=cursor, store=store, allow_install=True)
+        except (AcpxError, ValueError) as exc:
+            raise HTTPException(502, str(exc)) from None
+
     @router.post('/v1/agents/native-sessions')
     async def import_native_session(body: NativeSessionImport, authorization: str | None = Header(None),
                                     x_clawcross_host_browse: str | None = Header(None)):

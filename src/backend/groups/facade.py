@@ -212,6 +212,13 @@ def client_router(facade, *, internal_token, verify_password):
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
+    @router.get('/groups/{gid}/connection')
+    async def connection(gid: str, authorization: str | None = Header(None)):
+        try:
+            return facade.client.connection_status(user_of(authorization), gid)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
     @router.post('/groups/{gid}/receipts')
     async def receipt(gid: str, body: dict, authorization: str | None = Header(None)):
         try:

@@ -31,7 +31,7 @@ class NativeSessionResumeIntegration(unittest.IsolatedAsyncioTestCase):
                     trace = await adapter.prompt_with_trace(
                         tool=platform, session_key=first,
                         prompt_text=f'这是独立验证会话。记住代号 {marker}。只回复 FIXTURE_SAVED，不使用工具。',
-                        model='gpt-5.5' if platform == 'codex' else 'sonnet', timeout_sec=45, **options)
+                        model=os.getenv('CLAWCROSS_NATIVE_SESSION_MODEL') or None, timeout_sec=45, **options)
                     self.assertIn('FIXTURE_SAVED', trace.text)
                     metadata = await adapter.show_session(tool=platform, name=first)
                     native_id = metadata.get('agentSessionId') or metadata['sessionId']
