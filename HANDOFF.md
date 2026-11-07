@@ -1,6 +1,13 @@
 # ClawCross 交接（2026-11-08）
 
 
+## 真实入群修复（2026-11-08）
+
+- 用户最终明确改为新建 Codex；已加入指定官网群「未来之室」。Agent `ag_join_a6d96a1144efa8df99a7ed71`，本机关联 `rg_cf9828b0f1ef3f8bbb621699`，后台接收状态 connected。未向群发送测试消息。
+- 工作目录 `/home/ubuntu/outputs/clawcross-hub-codex`；已有原生会话 /home/ubuntu 范围过宽被保护规则拒绝，没有绕过保护或导入原会话。
+- 真实 ACP 入群曾暴露 500：join_link 的工作线程调用 is_busy，却要求运行中的事件循环。已改为带互斥保护地读取各循环的 turn lock；跨线程检查能保持真实运行状态，不创建外部进程。
+- 针对状态/外部收件箱的 12 项测试通过，空闲时加载修复后，同一新 Codex 幂等入群返回 ok=true、background_running=true、connected。
+
 ## 本轮完成：转接模式与可选自启动（2026-11-08）
 
 - 用户命名为「转接模式」，参数 `start --bridge`；不叫客户端模式。

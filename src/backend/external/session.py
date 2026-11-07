@@ -8,6 +8,7 @@ import logging
 import asyncio
 import json
 import shlex
+import threading
 import time
 import uuid
 import weakref
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 from common.runtime_paths import PROJECT_ROOT  # noqa: E402
 
 _turn_locks = weakref.WeakKeyDictionary()
+_turn_locks_guard = threading.RLock()
 _turn_tasks = weakref.WeakKeyDictionary()
 _pending_turns = weakref.WeakKeyDictionary()
 _control_locks = weakref.WeakKeyDictionary()
@@ -93,7 +95,8 @@ def delivered_context(agent: Agent) -> dict[str, str]:
 async def turn(store: AgentStore | None, agent: Agent, *, cancellable=True):
     """Serialize a session's turns and read its persisted negotiation state afresh."""
     selected_store = store or get_store()
-    locks = _turn_locks.setdefault(asyncio.get_running_loop(), {})
+    with _turn_locks_guard:
+        locks = _turn_locks.setdefault(asyncio.get_running_loop(), {})
     key = (selected_store.db_path, agent.owner, agent.agent_id)
     task = asyncio.current_task()
     pending = _pending_turns.setdefault(asyncio.get_running_loop(), {}).setdefault(key,set())
@@ -129,11 +132,12 @@ def running_task(store: AgentStore | None, agent: Agent):
 
 
 def is_busy(store: AgentStore | None, agent: Agent) -> bool:
-    """Inspect our turn lock without starting an external adapter."""
+    """Inspect turn locks from the API loop or a synchronous group worker."""
     selected_store = store or get_store()
-    locks = _turn_locks.get(asyncio.get_running_loop(), {})
-    lock = locks.get((selected_store.db_path, agent.owner, agent.agent_id))
-    return bool(lock and lock.locked())
+    key = (selected_store.db_path, agent.owner, agent.agent_id)
+    with _turn_locks_guard:
+        return any(lock and lock.locked() for locks in list(_turn_locks.values())
+                   if (lock := locks.get(key)) is not None)
 
 
 @dataclass(slots=True)

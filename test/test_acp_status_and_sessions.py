@@ -1,4 +1,5 @@
 """ACP polling is passive and session tracking is scoped to the owner."""
+import asyncio
 import sys
 import unittest
 from pathlib import Path
@@ -36,9 +37,12 @@ class PassiveStatusTests(unittest.IsolatedAsyncioTestCase):
             runtime = AcpRuntime(store)
             with patch('external.acp.adapter', side_effect=AssertionError('must not spawn')):
                 self.assertEqual((await runtime.status(agent))['state'], 'idle')
+                self.assertFalse(await asyncio.to_thread(runtime.is_busy, agent))
                 async with session.turn(store, agent):
                     self.assertEqual((await runtime.status(agent))['state'], 'running')
+                    self.assertTrue(await asyncio.to_thread(runtime.is_busy, agent))
                 self.assertFalse(runtime.is_busy(agent))
+                self.assertFalse(await asyncio.to_thread(runtime.is_busy, agent))
 
     async def test_list_queries_local_records(self):
         adapter = AcpxAdapter.__new__(AcpxAdapter)

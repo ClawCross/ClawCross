@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261107175511553598",
+  "candidate_id": "verification-loop-2",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-07T17:55:11.553564+00:00"
+  },
+  "commands": [
+    {
+      "command": "Real Codex group join and pytest test/test_acp_status_and_sessions.py test/test_external_inbox.py -q",
+      "ok": true,
+      "stdout": "12 passed in 1.88s. After the fix, repeated the real join with the same deterministic Codex ID (no duplicate creation): joined=true, background_running=true, connection.state=connected, transport=http-poll. Original current-session import was rejected because /home/ubuntu overlaps protected runtime/configuration. User then explicitly requested a NEW Codex, initialized in a dedicated output workspace. No synthetic messages were sent to the real group.",
+      "stderr": "First real ACP join returned HTTP 500: GroupClient.join_link runs in asyncio.to_thread; card() calls gateway.is_busy(), but external.session.is_busy used asyncio.get_running_loop in the worker. Fix: inspect guarded per-loop lock maps without requiring a running loop; test asserts idle/running/idle from asyncio.to_thread. Never hide this exception by reporting a running Agent as idle."
+    }
+  ],
+  "overall_ok": true,
+  "duration_ms": null,
+  "created_at": "2026-11-07T17:55:11.553622+00:00",
+  "asset_id": "sha256:58c259da923b246aa2a949545eb6d8d4d3bf32e8dafde93f39e89db643bd3434"
+}
