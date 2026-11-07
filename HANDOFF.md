@@ -1,48 +1,111 @@
-# 交接任务接续状态（2026-10-03）
+# ClawCross 交接（2026-11-07）
 
-已补齐本地模型能力目录、用户默认/会话思考强度、精确价格查询、Town 按需加载、静态 CSS、图片压缩及群附件总量检查。
-276 项后端相关测试、19 项能力/追踪/分层测试、25 项浏览器测试通过；测试仅使用临时 CLAWCROSS_HOME。
-沙盒在 feature/landlock-network 的 260b7d3 完成，后续合并与最终验证记录见 docs/integration-validation.md。
-原始模型快照保留在本工作树 data/model_catalog/，只提交裁剪后的 common/model_catalog.json，不自动更新。
+## 当前状态
 
-以下为原始交接记录；其中未完成和未测试状态记录的是交接时的状态。
+- 工作区 `/home/ubuntu/work2/ClawCross`，分支 `main`，本批工作的基线是 `3fb861b`。
+- 用户已明确要求「完成提交」。此文件随本批代码提交，具体提交号用 `git log -1 --oneline` 查询；本轮不包含远端推送。
+- **头像功能已开发、验证，并由当前线上进程加载。** 真实主 API 经前端代理生成 SVG 返回 HTTP 200，耗时 5.82 秒，生成 3025 字节的合规 SVG。
+- **公网 502 已恢复。** Studio 和消息中心均返回 HTTP 200；已配置开机启动并由用户级 systemd 服务接管。
+- Hub 是另一仓库 `/home/ubuntu/work2/ClawCrossHub`；本批没有修改它。
 
-# 交接：ClawCross 2026-10-03 会话
+## 用户要求与已完成内容
 
-工作区：worktree `/home/ubuntu/work2/ClawCross-next`，分支 `feature/loop-openclaw-titles-invite`（从 main `e818bc9` 开出）。
-**全部未提交、未合并、测试一个都没跑**（用户规则：跑测试/E2E/重启前先问）。只做过 py_compile、node --check、AST 未定义名检查、模块导入检查，均通过。
-主工作区 `/home/ubuntu/work2/ClawCross` 未改动；同机还有其他 Claude/Codex 会话在跑。
-跑测试必须 `CLAWCROSS_HOME=$(mktemp -d)`，venv 用 `~/.clawcross/venv/bin/python`。
+### 头像
 
-## 已完成
+用户要求：显示用户头像、给 Agent 设置头像、支持上传和 SVG 生成。SVG 必须是调用已有主 API / 主模型、使用专门 Prompt 的独立流程。
 
-1. **Agent 循环整理（行为不变）**：`src/backend/webot/engine/agent.py` 2625→2204 行；`_call_model` 拆成 `_begin_turn/_select_model/_turn_tool_schemas/_dynamic_context/_prepare_history/_history_view/_invoke/_record_call_usage/_bill_usage/...`；工具节点抽出 `_discover/_inject_identity/_execute`；`UserAwareToolNode(tools, find_internal_session_meta_fn=..., tool_registry=...)` 去掉了没用的第二个参数（调用方和测试已改）。删除死模块：`engine/agent_orchestrator.py`、`engine/workflow_engines.py`、`engine/streaming_tool_executor.py`、`cache_boundary.py`、`notification_system.py`，及其测试类。
-2. **OpenClaw 改成和 Codex 一样的 ACP 工具**：删掉 `OPENCLAW` driver、`external/openclaw.py`、`openclaw_routes.py`、`openclaw_config.py`、`teams/openclaw_restore_naming.py`、`scheduler/cron_utils.py`；`agents/store.py` 启动时把 `driver='openclaw'` 一次性迁移为 `acpx`（保留 `global_name` 只用于会话 key）；会话 key `agent:<global_name or main>:clawcross-<owner>-<id>`（`external/session.py`）；ACP reset 一律换新 session key。删除所有写 OpenClaw 的功能（网关预热、chatCompletions、LLM 反写、agent 增删改、技能/频道/工作区编辑、团队快照恢复、Studio OpenClaw 标签/导入弹窗/配置面板、CLI `openclaw`/`openclaw-snapshot`、`sync-openclaw-llm` 等）。保留只读的“从 OpenClaw 导入 LLM 配置”（`ops/setup/configure_openclaw.py` 已精简到 313 行）。文档 `docs/openclaw-commands.md` 重写，AGENTS.md/SKILL.md/cli.md 等已同步。
-3. **会话标题**：agent 设置新增 `title`（`agents/routes.py` `_SHARED_SETTINGS`，`session_title()` 规范化，≤80 字）；新工具 `set_session_title`（`webot/mcp/session.py`，always-loaded，session 强制注入）；`AgentClient.update()`；Studio 侧栏显示 标题 > 第一条用户消息 > agent 名，agent 名作副标题；✏️ 编辑里可改标题；agent 可覆盖用户改的标题（用户确认）。
-4. **群聊只用邀请链接**：现有“朋友聊天链接”也能在另一台 ClawCross「加入群聊」粘贴，以正式成员加入。远程成员经群主前端 `/relay/*`（`frontend/proxies/group_guests.py`，带签名票据 `X-Group-Invite`）每 2 秒 `POST /relay/poll` 轮询；粘贴本机自己的链接时直连本机群服务器走 WebSocket（`groups/config.own_front_ends`）。客户端表新增 `via` 列（迁移在 `ClientStore.__init__`）。**密码加入、local_join、按群号加入、/sharing、旧 /invite 已全部删除**（用户：“统一用链接”）；CLI `groups join --invite <链接>`、`groups invite` 生成新链接（旧链接失效）；`join_group` 工具只收链接。弹窗按 theme.css 重做（`static/js/group-network-ui.js`、`static/css/group-network.css`）。文档 `docs/group-network.md` 已改。已知坑：临时 Cloudflare 隧道域名一变，远程成员断开。
-5. 测试文件已按上述改动更新（未运行）：test_agents、test_teams、test_team_snapshot_upload、test_optional_bootstrap、test_layering、test_integration、test_configure_openclaw_sync、test_group_relay、test_group_guests（新增邀请/轮询/代理/join_link 用例）、test_agent_tool_injection、test_tool_aliases、test_tool_schemas、test_new_features、test_enhanced_features、test_deep_audit_fixes、browser/studio-smoke、browser/mobile-agents-smoke。删除 test/openclaw_live_smoke.py。
+已实现：
 
-## 进行中：WeBot 思考强度 + 模型能力数据（未开始写代码）
+- 「我」的头像按钮、Agent 设置的「头像」入口、本人群资料中的可编辑头像。
+- 上传 PNG / JPEG / WebP / SVG，描述生成 SVG，先预览，点击保存才替换；取消不保存。
+- Agent 中心、联系人、会话列表、群头部、成员页和消息显示统一头像。单 Agent 私聊只显示一个 Agent 头像。
+- 头像改变时刷新已显示的历史消息；群内其他设备通过群凭证按需读取。
+- 头像资产与用户画像、主 Agent 对话分开存储；Agent 卡片只携带短引用，不塞入图片本体。
+- 浏览器访客可上传头像；仅有群邀请凭证的访客不允许调用宿主的生成 API。
 
-用户决定：**现在拉一次 OpenClaw 的公开模型目录作为固定数据，以后不要自动拉取**。快照已下载到 `data/model_catalog/openclaw-catalog-v2.raw.json`（未跟踪文件，1.6MB，来源 `https://catalog.openclaw.ai/models/v2/catalog.json`，MIT，generatedAt 1790699820435，sourceCommit 1d0efa48…，44 provider / 1039 模型）。
+核心文件与约束见 [docs/avatars.md](docs/avatars.md)。主要入口：
 
-调研结论：
-- LangGraph 不记录模型能力；LangChain core 1.6 有 `model.profile`（models.dev 数据，随包附带：OpenAI 60、Gemini 40、Anthropic 16、DeepSeek 4 个模型），字段 `image_inputs`、`reasoning_output`、`reasoning_effort_levels`、`reasoning_effort_default`、`max_input_tokens`、`temperature` 等。ChatOpenAI/ChatAnthropic/ChatGoogleGenerativeAI 都有统一的 `reasoning_effort` 参数（各自翻译成本家 API）。
-- OpenClaw 目录每个模型有 `input`（text/image/document）、`reasoning`、`contextWindow`、`maxTokens`、`thinkingLevelMap`（统一档位 off/minimal/low/medium/high/xhigh/max → 本家值，null=不支持）、`compat.supportedReasoningEfforts`、`mediaInput.image`（maxSidePx/preferredSidePx）、`pricing`（每百万 token）。档位数据稀疏（约 48 个模型有 supportedReasoningEfforts，36 个有 thinkingLevelMap）。
-- ClawCross 现有 4 张手写表要被替换：`webot/message_builder._is_vision_model`（名字匹配）、`webot/context_limits.infer_model_context_window`（名字猜）、`common/llm_factory._model_supports_temperature`（前缀表）、`webot/cost_tracker._MODEL_PRICING`（旧价格）。
+- `src/backend/common/avatars.py`：规范化、安全校验、所有者隔离、资产存储。
+- `src/backend/agents/avatar_generation.py`：一次主 API 调用、头像专用 Prompt、不自动保存。
+- `src/backend/agents/routes.py`：`/v1/agents/avatars/me`、`/generate`、`/{id}/avatar`、`settings.avatar`。
+- `src/frontend/static/js/avatars.js`、`css/avatars.css`：统一展示和编辑器。
+- `src/backend/groups/{client,relay_store,relay_api,facade}.py`：群内授权读取和独立的头像同步。
 
-建议实现（已向用户提出，用户认可用外部表）：
-1. 把快照裁剪成需要的字段，放进仓库（如 `src/backend/common/model_catalog.json`，带来源/许可说明）；加一个**手动**更新脚本（如 `tools/maintenance/update_model_catalog.py`），不做任何自动拉取。
-2. 新模块（如 `common/model_capabilities.py`）查询顺序：用户显式设置（`LLM_VISION_SUPPORT`、上下文设置）> LangChain `model.profile` > 仓库内目录（先按 provider+id，再按 id 跨 provider 匹配，去掉 `vendor/` 前缀）> 未知。
-3. 思考强度：档位 = profile 的 `reasoning_effort_levels`；没有时，仅当走 OpenAI 协议（ChatOpenAI/ChatDeepSeek）且目录有 `supportedReasoningEfforts` 才用；都没有则不显示该选项。在 `create_chat_model` 传 `reasoning_effort`。设置放 `webot/runtime_settings.py`（现有 user 默认 + session 覆盖结构；`_merge` 只允许 `context`/`approval` 两个 section，需要扩展或放进其中一个），界面放 ＋ → 高级选项（`static/js/runtime-settings.js`）。
-4. 用能力数据替换上面 4 张表；`mediaInput.image.preferredSidePx` 可用于以后的“图片上传前本地压缩”。
+生成最多 4096 输出 token，无自动重试，模型超时 45 秒、外层 50 秒。每用户每分钟最多 3 次、一个在途请求；API 进程最多 4 个在途请求。选择模型支持的最低思考档位，避免默认的隐藏推理消耗全部预算。首次实测曾因空正文返回 502；修改后，直接调用和真实前端代理调用均成功。
 
-未决（用户尚未回答）：思考强度按会话还是全局默认+会话覆盖（建议后者，沿用 runtime_settings）；查不到档位时是否完全隐藏（建议隐藏）；上下文窗口是否用目录值作默认（用户手动设置仍优先）。
+头像同步首次等 2 秒，正常每 15 秒检查，失败退避 30–300 秒。只发布变化的引用，不产生聊天、不调用模型、不阻塞群消息或活动心跳。已有回归测试证明第二轮检查不会再次发送相同更新。
 
-## 其他未做 / 待确认
+### 一并完成的 Studio / 消息中心工作
 
-- 沙盒：用户要求先不动。
-- 前端：消息中心 ↔ Studio 快速切换（整页跳转、`oasis-town.bundle.js` 7MB 同步加载、Tailwind CDN）未做。
-- 图片/文件：前端只在 >10MB 才压缩，远端群单条 512KiB 上限，HEIC 静默丢弃——未做。
-- 下一步需问用户：跑相关单元测试？提交/合并分支？
-- 记忆：`~/.claude/projects/-home-ubuntu/memory/clawcross-openclaw-as-acp.md` 记录了上述决定。
+本工作区在头像开发前已有约 65 项修改，属于此前连续授权的界面和运行修复。本批提交包含它们及所需新资源：
+
+- 左侧细导航栏、鲜明的 Message 入口、平台名称和官方风格图标；Team 在上、最近 Agent 在下；偏好设置、归档和删除入口。
+- 手机不常驻左栏，抽屉导航、PWA 内部跳转、视觉视口和输入法布局修复。
+- 新 Agent 默认名为「我的伙伴」，能力模板直接展示，技术配置折叠，创建弹层互斥。
+- 多语言选择；运行状态显示耗时；工具和上下文区域优化；动态 UI 默认固定嵌入。
+- 消息中心样式、单 Agent 会话头像、按实际分页状态显示「加载更早」。
+- 群内共享 Agent 运行状态与计时；状态作为元数据传播，不触发新消息或模型循环。
+- 本地 `agy acp` 启动探测、远程设备不复用本地探测、审核器沿用 Agent 模型配置；已安装沙盒时默认使用，不自动安装。
+- TinyFish 不再默认恢复为定时任务。
+
+## 502 故障与开机恢复
+
+检查到机器重启后，ClawCross 前端、API 和 launcher 均未运行，原本也没有开机注册。已先用现有配置恢复，再由用户级 systemd 接管；没有改模型凭证。
+
+本机配置（**在仓库外，迁移机器时需要重新配置**）：
+
+- `/home/ubuntu/.config/systemd/user/clawcross.service`
+- `/home/ubuntu/.clawcross/config/clawcross-service.env`：0600，仅保留原有 PATH、代理和证书环境；不得提交或打印内容。
+- `systemctl --user is-enabled clawcross.service`：enabled。
+- `systemctl --user show clawcross.service -p ActiveState -p SubState`：active / running。
+- `loginctl show-user ubuntu -p Linger`：yes。
+- 服务使用原有 `launch/runtime_control.py start --tunnel`，失败后等待 15 秒再恢复，5 分钟最多启动 3 次。
+- 运行日志 `/home/ubuntu/.clawcross/logs/service.log` 可能含登录链接，**不要原样粘贴**。
+
+日常查看：`systemctl --user status clawcross.service`。需要完整重启时使用 `systemctl --user restart clawcross.service`；先确认实际用户的 Agent 空闲。应用内重载仍可使用 `.clawcross/run/restart_flag`。不要直接杀前端子进程。
+
+## 验证证据
+
+1. 后端针对性回归：
+
+```bash
+/home/ubuntu/.clawcross/venv/bin/python -m pytest test/test_avatars.py test/test_group_activity.py test/test_agents.py test/test_acp_launchers.py test/test_approval_review.py test/test_runtime_settings.py test/test_prompt_prefix_stability.py -q
+```
+
+结果：**182 passed, 57 subtests passed**，19.43 秒。之后补充了 PUT 转发与同步幂等性两项测试，再跑 `test_avatars.py test_group_activity.py`：**11 passed, 8 subtests passed**，4.55 秒。
+
+2. 头像浏览器检查：`group-chat-features.spec.js -g 'avatar|portrait'`，**4 passed**。覆盖生成预览、取消无写入、保存、用户上传、窄屏和键盘高度、群头像及历史头像刷新。
+3. Studio / 手机 / 动态 UI：相关三个浏览器文件的针对性用例，**8 passed**，覆盖单滚动侧栏、平台与归档、语言与计时、弹层互斥、iPhone 视口模拟、固定嵌入 UI。
+4. 真实线上前端代理 `POST /v1/agents/avatars/generate`：**200**，5.82 秒；结果 `/home/ubuntu/outputs/avatar-generated-cat.svg`，验证摘要 `avatar-generation-check.json`。
+5. 真实 SVG 的手机尺寸编辑器截图：`/home/ubuntu/outputs/clawcross-avatar-editor-390.png`，已经目视检查。
+6. API `/health`、公网 `/studio`、公网 `/mobile/group_chat`：**200**。
+7. JavaScript 语法检查、Python 检查、`git diff --check` 已通过。
+
+测试不等于真实 iPhone Safari 实机测试；没有物理 iPhone 的验证证据。跨设备群读取在隔离 relay 测试中验证，浏览器刷新通过接口模拟验证；其他旧版本部署需要升级才支持新头像接口。
+
+默认受限沙盒中的 TestClient 曾无输出并停在 futex；同一命令在允许本地连接的执行环境中通过。不要无休止重试或误杀其他用户进程。真实执行问题和修复结果已写入 `SKILL.md` 的 self-evolution 记录。
+
+## 运行与协作约束
+
+- Python `/home/ubuntu/.clawcross/venv/bin/python`；运行目录 `/home/ubuntu/.clawcross`。
+- API 51200，scheduler 51201，OASIS 51202，groups 51203，frontend 51209。
+- Studio： https://clawcross.wecli.net/studio
+- 消息中心： https://clawcross.wecli.net/mobile/group_chat
+- 主站 https://clawcross.net 属于独立 Hub 项目。
+- 不打印 `.env`、令牌、凭证、完整模型请求、Magic 登录链接。
+- 保留用户 Git 身份，不添加 AI 作者或 Co-authored-by；不 reset / clean 共享工作区。
+- 用户反感重复确认和让用户调试；完成已授权工作。不要重试工作流、自动向真实群发测试消息或让状态心跳触发模型。
+- 不擅自安装 OpenClaw；保持模型缓存前缀稳定。
+
+## 网盘副本（尚未包含本批新头像与提交）
+
+挂载 `/home/ubuntu/gdrive`。开发和备份文件夹：
+
+- https://drive.google.com/drive/folders/1acFXM0GurnoKczhIwugS2dD-8qyblhdv
+- https://drive.google.com/drive/folders/1J9tBjX4uWdFMppgV0u5X6h1662ArXsxq
+
+两边都有完整的 `ClawCross.zip`、`ClawCrossHub.zip`，含 Git 历史和当时的未提交修改；下载备份副本后 SHA-256 一致。**同名展开目录不完整，完整副本以 ZIP 为准。** rclone 共享 OAuth 项目遭遇 403 限流，后来用 Drive 连接器上传并服务器端复制，不要盲目重试旧客户端。
+
+说明文件为 `00-使用说明.txt`、`已验证快照清单.json`、`SHA256SUMS.txt`。本地校验记录 `/home/ubuntu/outputs/clawcross-drive-verification/verified-result.json`；开发前的代码快照 `/home/ubuntu/outputs/clawcross-drive-copies-20261107/开发/ClawCross` 可用于比对旧改动。**本轮没有把最新代码重新同步网盘。**
+
+原 2026-10-03 交接已存入 [docs/handoff-20261003.md](docs/handoff-20261003.md)。旧文档里的工作状态和待确认要求是历史记录，以当前代码、此文件和用户最新指令为准。

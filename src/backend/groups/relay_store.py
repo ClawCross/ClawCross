@@ -17,6 +17,7 @@ from xml.etree import ElementTree
 
 from groups.delivery import WakeRequest, mentions_everyone, select_wake_targets, resolve_text_mentions
 from common.user_portrait import MAX_TEXT, image_records, public_portrait
+from common.avatars import AVATAR_ID, normalize_avatar, avatar_id
 from groups.receipts import PROTOCOL, ReceiptStore
 
 
@@ -36,6 +37,8 @@ def password_hash(password: str, salt: str) -> str:
 
 # A member is online while its device called within this window; hidden browser tabs poll about once a minute.
 ONLINE_SECONDS = 90
+# Activity is a short lease, separate from presence and durable chat events.
+ACTIVITY_SECONDS = 12
 # A space's app server is online while it polled within this window.
 APP_ONLINE_SECONDS = 60
 # What a member's device receives: everything except the app's traffic, and its own agents' app requests.
@@ -71,6 +74,9 @@ class RelayStore(ReceiptStore):
         with self.db() as db:
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript('''
+                CREATE TABLE IF NOT EXISTS relay_avatars (
+                    id TEXT PRIMARY KEY, payload TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS relay_groups (
                     id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL,
                     owner_connection TEXT NOT NULL, password_hash TEXT NOT NULL,
@@ -138,6 +144,10 @@ class RelayStore(ReceiptStore):
             # An agent's cyber cat (SVG); empty: the cat its name gives.
             if 'avatar' not in {row[1] for row in db.execute('PRAGMA table_info(relay_members)')}:
                 db.execute("ALTER TABLE relay_members ADD COLUMN avatar TEXT NOT NULL DEFAULT ''")
+            member_columns = {row[1] for row in db.execute('PRAGMA table_info(relay_members)')}
+            for column in ('running_since', 'activity_seen'):
+                if column not in member_columns:
+                    db.execute(f'ALTER TABLE relay_members ADD COLUMN {column} REAL NOT NULL DEFAULT 0')
         if os.name != 'nt':
             self.path.chmod(0o600)
         self.init_receipts()
@@ -187,7 +197,7 @@ class RelayStore(ReceiptStore):
         group = db.execute('SELECT * FROM relay_groups WHERE id=?', (gid,)).fetchone()
         if group is None:
             raise RelayError('群不存在', 404)
-        members = [dict(row) for row in db.execute('''SELECT m.id AS principal,m.agent_id,m.name,m.platform,m.muted,m.avatar,
+        members = [dict(row) for row in db.execute('''SELECT m.id AS principal,m.agent_id,m.name,m.platform,m.muted,m.avatar,m.running_since,m.activity_seen,
                   c.node_id,c.user_id,c.display_name,c.id AS connection_id,c.host_local,c.seen_at,c.guest,c.profile,c.joined_at
                   FROM relay_members m JOIN relay_connections c ON c.id=m.connection_id
                   WHERE m.group_id=? AND c.revoked=0 ORDER BY c.joined_at,m.agent_id''', (gid,))]
@@ -198,6 +208,10 @@ class RelayStore(ReceiptStore):
             member['muted'] = bool(member['muted'])
             member['host_local'] = bool(member['host_local'])
             member['online'] = member.pop('seen_at') > online_since
+            started = member.pop('running_since')
+            active = member.pop('activity_seen') > time.time() - ACTIVITY_SECONDS
+            member['activity'] = {'state': 'running' if started and active and member['online'] else 'idle',
+                                  'started_at': started if started and active and member['online'] else None}
             # What the device is, for views that draw the group by device.
             member['device_kind'] = 'browser' if member.pop('guest') else 'client'
         app = db.execute('SELECT name,seen_at FROM relay_app_keys WHERE group_id=?', (gid,)).fetchone()
@@ -386,7 +400,7 @@ class RelayStore(ReceiptStore):
                                      'targets': body.get('targets', [])})
             # `device` numbers the connections, so a browser can group members by device without learning ids.
             devices = list(dict.fromkeys(m['connection_id'] for m in group['members']))
-            members = [{k: m[k] for k in ('principal', 'agent_id', 'name', 'is_agent', 'online', 'muted', 'device_kind', 'platform', 'profile', 'joined_at', 'avatar')} |
+            members = [{k: m[k] for k in ('principal', 'agent_id', 'name', 'is_agent', 'online', 'muted', 'device_kind', 'platform', 'profile', 'joined_at', 'avatar', 'activity')} |
                        {'own': m['connection_id'] == conn['id'], 'device': devices.index(m['connection_id']),
                         'is_owner': not m['is_agent'] and m['connection_id'] == group['owner']}
                        for m in group['members']]
@@ -422,6 +436,32 @@ class RelayStore(ReceiptStore):
                     return {'url': image['url']}
             raise RelayError('画像图片不存在或不属于当前群', 404)
 
+    def member_avatar(self, token, principal, image_id):
+        with self.db() as db:
+            conn = self.auth(db, token)
+            member = db.execute('''SELECT m.avatar FROM relay_members m JOIN relay_connections c ON c.id=m.connection_id
+                WHERE m.id=? AND m.group_id=? AND c.revoked=0''', (principal, conn['group_id'])).fetchone()
+            if not member or member['avatar'] != image_id or not AVATAR_ID.fullmatch(image_id):
+                raise RelayError('头像不存在或不属于当前群', 404)
+            asset = db.execute('SELECT payload FROM relay_avatars WHERE id=?', (image_id,)).fetchone()
+            if not asset:
+                raise RelayError('头像不存在', 404)
+            return {'url': asset['payload']}
+
+    @staticmethod
+    def _avatar(db, value):
+        try:
+            url = normalize_avatar(value)
+        except ValueError as exc:
+            raise RelayError(str(exc)) from exc
+        key = avatar_id(url)
+        if key:
+            db.execute("DELETE FROM relay_avatars WHERE id NOT IN (SELECT avatar FROM relay_members WHERE avatar!='')")
+            if db.execute('SELECT COUNT(*) FROM relay_avatars').fetchone()[0] >= 10000 and not db.execute('SELECT 1 FROM relay_avatars WHERE id=?',(key,)).fetchone():
+                raise RelayError('头像存储容量已满', 409)
+            db.execute('INSERT OR IGNORE INTO relay_avatars VALUES(?,?)', (key, url))
+        return key
+
     def detail(self, token: str) -> dict:
         with self.db() as db:
             conn = self.auth(db, token)
@@ -449,7 +489,7 @@ class RelayStore(ReceiptStore):
                 db.execute("UPDATE relay_groups SET kind='group' WHERE id=?", (conn['group_id'],))
             db.execute('INSERT INTO relay_members(id,group_id,connection_id,agent_id,name,platform,avatar) VALUES(?,?,?,?,?,?,?) '
                        'ON CONFLICT(connection_id,agent_id) DO UPDATE SET name=excluded.name,platform=excluded.platform,avatar=excluded.avatar',
-                       ('p_' + secrets.token_hex(12), conn['group_id'], conn['id'], agent_id, name, platform, clean_cat_svg(avatar)))
+                       ('p_' + secrets.token_hex(12), conn['group_id'], conn['id'], agent_id, name, platform, self._avatar(db, avatar)))
             db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (conn['group_id'],))
             self._event(db, conn['group_id'], 'metadata', {})
             return self._card(db, conn['group_id'])
@@ -474,13 +514,16 @@ class RelayStore(ReceiptStore):
             group = self._card(db, conn['group_id'])
             owner = group['owner'] == conn['id']
             if action == 'profile':
-                limits = {'name': 40, 'avatar': 16, 'bio': 280, 'location': 80, 'text': MAX_TEXT, 'images': 0}
+                limits = {'name': 40, 'avatar': 16, 'avatar_image': 100000, 'bio': 280, 'location': 80, 'text': MAX_TEXT, 'images': 0}
                 if not fields or set(fields) - limits.keys():
                     raise RelayError('个人资料字段无效')
                 for field, value in fields.items():
                     if field != 'images' and (not isinstance(value, str) or len(value) > limits[field]):
                         raise RelayError('个人资料内容过长或格式无效')
                 member = next(m for m in group['members'] if m['connection_id'] == conn['id'] and not m['is_agent'])
+                if 'avatar_image' in fields:
+                    key = self._avatar(db, fields['avatar_image'])
+                    db.execute('UPDATE relay_members SET avatar=? WHERE id=?', (key, member['principal']))
                 if 'name' in fields:
                     name = fields['name'].strip()
                     if not name:
@@ -489,7 +532,7 @@ class RelayStore(ReceiptStore):
                     db.execute('UPDATE relay_members SET name=? WHERE id=?', (name, member['principal']))
                     db.execute('UPDATE relay_connections SET display_name=? WHERE id=?', (name, conn['id']))
                 stored = json.loads(conn['profile'])
-                profile = {**stored, **{k: v.strip() for k, v in fields.items() if k not in {'name','images'}}}
+                profile = {**stored, **{k: v.strip() for k, v in fields.items() if k not in {'name','images','avatar_image'}}}
                 if 'images' in fields:
                     try:
                         profile['images'] = image_records(fields['images'], stored.get('images', []))
@@ -686,7 +729,31 @@ class RelayStore(ReceiptStore):
             after=db.execute("SELECT id,body FROM relay_events WHERE group_id=? AND id>=? AND kind='message' ORDER BY id LIMIT 16",args).fetchall()
             return {'focus_id':message_id,'messages':[{**json.loads(row['body'])['message'],'id':row['id']} for row in [*reversed(before),*after]]}
 
-    def acknowledge(self, token: str, cursor: int, device_id=None):
+    @staticmethod
+    def _agent_activity(db, conn, running):
+        if not isinstance(running, list) or len(running) > 32 or any(
+                not isinstance(aid, str) or not aid or len(aid) > 160 for aid in running):
+            raise RelayError('无效的 Agent 运行状态')
+        owned = {r['agent_id'] for r in db.execute(
+            "SELECT agent_id FROM relay_members WHERE connection_id=? AND agent_id<>''", (conn['id'],))}
+        if not set(running) <= owned:
+            raise RelayError('只能更新自己带入群的 Agent 状态', 403)
+        now = time.time()
+        db.execute('''UPDATE relay_members SET running_since=0,activity_seen=? WHERE connection_id=?
+                      AND running_since<>0 AND agent_id NOT IN (SELECT value FROM json_each(?))''',
+                   (now, conn['id'], json.dumps(running)))
+        for aid in set(running):
+            db.execute('''UPDATE relay_members SET running_since=CASE
+                WHEN running_since=0 OR activity_seen<? THEN ? ELSE running_since END,
+                activity_seen=? WHERE connection_id=? AND agent_id=?''',
+                (now - ACTIVITY_SECONDS, now, now, conn['id'], aid))
+
+    def agent_activity(self, token, running):
+        with self.db() as db:
+            self._agent_activity(db, self.auth(db, token), running)
+        return {'ok': True}
+
+    def acknowledge(self, token: str, cursor: int, device_id=None, *, agent_activity=None):
         if type(cursor) is not int or cursor < 0:
             raise RelayError('无效的确认游标')
         with self.db() as db:
@@ -695,6 +762,8 @@ class RelayStore(ReceiptStore):
             if cursor > maximum:
                 raise RelayError('确认游标超出群消息范围')
             db.execute('UPDATE relay_connections SET ack=MAX(ack,?) WHERE id=?', (cursor, conn['id']))
+            if agent_activity is not None:
+                self._agent_activity(db, conn, agent_activity)
         if device_id is not None:
             self.receipt(token, device_id, cursor)
 

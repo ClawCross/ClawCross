@@ -24,6 +24,15 @@ window.AgentProfile=(()=>{
   }
   function mount(body,agent){
     body.dataset.profileAgent=agent.agent_id;
+    const portrait=body.querySelector('.ap-avatar'),member=agent.profile_member||{};
+    if(portrait&&window.Avatars){
+      const options=agent.remote?{principal:member.principal,groupId:typeof currentGroupId==='undefined'?'':currentGroupId}:{agentId:agent.agent_id};
+      void Avatars.fill(portrait,agent.settings?.avatar||member.avatar||'',agent.name,options);
+      if(!agent.remote){portrait.style.cursor='pointer';portrait.setAttribute('role','button');portrait.tabIndex=0;
+        const edit=()=>{closeAgentDetail();AgentSettings.open(agent.agent_id,'avatar');};portrait.onclick=edit;
+        portrait.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();edit();}};
+        portrait.setAttribute('aria-label',text('修改头像','Change avatar'));}
+    }
     body.onclick=event=>{
       const group=event.target.closest('[data-profile-group]');
       if(group){closeAgentDetail();openChat(group.dataset.profileGroup,(agent.groups||[]).find(g=>g.group_id===group.dataset.profileGroup)?.title||'');return;}

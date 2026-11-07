@@ -3,21 +3,23 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>朋友群聊</title>
+  <link rel="stylesheet" href="/static/css/avatars.css?v=20261107-avatars">
+  <script defer src="/static/js/avatars.js?v=20261107-avatars"></script>
   <link rel="stylesheet" href="/static/css/theme.css">
   <link rel="stylesheet" href="/static/css/group-network.css?v=20261020-receipts">
   <link rel="stylesheet" href="/static/css/human-profile.css?v=20261019-portrait-images">
-  <script defer src="/static/js/human-profile.js?v=20261019-portrait-images"></script>
+  <script defer src="/static/js/human-profile.js?v=20261107-avatars"></script>
   <script defer src="/static/js/attachment-utils.js?v=20261003-media"></script>
   <script defer src="/static/js/user-portrait.js?v=20261019-images"></script>
-  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261019-single-group">
+  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261107-shared-presence">
   <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
   <link rel="stylesheet" href="/static/css/group-device-map.css?v=20261011-devices">
   <script defer src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
   <script defer src="/static/js/group-device-map.js?v=20261011-devices2"></script>
   <script defer src="/static/js/clawcross-browser-agent.js?v=20261019-single-group"></script>
-  <script defer src="/static/js/group-guest-agent.js?v=20261019-single-group"></script>
+  <script defer src="/static/js/group-guest-agent.js?v=20261107-shared-presence"></script>
   <script defer src="/static/js/group-chat-state.js?v=20261020-receipts"></script>
-  <script defer src="/static/js/group-guest.js?v=20261020-receipts"></script>
+  <script defer src="/static/js/group-guest.js?v=20261107-avatars"></script>
 </head>
 <body>
 <main>
@@ -45,6 +47,7 @@
     </details>
     <div id="app-toolbar" hidden><span>小程序</span><button id="app-expand" type="button" aria-pressed="false">⤢ 全屏</button></div>
     <div id="app-fullscreen-host"><div id="room-app-surface"></div><button id="app-collapse" type="button" hidden>退出全屏</button></div>
+    <div id="guest-agent-activity" class="guest-agent-activity" role="status" aria-live="polite" hidden></div>
     <div id="messages" role="log" aria-label="群聊消息" aria-live="polite"></div>
     <div id="composer">
       <div id="mention-menu" role="listbox" aria-label="选择要提及的群成员" hidden></div>

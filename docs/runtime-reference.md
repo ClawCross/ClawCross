@@ -165,7 +165,7 @@ Mobile Agent 详情提供当前 Agent 设置；主端历史默认显示 ClawCros
 前端固定绑定 `127.0.0.1`，不提供改成 `0.0.0.0` 的配置。远端访问由用户显式选择 Cloudflare Tunnel，或配置监听外部接口的反向代理（如 Caddy）；路由器端口转发应指向该反向代理，不能直接转发到 loopback 前端端口。远端访问必须经 HTTPS：loopback 上的反向代理可提供转发头，其他来源的转发头不被信任。HTTP 远端请求仅重定向到配置的 HTTPS `PUBLIC_DOMAIN`，没有安全入口时拒绝；本机直接 HTTP 仍可用。
 
 Studio: 上下文与审核 → 工具审核 → 命令沙盒。Mobile: 加号里的运行模式 → 命令沙盒。
-命令沙盒默认关闭；可选 SRT、Linux Landlock 或自动选择。SRT 旁边显示组件状态及显式下载按钮，下载安装不会打开沙盒。自动选择只执行无副作用的探测命令，Linux SRT 不兼容时改用 Landlock；绝不把用户命令作为后端探测或退出隔离执行。Landlock 要求 Linux x86_64/aarch64、内核 ABI ≥ 6、libseccomp 和非 root 账号，不需要新容器或修改 AppArmor。x86_64 Linux 已实测；其他平台不据此声称已验证。
+未保存过沙盒选项时，检测到已安装 SRT 或可用 Linux Landlock 会默认自动选择；用户显式保存的关闭选项继续有效。可选 SRT、Linux Landlock 或自动选择。SRT 旁边显示组件状态及显式下载按钮，下载安装不会打开沙盒。自动选择只执行无副作用的探测命令，Linux SRT 不兼容时改用 Landlock；绝不把用户命令作为后端探测或退出隔离执行。Landlock 要求 Linux x86_64/aarch64、内核 ABI ≥ 6、libseccomp 和非 root 账号，不需要新容器或修改 AppArmor。x86_64 Linux 已实测；其他平台不据此声称已验证。
 普通安全等级允许在管理员上限内审核提权；严格等级限制在当前 Agent 配置的目录集合，强制隔离且不接受提权或历史授权。新 Agent 默认使用伴生目录，用户共享、CLI、Team 和自定义目录按配置附加；自动目录仅在运行时生成，配置只保存来源开关和自定义路径。旧 Agent 未调整设置时保留旧目录。详见 [工作区配置](workspaces.md)。安全设置与工具策略在 `USER_FILES_DIR/.control/`，命令配置与后台控制文件在 `CONFIG_DIR/sandbox/`，均不进入工作区。普通 Landlock 只读开放 `/proc` 以支持 `ps/top/free`；同一 Unix 账号下可读的进程环境也可见。严格 Landlock 仅开放资源统计和启动时 PID 元数据，保护进程环境，但新 PID 的 `ps/top` 查询受限。两者均可管理同一命令的子进程，跨轮后台任务使用已有查看/取消工具，不能任意控制宿主进程。详见 [命令隔离后端](command-isolation-plan.md)。
 WeBot 子 Agent 有独立历史和工作区；同名 spawn 继续原会话。它根据持久父关系实时继承审核方式、沙盒后端、安全等级和网站许可；子 Agent 只能保留更严格的限制。工具能力取父 Agent 持久工具名单与模式、子角色及子 Agent 本轮名单的交集。KEEP Y 仍属于各自 Agent，不复制父授权；严格子 Agent 不能提权。管理工具为 `spawn_subagent`、`list_subagents`、`send_subagent_message`、`get_subagent_history`、`cancel_subagent`、`delete_subagent`，默认子角色不开放再次创建子 Agent。外部 Codex/Claude CLI 的原生终端、文件等工具由对应 CLI 执行；通过 MCP 使用 ClawCross 工具时才走本项目的工具审核和沙盒。
 工具审核中的 `KEEP Y · 持续授权` 列出当前 Agent 的精确工具调用授权及沙盒目标，支持立即添加和移除。沙盒新增仍按管理员最大范围校验；严格模式只能移除已有沙盒提权，旧条目标注不生效。工具参数由系统绑定用户及 Agent，并检查当前文件、Web 和显式禁止规则；授权不执行操作、不解除硬限制。列表中密码、令牌等命名字段被隐藏。普通设置保存不会用旧列表覆盖即时修改。API 为 `/v1/agents/{id}/remembered-approvals` 的 GET/POST，以及按条目键 DELETE。
@@ -188,7 +188,7 @@ Windows 使用 SRT 0.0.78+ 的原生后端，组件页面提供独立的 Windows
 Studio 的快速新建仍先保留为草稿；切换平台、查看设置不登记 Agent，也不发送对话。模型配置可直接应用到草稿；工作区提供明确的“创建并配置工作区”，点击后登记 Agent 并编辑目录，不必先发消息。外部 Agent 的草稿同样可先保存启动方式并配置工作区，不会因此初始化原生会话。
 通讯录新建页从首次打开就列出全部 ACP 平台和自定义入口，平台切换保留本次表单中的启动命令；异步加载完成不会把已切回的内置伙伴改回外部平台。外部 Agent 使用“创建并配置”：登记后进入设置，先配置工具和工作区，再测试连接读取实际模型、原生模式和思考强度。已有 Agent 直接打开连接设置时仍自动检测。所有这些操作都无需发送首条对话，也不会安装外部组件。
 
-Studio、通讯录与群成员详情共用“Agent 设置”目录。详情只展示概览；名称与人设、工具范围、模型与思考、工作区、模式与沙盒、上下文分别在各自页面编辑，并提供返回设置目录的按钮。思考强度只在模型页面编辑，ClawCross 运行模式只在审核页面编辑；外部程序的原生模式仍属于原生连接选项。新建页先填写伙伴名称，并默认选择“自然亲切”的相处方式；简洁、细致的风格可以直接切换。能力模板、外部程序、人设全文、工具范围和团队归属统一折叠到高级设置。消息页的第一个伙伴入口也使用同一取名流程，确认前不创建 Agent。
+Studio、通讯录与群成员详情共用“Agent 设置”目录。详情只展示概览；名称与人设、工具范围、模型与思考、工作区、模式与沙盒、上下文分别在各自页面编辑，并提供返回设置目录的按钮。思考强度只在模型页面编辑，ClawCross 运行模式只在审核页面编辑；外部程序的原生模式仍属于原生连接选项。新建页默认填入“我的伙伴”，直接展示能力模板；外部程序、人设全文、工具范围和团队归属折叠到高级设置。消息页的第一个伙伴入口也使用同一取名流程，确认前不创建 Agent。
 系统设置先展示分类目录，手机端在分类页面用“返回设置”回到目录；各分类沿用原表单，切换页面保留未保存的字段。底部提示待保存的修改数，重启服务位于高级设置的服务维护中。
 
 ACP 运行状态轮询仅检查本机任务锁，不启动外部适配器；会话追踪使用 `sessions list --local`，只显示登录用户已注册 Agent 的会话。查询和关闭接口需要认证，关闭操作验证会话所有权。外部 Agent 的 `model` 设置通过 acpx `--model` 传递，只影响该 Agent；留空时使用外部程序默认配置。初始化使用 Agent 的超时设置，保留 acpx 默认适配器下载行为。压缩后的用量估算按摘要版本与 API 用量基准复用，避免页面轮询反复读取并分词整个历史。
@@ -252,3 +252,17 @@ Agent 设置页的“测试连接”显式调用 `/v1/agents/{id}/test-connectio
 Studio 和 Mobile 的审核按钮放在对话授权气泡内；按钮由后端当前待审记录产生，不由工具/Agent 文本生成。点击等同于输入对应的 Y/N/KEEP Y，显示用户的确认信息并恢复执行，上方审核栏不再重复展示。Agent 中心的审核管理入口仍可处理其他 Agent 的待审操作。
 
 审核模型工厂在显式参数和已导出环境变量缺失时使用 `.env`/活跃 profile 返回的完整配置，MCP 工作进程不依赖 launcher 导出 `LLM_MODEL`。不会猜测或自动选择未配置的模型；真正缺失时提示配置审核模型或默认模型/API。审核材料取消固定 16,000 字符清空规则，按实际审核模型窗口、输出预留、提示词及 Schema 开销计算 token 容量；优先减少不可信工具材料和无关工具策略，再省略最旧的完整原始请求，保留最新请求全文。省略数量和实际模型写入审计，审核只可引用实际送入的完整原始请求 ID；最新完整请求本身仍放不下时，要求一条简短明确的新请求或更大容量的审核模型，不截断授权文本。
+
+### Studio navigation and interface preferences
+
+Studio uses one scrolling Agent rail: the current platform, the team tree, then at most five recent Agents. Agent names are primary and conversation titles secondary. Preferences and the archive stay fixed at the bottom. Archiving sets `settings.archived`; default Agent listings hide archived rows, and `GET /v1/agents?include_archived=1` includes them for restoration. Archiving preserves the Agent ID, history and team/group membership. Deletion continues to remove the Agent through the existing lifecycle endpoint.
+
+Studio and Message share 14 interface language choices, including Traditional Chinese, Japanese, Korean, French, German, Spanish, Portuguese, Russian, Italian, Arabic, Hindi and Indonesian. Navigation and common actions use local translations; detailed technical text falls back to English. Preferences are stored in the browser. This does not change model prompts, native tool schemas or Agent-authored content.
+
+Creation starts with “My companion” and visible capability templates. Technical settings are collapsed. Agent and group creation drawers are mutually exclusive. TinyFish configuration is removed from the interface and its scheduled monitor is no longer registered at startup; existing stored data is preserved.
+
+Dynamic UI remains embedded when clicked or dragged. Only its explicit dock control moves it beside the chat; the shared divider still adjusts the chat/UI proportions. Runtime thinking and tool activity have local elapsed-time indicators; completed tool results are collapsed. The timer makes no backend requests.
+
+When no sandbox choice has been saved, an installed SRT or available Linux Landlock backend selects automatic isolation. An explicit saved `off` remains effective. Standard mode can review new network targets; strict mode stays within its initial allowed destinations. Without an explicit reviewer model, approval review uses the current Agent’s model/API profile before platform defaults.
+
+Antigravity uses the installed official CLI through `agy acp` by default. Explicit custom launch settings take precedence. Without that CLI, the acpx Antigravity shortcut retains its native standalone-runtime behavior.

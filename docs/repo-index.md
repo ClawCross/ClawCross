@@ -169,11 +169,15 @@ A WeBot session is its agent: listed, read, compacted and deleted through `/v1/a
 
 If the task touches the UI, start here:
 
-Tool output windows are managed by `src/frontend/static/js/conversation-ui-panels.js`:
-drag the title to move, drag the corner to resize, minimize or close using the title buttons,
-and restore them through the Studio `+` → `对话面板` submenu. Minimize retains iframe state;
-close removes its iframe and stops scripts. Layout is retained during session switches in
-the current page, and cleared on logout. Tool code remains in an isolated sandbox iframe.
+Dynamic UI is managed by `src/frontend/static/js/conversation-ui-panels.js`.
+It stays embedded in its chat turn; interacting with it cannot move or dock it.
+Users can explicitly dock, minimize, close, or restore it through the Dynamic UI menu.
+Minimize retains iframe state; close removes the iframe and stops scripts. Tool code
+remains in an isolated sandbox iframe.
+
+Visual avatars use `src/backend/common/avatars.py`, the dedicated primary-model
+pipeline `src/backend/agents/avatar_generation.py`, and the shared frontend editor
+`src/frontend/static/js/avatars.js`. See `docs/avatars.md` for APIs and sharing.
 
 | Path | Purpose |
 |---|---|

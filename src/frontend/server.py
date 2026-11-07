@@ -1904,13 +1904,13 @@ def manifest():
         "categories": ["productivity", "utilities"],
         "icons": [
             {
-                "src": "https://img.icons8.com/fluency/192/robot-2.png",
+                "src": "/static/assets/clawcross-icon-192.png?v=20261107-brand",
                 "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "any maskable"
             },
             {
-                "src": "https://img.icons8.com/fluency/512/robot-2.png",
+                "src": "/static/assets/clawcross-icon-512.png?v=20261107-brand",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "any maskable"

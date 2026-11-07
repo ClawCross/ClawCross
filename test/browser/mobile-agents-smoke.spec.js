@@ -735,3 +735,25 @@ test('small-screen Agent templates prepare safely and chat submits an explicit e
   expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Chat companion',platform:'webot',tools:[],creation_template:'chat'});
   expect(errors).toEqual([]);
 });
+
+test('refinement: create dialogs are exclusive and capabilities are visible by default',async({page})=>{
+  await page.setViewportSize({width:390,height:680});await stub(page,{posts:[],control:[]});
+  await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/mobile/group_chat');await page.evaluate(()=>showCreateAgentModal());
+  await expect(page.locator('#create-agent-name')).toHaveValue('我的伙伴');
+  await expect(page.locator('#mobile-agent-creation-presets [data-preset=personal]')).toBeVisible();
+  await expect(page.locator('[data-style]')).toHaveCount(0);
+  await expect(page.locator('#mobile-create-agent-advanced')).not.toHaveAttribute('open','');
+  await page.evaluate(()=>showCreateGroupModal());
+  await expect(page.locator('#create-agent-modal')).not.toHaveClass(/show/);
+  await expect(page.locator('#create-modal')).toHaveClass(/show/);
+  await expect(page.locator('#create-custom-name')).toHaveAttribute('placeholder','未来之室');
+  await page.evaluate(()=>showCreateAgentModal());
+  await expect(page.locator('#create-modal')).not.toHaveClass(/show/);
+  await expect(page.locator('#create-agent-modal')).toHaveClass(/show/);
+  await expect(page.locator('#create-agent-submit')).toBeInViewport();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'/tmp/clawcross-mobile-refined-create.png'});
+  expect(errors).toEqual([]);
+});

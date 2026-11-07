@@ -1296,9 +1296,9 @@ await fn(process.argv[2]);'''
             return [self._agent_name]
         if getattr(self, '_agent_command', ''):
             return ['--agent', self._agent_command]
-        from external.acp_launcher import LAUNCH_PRESETS
-        if tool in LAUNCH_PRESETS and LAUNCH_PRESETS[tool]['agent_command']:
-            return ['--agent', LAUNCH_PRESETS[tool]['agent_command']]
+        default_command = self._default_agent_command(tool)
+        if default_command:
+            return ['--agent', default_command]
         if tool == 'acp':
             raise AcpxError('请先配置自定义 ACP Agent 名称或启动命令')
         aliases = {
@@ -1311,6 +1311,10 @@ await fn(process.argv[2]);'''
             raw = f"openclaw acp --session {shlex.quote(session_key)}"
             return ["--agent", raw]
         return [tool]
+
+    def _default_agent_command(self, tool: str) -> str:
+        from external.acp_launcher import default_agent_command
+        return default_agent_command(tool)
 
     @staticmethod
     def _pending_prompt_key(*, tool: str, acpx_session: str) -> str:

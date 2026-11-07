@@ -48,6 +48,13 @@ class SandboxGrant(BaseModel):
     target: str = Field(min_length=1, max_length=4096)
 
 
+def default_command_sandbox() -> str:
+    """Use an installed isolation backend by default, without downloading one."""
+    from webot.command_sandbox import landlock_available
+    from ops.components import binary_path
+    return 'auto' if landlock_available() or binary_path('srt') else 'off'
+
+
 class ApprovalSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     mode: Literal["chat", "readonly", "manual", "auto", "bypass"] = "auto"
@@ -56,7 +63,7 @@ class ApprovalSettings(BaseModel):
     reviewer_policy: str = Field(default="", max_length=4000)
     reviewer_timeout_seconds: int = Field(default=120, ge=5, le=120)
     reviewer_max_tokens: int = Field(default=16384, ge=1024, le=16384)
-    command_sandbox: Literal["off", "srt", "auto", "landlock"] = "off"
+    command_sandbox: Literal["off", "srt", "auto", "landlock"] = Field(default_factory=default_command_sandbox)
     sandbox_security: Literal["standard", "strict"] = "standard"
     sandbox_allowed_domains: list[str] = Field(default_factory=list, max_length=64)
     sandbox_grants: list[SandboxGrant] = Field(default_factory=list, max_length=64)

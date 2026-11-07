@@ -1,6 +1,6 @@
 /* Shared settings directory for Studio, contacts and group member profiles. */
 window.AgentSettings = (() => {
-  const text = (cn, en) => document.documentElement.lang.startsWith('en') ? en : cn;
+  const text=(cn,en)=>window.ClawCrossLocale?.text(cn,en) || (document.documentElement.lang.startsWith('en') ? en : cn);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const icon = name => `<svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#${name}"/></svg>`;
   let sequence = 0;
@@ -47,7 +47,7 @@ window.AgentSettings = (() => {
       overlay.querySelector('[data-close]').focus();
     };
     const home = () => {
-      shell(text('Agent 设置','Agent settings'), `<div class="agent-settings-directory"><h3>${text('身份与能力','Identity and capabilities')}</h3>${row('profile',text('名称与人设','Name and persona'),text('名字、角色与回复风格','Name, role and response style'),'user')}${webot ? row('tools',text('工具范围','Tool access'),text('这个 Agent 可以使用哪些工具','Tools available to this Agent'),'sliders') : ''}${webot || native ? row('model',native ? text('模型、工具与连接','Model, tools and connection') : text('模型与思考强度','Model and reasoning'),native ? text('外部程序、运行设备与原生选项','External program, device and native options') : text('模型配置与思考档位','Model profile and reasoning level'),'settings') : ''}<h3>${text('运行设置','Runtime settings')}</h3>${row('approval',text('模式、沙盒与授权','Mode, sandbox and approvals'),text('运行模式、安全等级与 KEEP Y','Run mode, security level and KEEP Y'),'shield')}${row('workspaces',text('工作区','Workspaces'),text('可访问的文件夹与 Skill 来源','Accessible folders and skill sources'),'folder')}${webot ? row('context',text('上下文与压缩','Context and compaction'),text('容量、压缩时机与摘要','Capacity, compaction and summaries'),'history') : ''}</div>`);
+      shell(text('Agent 设置','Agent settings'), `<div class="agent-settings-directory"><h3>${text('身份与能力','Identity and capabilities')}</h3>${row('avatar',text('头像','Avatar'),text('上传图片，或描述并生成专属形象','Upload a picture or describe your own avatar'),'user')}${row('profile',text('名称与人设','Name and persona'),text('名字、角色与回复风格','Name, role and response style'),'user')}${webot ? row('tools',text('工具范围','Tool access'),text('这个 Agent 可以使用哪些工具','Tools available to this Agent'),'sliders') : ''}${webot || native ? row('model',native ? text('模型、工具与连接','Model, tools and connection') : text('模型与思考强度','Model and reasoning'),native ? text('外部程序、运行设备与原生选项','External program, device and native options') : text('模型配置与思考档位','Model profile and reasoning level'),'settings') : ''}<h3>${text('运行设置','Runtime settings')}</h3>${row('approval',text('模式、沙盒与授权','Mode, sandbox and approvals'),text('运行模式、安全等级与 KEEP Y','Run mode, security level and KEEP Y'),'shield')}${row('workspaces',text('工作区','Workspaces'),text('可访问的文件夹与 Skill 来源','Accessible folders and skill sources'),'folder')}${webot ? row('context',text('上下文与压缩','Context and compaction'),text('容量、压缩时机与摘要','Capacity, compaction and summaries'),'history') : ''}</div>`);
       overlay.querySelectorAll('[data-category]').forEach(button => { button.onclick = () => category(button.dataset.category); });
     };
     const changed = () => {
@@ -109,6 +109,11 @@ window.AgentSettings = (() => {
       };
     }
     async function category(key) {
+      if (key === 'avatar') {
+        close();
+        return Avatars.editAgent(agent, {onSaved:changed, onClose:() => open(id),
+          ensure:agent.uncreated ? () => studioEnsureAgent(id, {platform:agent.platform}) : undefined});
+      }
       if (key === 'profile' || key === 'tools') return editor(key);
       const options = {onBack:() => open(id)};
       close();
@@ -126,7 +131,8 @@ window.AgentSettings = (() => {
       }
     };
     document.body.appendChild(overlay); home();
-    if (['profile','tools'].includes(initialSection)) await editor(initialSection);
+    if (initialSection === 'avatar') await category('avatar');
+    else if (['profile','tools'].includes(initialSection)) await editor(initialSection);
   }
   return {open, attachBack};
 })();

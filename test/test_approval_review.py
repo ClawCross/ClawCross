@@ -14,6 +14,16 @@ from webot.approval_actions import canonical_action_args
 from webot.workspace import SessionWorkspace
 
 
+def approval_command_node():
+    from langchain_core.tools import tool
+    from webot.engine.agent import UserAwareToolNode
+    @tool
+    def run_command(command: str, username: str = '', session_id: str = '') -> str:
+        """A command definition for permission-node tests; execution is replaced."""
+        return ''
+    return UserAwareToolNode([run_command])
+
+
 class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -32,10 +42,29 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         env.start()
         self.addCleanup(env.stop)
         policy.save_tool_policy_config("alice", {"tools": {"run_command": {"approval": "manual"}}})
-        runtime_settings.save_runtime_settings("alice", settings={"approval": {"approvals_reviewer": "auto_review"}})
+        runtime_settings.save_runtime_settings("alice", settings={"approval": {"approvals_reviewer": "auto_review", "command_sandbox": "off"}})
         self.args = {"command": "git status", "username": "alice", "session_id": "s"}
         self.messages = [HumanMessage(content="检查当前仓库状态", id="user-1", additional_kwargs={"input_origin": "user"})]
         self.verdict = review.ReviewVerdict(decision="approve", reason="Exact action authorized", risk="low", authorization_sources=["user-1"])
+
+    async def test_reviewer_uses_agent_profile_unless_explicitly_selected(self):
+        from types import SimpleNamespace
+        context = review.review_context(self.messages)
+        context['review_scope'] = {'owner_user_id': 'alice', 'session_id': 's'}
+        options = runtime_settings.ApprovalSettings(command_sandbox='off')
+        with patch('common.llm_factory.create_chat_model', return_value=SimpleNamespace(model_name='agent-model')) as factory, \
+             patch('agents.model_profiles.agent_model_override', return_value={'model':'agent-model','api_key':'test-key','base_url':'https://provider.test/v1'}) as profile, \
+             patch('webot.engine.tool_schema.decode_structured_final', new=AsyncMock(return_value=self.verdict.model_dump())):
+            await review.run_reviewer(tool_name='run_command',args=self.args,context=context,settings=options,policy={})
+            self.assertEqual(factory.call_args.kwargs['api_key'], 'test-key')
+            self.assertEqual(factory.call_args.kwargs['model'], 'agent-model')
+            profile.assert_called_once_with('alice', 's')
+            profile.reset_mock()
+            options.reviewer_model = 'dedicated-reviewer'
+            await review.run_reviewer(tool_name='run_command',args=self.args,context=context,settings=options,policy={})
+            self.assertEqual(factory.call_args.kwargs['model'], 'dedicated-reviewer')
+            self.assertNotIn('api_key', factory.call_args.kwargs)
+            profile.assert_not_called()
 
     async def authorize(self, **kwargs):
         return await review.authorize_action(user_id="alice", session_id="s", tool_name="run_command",
@@ -561,7 +590,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
     async def test_batch_wait_does_not_issue_early_execution_permits(self):
         from webot.engine.agent import UserAwareToolNode
         from webot.mcp import commander
-        node = UserAwareToolNode([])
+        node = approval_command_node()
         owner = self
         class Tools:
             async def ainvoke(self, state, config):
@@ -573,6 +602,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
                         results.append(ToolMessage(content="ok", tool_call_id=call["id"]))
                     duplicate.assert_not_called()
                 return {"messages": results}
+        Tools._tools_by_name = node.tool_node._tools_by_name
         node.tool_node = Tools()
         calls = [{"name": "run_command", "id": str(i), "args": {"command": command}} for i, command in enumerate(("git status", "git diff"))]
         async def reviewer(**kwargs):
@@ -586,9 +616,10 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_batch_rechecks_an_earlier_approval_after_policy_change(self):
         from webot.engine.agent import UserAwareToolNode
-        node = UserAwareToolNode([])
+        node = approval_command_node()
+        definitions = node.tool_node._tools_by_name
         node.tool_node = AsyncMock()
-        node.tool_node._tools_by_name = {}
+        node.tool_node._tools_by_name = definitions
         async def reviewer(**kwargs):
             if kwargs["args"]["command"] == "git diff":
                 policy.save_tool_policy_config("alice", {"default_approval": "deny"})

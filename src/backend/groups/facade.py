@@ -134,7 +134,9 @@ class GroupFacade:
             card = self.client.card(self.client.require(user, gid))
             active = [m for m in card['members'] if m.get('agent') and m['agent']['status']['state'] == 'running']
             return {'typing':[m['name'] for m in active], 'names':[m['name'] for m in active],
-                    'agents':[{'agent_id':m['agent']['agent_id'], 'name':m['name'], 'state':'running'} for m in active]}
+                    'agents':[{'agent_id':m['agent']['agent_id'], 'principal':m['principal'], 'name':m['name'],
+                               'state':'running', 'remote':m['remote'],
+                               'started_at':m['agent']['status'].get('started_at')} for m in active]}
         return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/typing')
 
     def agents_available(self, user, gid):
@@ -237,6 +239,16 @@ def client_router(facade, *, internal_token, verify_password):
             real_principal = facade.client.principal(row, principal)
             return await asyncio.to_thread(facade.client.request, row, 'GET', '/guest/image',
                                            params={'principal': real_principal, 'image_id': image_id})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.get('/groups/{gid}/members/{principal}/avatar/{image_id}')
+    async def member_avatar(gid: str, principal: str, image_id: str, authorization: str | None = Header(None)):
+        try:
+            row = facade.client.require(user_of(authorization), gid)
+            real_principal = facade.client.principal(row, principal)
+            return await asyncio.to_thread(facade.client.request, row, 'GET', '/guest/avatar',
+                params={'principal': real_principal, 'image_id': image_id})
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 

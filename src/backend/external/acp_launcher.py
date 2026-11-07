@@ -1,5 +1,6 @@
 """Per-Agent ACP launch targets; selecting one never installs or starts a program."""
 import re
+import shutil
 
 LAUNCH_PRESETS = {
     'codebuddy': {'label': 'CodeBuddy', 'agent_command': 'codebuddy --acp'},
@@ -8,12 +9,20 @@ LAUNCH_PRESETS = {
 }
 
 
+def default_agent_command(platform, *, detect_local=True):
+    # The CLI's official ACP mode shares the existing CLI login. The acpx
+    # shortcut targets a separate runtime which need not be installed.
+    if detect_local and platform == 'antigravity' and shutil.which('agy'):
+        return 'agy acp'
+    return LAUNCH_PRESETS.get(platform, {}).get('agent_command', '')
+
+
 def launch_settings(config):
     options = ((config.get('meta') or {}).get('acp') or {})
     name = options.get('agent_name') or ''
     command = options.get('agent_command') or ''
     if not name and not command:
-        command = LAUNCH_PRESETS.get(config.get('platform'), {}).get('agent_command', '')
+        command = default_agent_command(config.get('platform'), detect_local=not config.get('connection_id'))
     return {'agent_name': name, 'agent_command': command}
 
 

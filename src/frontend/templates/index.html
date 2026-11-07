@@ -2,6 +2,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <link rel="stylesheet" href="/static/css/avatars.css?v=20261107-avatars">
+    <script src="/static/js/avatars.js?v=20261107-avatars"></script>
     <title>Clawcross | AI Agent</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 
@@ -14,14 +16,15 @@
     <meta name="format-detection" content="telephone=no">
     <meta name="msapplication-tap-highlight" content="no">
     <meta name="msapplication-TileColor" content="#111827">
-    <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/180/robot-2.png">
-    <link rel="apple-touch-icon" sizes="152x152" href="https://img.icons8.com/fluency/152/robot-2.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="https://img.icons8.com/fluency/180/robot-2.png">
-    <link rel="apple-touch-icon" sizes="167x167" href="https://img.icons8.com/fluency/167/robot-2.png">
+    <link rel="apple-touch-icon" href="/static/assets/clawcross-icon-180.png?v=20261107-brand">
+    <link rel="apple-touch-icon" sizes="152x152" href="/static/assets/clawcross-icon-152.png?v=20261107-brand">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/clawcross-icon-180.png?v=20261107-brand">
+    <link rel="apple-touch-icon" sizes="167x167" href="/static/assets/clawcross-icon-167.png?v=20261107-brand">
     <!-- iOS splash screens -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="/manifest.json">
-    <link rel="icon" href="/static/assets/clawcross-mark.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json?v=20261107-brand">
+    <link rel="icon" sizes="32x32" href="/static/assets/clawcross-icon-32.png?v=20261107-brand" type="image/png">
+    <link rel="icon" href="/static/assets/clawcross-mark.svg?v=20261107-brand" type="image/svg+xml">
     
     <link rel="stylesheet" href="/static/css/tailwind.css?v=20261003-local">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
@@ -37,6 +40,7 @@
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261104-settings-directory">
 <link rel="stylesheet" href="/static/css/conversation-polish.css?v=20261018-view-switch-right">
 <link rel="stylesheet" href="/static/css/workspace-pages.css?v=20261018-workspace-polish">
+<script src="/static/js/ui-languages.js?v=20261107-activity-rail"></script><script src="/static/js/run-activity.js?v=20261107-final"></script>
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -110,7 +114,75 @@
     </div>
 
     <!-- ========== 主布局（聊天 + OASIS）（初始隐藏） ========== -->
-    <div id="chat-screen" class="main-layout safe-top safe-bottom safe-left safe-right" style="display:none;">
+    <div id="chat-screen" class="main-layout studio-mobile-navigation safe-top safe-bottom safe-left safe-right" style="display:none;">
+
+        <button type="button" id="studio-mobile-menu-toggle" class="studio-mobile-menu-toggle" onclick="StudioSidebar.toggleNavigation()" aria-label="菜单" aria-expanded="false" aria-controls="studio-activity-navigation"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#menu"/></svg></button>
+        <button type="button" id="studio-mobile-nav-backdrop" class="studio-mobile-nav-backdrop" onclick="StudioSidebar.closeNavigation()" tabindex="-1" aria-hidden="true" hidden></button>
+        <nav id="studio-activity-navigation" class="studio-activity-bar" aria-label="Studio">
+            <div class="studio-activity-brand"><img src="/static/assets/clawcross-mark.svg" alt="Clawcross"><button type="button" id="studio-mobile-menu-close" class="studio-mobile-menu-close" onclick="StudioSidebar.closeNavigation()" aria-label="关闭"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#x"/></svg></button></div>
+            <div class="studio-activity-primary">
+                <button type="button" id="tab-chat" class="studio-activity-item active" onclick="switchPage('chat')" aria-current="page"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/></svg><span class="studio-activity-label" data-i18n="tab_chat">对话</span></button>
+                <button type="button" id="tab-agent-center" class="studio-activity-item" onclick="openAgentCenter()" aria-haspopup="dialog"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#bot"/></svg><span class="studio-activity-label" data-i18n="tab_agent_center">Agent 中心</span></button>
+                <button type="button" id="tab-group" class="studio-activity-item" onclick="switchPage('group')"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#users"/></svg><span class="studio-activity-label" data-i18n="tab_group">团队</span></button>
+                <button type="button" id="tab-orchestrate" class="studio-activity-item" onclick="switchPage('orchestrate')"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#workflow"/></svg><span class="studio-activity-label" data-i18n="tab_orchestrate">工作流</span></button>
+                <a id="tab-groupchat" class="studio-activity-item studio-message-link" href="/mobile/group_chat"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg?v=20261018-switch#switch-layout"/></svg><span class="studio-activity-label">Message</span></a>
+                <a id="tab-hub" class="studio-activity-item" href="https://clawcross.net/" target="_blank" rel="noopener noreferrer"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#globe"/></svg><span class="studio-activity-label">Hub</span></a>
+            </div>
+            <div class="studio-activity-footer">
+                <button type="button" id="studio-mobile-agents-toggle" class="studio-activity-item studio-mobile-agents-toggle" onclick="StudioSidebar.toggleAgents()" data-i18n-title="studio_conversations" title="我的 Agent"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#panel-left"/></svg><span class="studio-activity-label" data-i18n="studio_conversations">我的 Agent</span></button>
+                <button type="button" id="studio-preferences" class="studio-activity-item" onclick="openSettings()"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#settings"/></svg><span class="studio-activity-label" data-i18n="hmenu_settings">偏好设置</span></button>
+                <div class="hamburger-menu-wrapper">
+                    <button type="button" class="hamburger-btn" onclick="toggleHamburgerMenu()" title="更多" aria-label="更多" data-studio-more><svg class="ui-icon"><use href="/static/icons.svg#more"/></svg><span class="studio-activity-label" data-studio-more-label>更多</span></button>
+                    <!-- Vertical slide-down panel -->
+                    <div id="hamburger-panel" class="hamburger-panel ui-menu" style="display:none;">
+                        <div class="ui-menu-item static">
+                            <svg class="ui-icon"><use href="/static/icons.svg#id-card"/></svg>
+                            <span class="ui-menu-label">UID</span>
+                            <span id="hamburger-uid" class="hamburger-uid-val"></span>
+                            <span id="uid-display" hidden></span>
+                        </div>
+                        <div class="ui-menu-item static">
+                            <svg class="ui-icon"><use href="/static/icons.svg#hash"/></svg>
+                            <span class="ui-menu-label">Session</span>
+                            <span id="session-display" class="hamburger-uid-val" data-i18n-title="current_session" title="当前对话号"></span>
+                        </div>
+                        <div class="ui-menu-sep"></div>
+
+
+                        <button type="button" class="ui-menu-item" onclick="openProjectUpdateModal(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#arrow-up-circle"/></svg>
+                            <span class="ui-menu-label" data-i18n="project_update_title">更新项目</span>
+                        </button>
+                        <button type="button" class="ui-menu-item" onclick="handleNewSession(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_new">New Chat</span>
+                        </button>
+                        <div class="ui-menu-sep"></div>
+                        <button type="button" class="ui-menu-item" onclick="toggleLanguage(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#languages"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_lang">Language</span>
+                            <span id="lang-toggle-btn" class="hamburger-badge">EN</span>
+                        </button>
+                        <div class="ui-menu-item static" id="public-toggle-wrap">
+                            <svg class="ui-icon" id="public-toggle-label"><use href="/static/icons.svg#globe"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_public">Public</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="public-toggle" onchange="handlePublicToggle(this.checked)" disabled>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="public-url-row" class="ui-menu-item static" style="display:none;padding-top:0;padding-bottom:8px;">
+                            <input id="public-url-input" type="text" readonly onclick="this.select();document.execCommand('copy')" style="flex:1;font-size:11px;font-family:monospace;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;background:#f3f4f6;color:#2563eb;cursor:pointer;outline:none;" title="Click to copy" />
+                        </div>
+                        <div class="ui-menu-sep"></div>
+                        <button type="button" class="ui-menu-item danger" onclick="handleLogout(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#log-out"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_logout">Logout</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
 
         <!-- ===== 历史会话侧边栏 ===== -->
         <div id="session-sidebar" class="session-sidebar" style="display:none;">
@@ -185,77 +257,6 @@
 
         <!-- ===== 左侧：聊天区 ===== -->
         <div class="chat-main h-screen flex flex-col bg-white border-x border-gray-200 shadow-2xl">
-            <!-- Page Switch Tab Bar -->
-            <div class="page-tab-bar">
-                <div class="hamburger-menu-wrapper">
-                    <button type="button" class="hamburger-btn" onclick="toggleHamburgerMenu()" data-i18n-title="hmenu_settings" title="Settings" aria-label="Settings"><svg class="ui-icon"><use href="/static/icons.svg#settings"/></svg></button>
-                    <!-- Vertical slide-down panel -->
-                    <div id="hamburger-panel" class="hamburger-panel ui-menu" style="display:none;">
-                        <div class="ui-menu-item static">
-                            <svg class="ui-icon"><use href="/static/icons.svg#id-card"/></svg>
-                            <span class="ui-menu-label">UID</span>
-                            <span id="hamburger-uid" class="hamburger-uid-val"></span>
-                        </div>
-                        <div class="ui-menu-item static">
-                            <svg class="ui-icon"><use href="/static/icons.svg#hash"/></svg>
-                            <span class="ui-menu-label">Session</span>
-                            <span id="session-display" class="hamburger-uid-val" data-i18n-title="current_session" title="当前对话号"></span>
-                        </div>
-                        <div class="ui-menu-sep"></div>
-                        <button type="button" class="ui-menu-item" onclick="openAgentCenter(); closeHamburgerMenu();">
-                            <svg class="ui-icon"><use href="/static/icons.svg#compass"/></svg>
-                            <span class="ui-menu-label" data-i18n="hmenu_agent_center">Agent Center</span>
-                        </button>
-                        <button type="button" class="ui-menu-item" onclick="openSettings(); closeHamburgerMenu();">
-                            <svg class="ui-icon"><use href="/static/icons.svg#settings"/></svg>
-                            <span class="ui-menu-label" data-i18n="hmenu_settings">Settings</span>
-                        </button>
-                        <button type="button" class="ui-menu-item" onclick="openProjectUpdateModal(); closeHamburgerMenu();">
-                            <svg class="ui-icon"><use href="/static/icons.svg#arrow-up-circle"/></svg>
-                            <span class="ui-menu-label" data-i18n="project_update_title">更新项目</span>
-                        </button>
-                        <button type="button" class="ui-menu-item" onclick="handleNewSession(); closeHamburgerMenu();">
-                            <svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg>
-                            <span class="ui-menu-label" data-i18n="hmenu_new">New Chat</span>
-                        </button>
-                        <div class="ui-menu-sep"></div>
-                        <button type="button" class="ui-menu-item" onclick="toggleLanguage(); closeHamburgerMenu();">
-                            <svg class="ui-icon"><use href="/static/icons.svg#languages"/></svg>
-                            <span class="ui-menu-label" data-i18n="hmenu_lang">Language</span>
-                            <span id="lang-toggle-btn" class="hamburger-badge">EN</span>
-                        </button>
-                        <div class="ui-menu-item static" id="public-toggle-wrap">
-                            <svg class="ui-icon" id="public-toggle-label"><use href="/static/icons.svg#globe"/></svg>
-                            <span class="ui-menu-label" data-i18n="hmenu_public">Public</span>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="public-toggle" onchange="handlePublicToggle(this.checked)" disabled>
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div id="public-url-row" class="ui-menu-item static" style="display:none;padding-top:0;padding-bottom:8px;">
-                            <input id="public-url-input" type="text" readonly onclick="this.select();document.execCommand('copy')" style="flex:1;font-size:11px;font-family:monospace;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;background:#f3f4f6;color:#2563eb;cursor:pointer;outline:none;" title="Click to copy" />
-                        </div>
-                        <div class="ui-menu-sep"></div>
-                        <button type="button" class="ui-menu-item danger" onclick="handleLogout(); closeHamburgerMenu();">
-                            <svg class="ui-icon"><use href="/static/icons.svg#log-out"/></svg>
-                            <span class="ui-menu-label" data-i18n="hmenu_logout">Logout</span>
-                        </button>
-                    </div>
-                </div>
-                <div class="tab-bar-brand">
-                    <img class="tab-bar-logo-mark" src="/static/assets/clawcross-mark.svg" alt="Clawcross logo">
-                    <div class="tab-bar-brand-text">
-                        <span class="text-xs font-bold text-gray-800 leading-tight">Clawcross</span>
-                        <span class="text-[9px] text-green-500 flex items-center" data-i18n="encrypted">● 已加密</span>
-                    </div>
-                </div>
-                <div class="page-tab" id="uid-display" style="display:none;"></div>
-                <div class="page-tab active" id="tab-chat" onclick="switchPage('chat')" data-i18n="tab_chat">Chat</div>
-                <div class="page-tab" id="tab-agent-center" onclick="openAgentCenter()" data-i18n="tab_agent_center">Agents</div>
-                <div class="page-tab" id="tab-group" onclick="switchPage('group')" data-i18n="tab_group">Team</div>
-                <div class="page-tab" id="tab-orchestrate" onclick="switchPage('orchestrate')" data-i18n="tab_orchestrate">Workflow</div>
-                <a id="tab-groupchat" class="studio-mode-switch" href="/mobile/group_chat" title="切换到 Message" aria-label="切换到 Message"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg?v=20261018-switch#switch-layout"/></svg><span>Message</span></a>
-            </div>
             <!-- === Chat Page === -->
             <div id="page-chat" class="chat-page" style="display:flex;">
             <div id="oasis-chat-town-shell" class="oasis-chat-town-shell hud-hidden">
@@ -291,17 +292,17 @@
             <div id="chat-standard-shell" class="chat-standard-shell flex flex-col flex-1 min-h-0">
                 <details class="studio-conversation-switcher" ontoggle="if (this.open) refreshStudioConversations()">
                     <summary data-i18n-title="studio_conversations" title="Agents"><svg class="ui-icon"><use href="/static/icons.svg#menu"/></svg><span data-i18n="studio_conversations">Agents</span></summary>
-                <div class="studio-session-rail-body">
+                <div class="studio-session-rail-body"><div class="studio-session-scroll"><div class="studio-session-rail-top">
                     <button type="button" id="studio-new-conversation" class="studio-new-conversation oc-acp-session-ensure" onclick="studioNewConversation()"><svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg><span data-i18n="studio_new_conversation">新建 Agent</span></button>
                 <!-- Chat runtime switcher: WeBot or an ACP tool -->
                 <details class="studio-platform-picker">
-                    <summary><span data-i18n="orch_agent_platform">Agent 平台</span></summary>
+                    <summary aria-label="Agent 平台"><span id="studio-platform-current"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg><strong>ClawCross</strong></span></summary>
                 <div id="studio-chat-switcher" class="studio-chat-switcher" style="display:none;">
                     <div class="oc-switcher-inner">
                         <div class="oc-switcher-row-main">
                             <div class="oc-switcher-tabs">
-                                <button class="oc-switcher-tab active" id="oc-tab-internal" onclick="ocSwitchTo('internal')" data-i18n="oc_tab_internal">
-                                    🤖 WeBot
+                                <button class="oc-switcher-tab active" id="oc-tab-internal" onclick="ocSwitchTo('internal')">
+                                    <svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg><span>ClawCross</span>
                                 </button>
                                 <span id="oc-acp-tabs" class="oc-acp-tabs" style="display:none;"></span>
                             </div>
@@ -320,19 +321,19 @@
                 <div id="oc-internal-session-row" hidden>
                     <select id="oc-internal-session-pick" hidden tabindex="-1"><option value=""></option></select>
                 </div>
+</div>                <details id="studio-team-agent-tree" class="studio-team-tree" open ontoggle="if(this.open && typeof renderStudioTeamTree === 'function') renderStudioTeamTree(true)">
+                    <summary data-i18n="teams">Teams</summary>
+                    <div id="studio-team-agent-tree-list" class="studio-team-tree-list"></div>
+                </details>
                 <details id="studio-recent-agents" class="studio-recent-agents" open>
                     <summary class="studio-session-list-heading" data-i18n="studio_history">最近 Agent</summary>
                     <div id="studio-conversation-list" class="studio-conversation-list" aria-label="Recent Agents"></div>
                 </details>
-                <details id="studio-team-agent-tree" class="studio-team-tree" open ontoggle="if(this.open && typeof renderStudioTeamTree === 'function') renderStudioTeamTree(true)">
-                    <summary data-i18n="teams">Teams</summary>
-                    <div id="studio-team-agent-tree-list" class="studio-team-tree-list"></div>
-                </details>
-                <span id="oc-acp-session-status" class="oc-acp-session-status" aria-live="polite"></span>
+</div><footer class="studio-rail-footer"><button type="button" onclick="StudioSidebar.openArchived()"><svg class="ui-icon"><use href="/static/icons.svg#folder"/></svg><span data-i18n="archived_agents">已归档</span></button></footer>                <span id="oc-acp-session-status" class="oc-acp-session-status" aria-live="polite"></span>
                 </div>
                 </details>
                 <div id="studio-chat-layout">
-                <section id="studio-ui-workspace" class="studio-ui-workspace" hidden aria-label="UI 工作区">
+                <section id="studio-ui-workspace" class="studio-ui-workspace" hidden aria-label="动态 UI 工作区">
                     <div id="studio-ui-stage" class="studio-ui-stage"></div>
                 </section>
                 <button type="button" id="studio-ui-divider" class="studio-ui-divider" hidden role="separator" aria-label="调整 UI 与对话的比例" aria-orientation="vertical" aria-valuemin="15" aria-valuemax="85" aria-valuenow="60"><span></span></button>
@@ -353,41 +354,41 @@
                             <details id="studio-more-menu" class="studio-more-menu">
                                 <summary aria-label="更多操作" title="更多操作"><svg class="ui-icon"><use href="/static/icons.svg#plus"/></svg></summary>
                                 <div class="studio-more-content">
-                                    <div class="studio-more-heading">添加内容</div>
+                                    <div class="studio-more-heading" data-i18n="add_content">添加内容</div>
                                     <div class="chat-composer-toolbar">
                                         <label class="image-upload-btn" title="上传图片/文件/音频">
-                                            <svg class="ui-icon"><use href="/static/icons.svg#paperclip"/></svg><span>上传文件</span>
+                                            <svg class="ui-icon"><use href="/static/icons.svg#paperclip"/></svg><span data-i18n="upload_files">上传文件</span>
                                             <input type="file" id="image-input" accept="image/*,.pdf,.txt,.md,.markdown,.rst,.adoc,.org,.tex,.bib,.csv,.tsv,.json,.ndjson,.jsonl,.xml,.yaml,.yml,.toml,.ini,.cfg,.conf,.properties,.env,.log,.html,.htm,.css,.scss,.sass,.less,.styl,.js,.mjs,.cjs,.ts,.tsx,.jsx,.vue,.svelte,.astro,.py,.pyi,.pyx,.ipynb,.rb,.gemspec,.php,.go,.rs,.java,.kt,.kts,.scala,.groovy,.gradle,.c,.h,.cpp,.cc,.cxx,.hpp,.hh,.hxx,.m,.mm,.cs,.fs,.fsx,.fsi,.vb,.swift,.dart,.lua,.pl,.pm,.tcl,.r,.jl,.nim,.zig,.cr,.ex,.exs,.erl,.hrl,.elm,.clj,.cljs,.cljc,.hs,.ml,.mli,.ocaml,.sh,.bash,.zsh,.fish,.bat,.cmd,.ps1,.psm1,.awk,.sed,.dockerfile,.makefile,.mk,.cmake,.bazel,.bzl,.sbt,.sql,.prisma,.graphql,.gql,.proto,.thrift,.tf,.hcl,.nomad,.j2,.jinja,.jinja2,.ejs,.hbs,.mustache,.twig,.liquid,.njk,.editorconfig,.gitignore,.gitattributes,.prettierrc,.eslintrc,.npmrc,.babelrc,.lock,.sum,.mod,.mp3,.wav,.ogg,.m4a,.flac,.aac,.opus,.aiff,.amr,.avi,.mp4,.mkv,.mov,.webm,.wmv,.flv,.m4v,.3gp,.ogv" multiple style="display:none;" onchange="document.getElementById('studio-more-menu').open=false; handleFileSelect(event)">
                                         </label>
-                                        <button id="record-btn" class="audio-record-btn" data-i18n-title="recording_title" title="录音" onclick="document.getElementById('studio-more-menu').open=false; toggleRecording()"><svg class="ui-icon"><use href="/static/icons.svg#mic"/></svg><span>录音</span></button>
+                                        <button id="record-btn" class="audio-record-btn" data-i18n-title="recording_title" title="录音" onclick="document.getElementById('studio-more-menu').open=false; toggleRecording()"><svg class="ui-icon"><use href="/static/icons.svg#mic"/></svg><span data-i18n="record_audio">录音</span></button>
                                         <button id="workflow-add-btn" class="workflow-add-btn" data-i18n-title="wf_btn_title" title="添加工作流" onclick="document.getElementById('studio-more-menu').open=false; showWorkflowPopup()"><svg class="ui-icon"><use href="/static/icons.svg#workflow"/></svg><span class="wf-label" data-i18n="wf_btn_label">工作流</span></button>
                                         <button type="button" id="workflow-runs-btn" onclick="document.getElementById('studio-more-menu').open=false; openWorkflowRuns()"><svg class="ui-icon"><use href="/static/icons.svg#layers"/></svg><span data-i18n="hmenu_oasis">工作流运行</span></button>
                                         <button id="persona-add-btn" class="persona-add-btn" data-i18n-title="persona_btn_title" title="引入专家人设" onclick="document.getElementById('studio-more-menu').open=false; showPersonaPopup()"><svg class="ui-icon"><use href="/static/icons.svg#sparkles"/></svg><span class="persona-label" data-i18n="persona_btn_label">人设</span></button>
                                     </div>
                                     <details id="conversation-ui-panel-menu" class="conversation-ui-panel-menu">
-                                        <summary>对话面板</summary>
-                                        <div id="conversation-ui-panel-list"><div class="conversation-ui-panel-empty">暂无对话面板</div></div>
+                                        <summary data-i18n="dynamic_ui">动态 UI</summary>
+                                        <div id="conversation-ui-panel-list"><div class="conversation-ui-panel-empty">暂无动态 UI</div></div>
                                     </details>
                                     <details class="conversation-ui-panel-menu" id="studio-runtime-menu">
-                                        <summary>运行设置</summary>
-                                        <button type="button" id="studio-model-settings" data-webot-runtime onclick="document.getElementById('studio-more-menu').open=false; openAgentModelSettings()"><svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg><span>模型与思考</span></button>
+                                        <summary data-i18n="runtime_options">运行设置</summary>
+                                        <button type="button" id="studio-model-settings" data-webot-runtime onclick="document.getElementById('studio-more-menu').open=false; openAgentModelSettings()"><svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg><span data-i18n="agent_model_reasoning">模型与思考</span></button>
                                         <button type="button" id="studio-runtime-details" data-webot-runtime data-i18n="agent_center_runtime_details" onclick="document.getElementById('studio-more-menu').open=false; toggleSessionSidebar()">运行详情与审核</button>
                                         <button type="button" onclick="document.getElementById('studio-more-menu').open=false; openWorkspaceSettings(runtimeSettingsCurrentAgent())" data-i18n="agent_workspaces">工作区</button>
-                                        <button type="button" id="studio-sandbox-settings" onclick="document.getElementById('studio-more-menu').open=false; openRuntimeSettings(runtimeSettingsCurrentAgent(), 'approval')">沙盒与审核</button>
-                                        <button type="button" data-webot-runtime onclick="document.getElementById('studio-more-menu').open=false; openRuntimeSettings(currentSessionId)">上下文与压缩</button>
+                                        <button type="button" id="studio-sandbox-settings" onclick="document.getElementById('studio-more-menu').open=false; openRuntimeSettings(runtimeSettingsCurrentAgent(), 'approval')" data-i18n="sandbox_approval">沙盒与审核</button>
+                                        <button type="button" data-webot-runtime onclick="document.getElementById('studio-more-menu').open=false; openRuntimeSettings(currentSessionId)" data-i18n="context_compression">上下文与压缩</button>
                                         <button type="button" id="studio-external-settings" hidden onclick="document.getElementById('studio-more-menu').open=false; openExternalAgentSettings()">外部 Agent · 模型、思考与工具</button>
                                         <p id="external-runtime-hint" hidden style="font-size:12px;color:#64748b;max-width:320px;white-space:normal;"></p>
                                     </details>
-                                    <div class="studio-more-heading">高级选项</div>
+                                    <div class="studio-more-heading" data-i18n="advanced_options">高级选项</div>
                     <!-- Tool List Panel -->
                     <div id="tool-panel-wrapper" class="mb-2">
                         <div class="flex items-center justify-between mb-1">
                             <div id="tool-toggle-btn" class="tool-toggle-btn flex items-center space-x-1 text-sm text-gray-500 font-medium" onclick="toggleToolPanel()" style="display:none;">
-                                <span data-i18n="available_tools">🧰 可用工具</span>
+                                <span data-i18n="available_tools">可用工具</span>
                                 <span id="tool-count" class="text-xs text-gray-400"></span>
                                 <span id="tool-toggle-icon" class="tool-toggle-icon text-xs">▼</span>
                             </div>
-                            <div class="oc-mode-selector" data-i18n-title="run_mode_title" title="交流：无工具；只读：查看和搜索；Manual：跳过确认；Auto：替我审核">
+                            <div class="oc-mode-selector" data-i18n-title="run_mode_title" title="交流：无工具；只读：查看和搜索；Manual：人工审核；Auto：替我审核">
                                 <div class="oc-context-usage-wrap">
                                     <span id="session-context-usage" class="oc-context-usage-badge" role="button" tabindex="0" aria-expanded="false" onclick="toggleSessionContextDetail(event)" onkeydown="handleSessionContextDetailKeydown(event)">上下文已用 0%</span>
                                     <div id="session-context-detail" class="oc-context-usage-detail" hidden></div>
@@ -1017,11 +1018,11 @@
             <div class="agent-meta-body">
                 <div class="agent-creation-emblem" aria-hidden="true"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg></div>
                 <label class="agent-meta-label" id="agent-meta-name-label" for="agent-meta-name">伙伴叫什么？</label>
-                <input type="text" id="agent-meta-name" class="agent-meta-input" maxlength="120" autocomplete="off" placeholder="例如：小曼、阿星" onkeydown="if(event.key==='Enter'){event.preventDefault();submitAgentMeta();}">
-                <div id="studio-agent-creation-basics"></div>
+                <input type="text" id="agent-meta-name" class="agent-meta-input" maxlength="120" autocomplete="off" placeholder="我的伙伴" value="我的伙伴" onkeydown="if(event.key==='Enter'){event.preventDefault();submitAgentMeta();}">
+                <div id="agent-meta-template-field"><label class="agent-meta-label" data-i18n="capability_template">能力模板</label><div id="studio-agent-creation-presets"></div><p id="studio-agent-template-hint" class="agent-creation-preset-hint"></p></div>
                 <div id="agent-meta-error" role="status" style="color:#dc2626;font-size:12px"></div>
                 <details id="studio-agent-advanced" class="agent-meta-advanced"><summary>高级设置</summary>
-                <div id="agent-meta-template-field"><div id="studio-agent-creation-presets"></div><p id="studio-agent-template-hint" class="agent-creation-preset-hint"></p></div>
+
                 <div id="agent-meta-platform-field">
                     <label class="agent-meta-label">连接方式</label>
                     <select id="agent-meta-platform" class="agent-meta-input" onchange="agentMetaPlatformChanged()"><option value="webot">WeBot</option></select>
@@ -1029,7 +1030,7 @@
                 </div>
                 <label class="agent-meta-label" data-agent-conversation-title data-i18n="agent_meta_title">会话标题</label>
                 <input type="text" id="agent-meta-title" class="agent-meta-input" maxlength="80" data-i18n-placeholder="agent_meta_title_placeholder" placeholder="留空则显示第一条消息">
-                <details class="agent-meta-category"><summary>工具范围 · Tool access</summary>
+                <details class="agent-meta-category"><summary data-i18n="tool_scope">工具范围</summary>
                 <label class="agent-meta-label">Tools</label>
                 <div id="agent-meta-tools-container" class="agent-meta-tools-container" style="max-height:150px;overflow-y:auto;border:1px solid #d1d5db;border-radius:8px;padding:8px;">
                     <span style="color:#9ca3af;font-size:12px;">Loading tools...</span>
@@ -1388,39 +1389,39 @@
     <script src="/static/js/approval-ui.js?v=20261017-approval-dedup"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
-<script src="/static/js/settings-navigation.js?v=20261104-settings-directory"></script>
+<script src="/static/js/settings-navigation.js?v=20261107-refinements"></script>
 
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
 <script src="/static/js/native-session-browser.js?v=20261017-custom-acp"></script>
-<script src="/static/js/agent-creation-presets.js?v=20261104-simple-create"></script>
+<script src="/static/js/agent-creation-presets.js?v=20261107-refinements"></script>
     <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
-    <script src="/static/js/tinyfish-live-shared.js"></script>
-    <script src="/static/js/tool-catalog.js?v=20261006-agent-templates"></script>
+
+    <script src="/static/js/tool-catalog.js?v=20261107-refinements"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
 <script src="/static/js/group-network-ui.js?v=20261019-human-profile"></script>
-    <script src="/static/js/conversation-ui-panels.js?v=20261010-ui-workspace"></script>
+    <script src="/static/js/conversation-ui-panels.js?v=20261107-refinements"></script>
     <script src="/static/js/components.js?v=20261004-windows-sandbox"></script>
     <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
-    <script src="/static/js/conversation-start.js?v=20261018-create"></script>
-    <script src="/static/js/main.js?v=20261104-settings-directory"></script>
+    <script src="/static/js/conversation-start.js?v=20261107-refinements"></script>
+    <script src="/static/js/main.js?v=20261107-avatars"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
     <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
     <script src="/static/js/runtime-presentation.js?v=20261008-inbox"></script>
-    <script src="/static/js/agent-turns.js?v=20261020-turns"></script>
+    <script src="/static/js/agent-turns.js?v=20261107-refinements"></script>
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
     <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
     <script src="/static/js/connections.js?v=20261011"></script>
     <script src="/static/js/acp-launch-settings.js?v=20261017-custom-acp"></script>
     <script src="/static/js/external-agent-settings.js?v=20261104-hierarchy"></script>
 <link rel="stylesheet" href="/static/css/agent-settings.css?v=20261104-hierarchy">
-<script src="/static/js/agent-settings.js?v=20261104-hierarchy"></script>
+<script src="/static/js/agent-settings.js?v=20261107-avatars"></script>
 <script src="/static/js/model-profiles.js?v=20261104-hierarchy"></script>
     <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
-    <script src="/static/js/runtime-settings.js?v=20261104-hierarchy"></script>
+    <script src="/static/js/runtime-settings.js?v=20261107-refinements"></script>
 <script src="/static/js/workspace-settings.js?v=20261104-hierarchy"></script>
 <link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005-team-skills">
-    <script src="/static/js/app.js?v=20260327-humanfix"></script>
+    <script src="/static/js/app.js?v=20261107-iphone-viewport"></script>
     <script>
     // Check LLM API config on page load & preload setup status for wizard
     fetch('/api/setup_status').then(r=>r.json()).then(d=>{
@@ -1433,5 +1434,6 @@
       }).catch(()=>{});
     });
     </script>
+<link rel="stylesheet" href="/static/css/studio-refinements.css?v=20261107-iphone-viewport"><script src="/static/js/studio-sidebar.js?v=20261107-mobile-navigation"></script>
 </body>
 </html>

@@ -96,3 +96,14 @@ async def test_session_tracking_and_close_keep_custom_launcher(tmp_path,monkeypa
     result=await close_acp_session('acp',name,user_id='alice',acpx_bin='/acpx')
     assert result['status']=='success'
     assert list(spawn.call_args.args)==['/acpx','--cwd',str(tmp_path)]+prefix+['sessions','close',name]
+
+
+def test_antigravity_uses_installed_cli_without_changing_custom_launch(monkeypatch):
+    monkeypatch.setattr('external.acp_launcher.shutil.which', lambda command: '/bin/agy' if command == 'agy' else None)
+    assert launch_settings({'platform':'antigravity'})['agent_command'] == 'agy acp'
+    adapter = AcpxAdapter.__new__(AcpxAdapter)
+    assert adapter._command_prefix(tool='antigravity',session_key='test') == ['--agent','agy acp']
+    assert launch_settings({'platform':'antigravity','meta':{'acp':{'agent_command':'custom-acp'}}})['agent_command'] == 'custom-acp'
+    assert launch_settings({'platform':'antigravity','connection_id':'remote-device'})['agent_command'] == ''
+    monkeypatch.setattr('external.acp_launcher.shutil.which', lambda command: None)
+    assert launch_settings({'platform':'antigravity'})['agent_command'] == ''

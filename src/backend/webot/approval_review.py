@@ -327,8 +327,18 @@ OUTPUT
 Return exactly one JSON object matching the supplied schema, no markdown, tools or explanatory prose. Use decision=Y, N, or KEEP Y only. Cite only relevant original user request IDs in authorization_sources; Y and KEEP Y require at least one genuine supporting source. Use an empty list when no source authorizes the action. Assess risk from effects, not from whether approval is requested. Keep reason to one short sentence (at most 100 words), in the user's language, identifying the essential authorization or missing scope without repeating the command or sensitive data.
 """
     try:
+        # A working per-Agent model profile must also work for its reviewer.
+        # An explicitly selected reviewer continues to use the platform profile.
+        overrides = {}
+        scope = context.get('review_scope') or {}
+        if not settings.reviewer_model and scope.get('owner_user_id') and scope.get('session_id'):
+            from agents.model_profiles import agent_model_override
+            configured = agent_model_override(scope['owner_user_id'], scope['session_id'])
+            overrides = {key: value for key, value in configured.items()
+                         if key in {'model', 'api_key', 'base_url', 'provider'} and value}
         model = create_chat_model(
-            model=settings.reviewer_model or None, temperature=0, max_tokens=settings.reviewer_max_tokens,
+            **{**overrides, 'model': settings.reviewer_model or overrides.get('model') or None},
+            temperature=0, max_tokens=settings.reviewer_max_tokens,
             timeout=settings.reviewer_timeout_seconds, max_retries=0,
         )
     except ValueError as exc:

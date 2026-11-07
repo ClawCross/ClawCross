@@ -14,7 +14,7 @@ import requests
 # forwarded ``Authorization`` itself, like /v1/chat/completions.
 PUBLIC_AGENT_ENDPOINTS = frozenset({"public_agents", "public_teams", "public_connections"})
 
-_METHODS = ["GET", "POST", "PATCH", "DELETE"]
+_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 
 
 def register_agent_routes(app, *, port_agent: int, internal_token: str, is_host_request=lambda: False) -> None:
@@ -29,7 +29,7 @@ def register_agent_routes(app, *, port_agent: int, internal_token: str, is_host_
 
     def _relay(path: str):
         # Asking an agent may take as long as the agent does.
-        body = request.get_json(silent=True) if request.method in ("POST", "PATCH") else None
+        body = request.get_json(silent=True) if request.method in ("POST", "PUT", "PATCH") else None
         long_control = path.endswith("/control") and isinstance(body, dict) and body.get("action") == "compact"
         timeout = 900 if path.endswith("/messages") or long_control else 120 if path.endswith("/test-connection") else 60
         headers = _auth_headers()

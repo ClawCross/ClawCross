@@ -181,7 +181,7 @@ window.ConversationUiPanels = (() => {
         if (!panels.size) {
             const empty = document.createElement('div');
             empty.className = 'conversation-ui-panel-empty';
-            empty.textContent = '暂无对话面板';
+            empty.textContent = '暂无动态 UI';
             list.appendChild(empty);
         }
         panels.forEach(record => {
@@ -261,21 +261,21 @@ window.ConversationUiPanels = (() => {
         const heading = document.createElement('div');
         heading.className = 'conversation-ui-panel-heading';
         heading.tabIndex = 0;
-        heading.setAttribute('aria-label', `${panel.title}，拖动标题移动面板`);
+        heading.setAttribute('aria-label', `${panel.title}，动态 UI`);
         const title = document.createElement('span');
         title.textContent = panel.title;
         heading.appendChild(title);
         const handle = document.createElement('button');
         handle.type = 'button';
         handle.className = 'conversation-ui-panel-resize';
-        handle.title = '拖动调整大小';
+        handle.hidden = true;
         handle.setAttribute('aria-label', '调整面板大小');
         handle.textContent = '◢';
         const placeholder = document.createElement('button');placeholder.type='button';placeholder.className='conversation-ui-panel-placeholder';
         placeholder.textContent = `在中间查看 · ${panel.title}`;placeholder.hidden=true;
         const layoutButton = document.createElement('button');layoutButton.type='button';layoutButton.className='panel-layout-button';
         layoutButton.textContent='放到中间';layoutButton.setAttribute('aria-label','放到中间');layoutButton.hidden=!stage;
-        const record = { key, panel, host, section, handle, placeholder, layoutButton, state: saved.state || 'open', geometry: saved.geometry, location: saved.location || 'inline', frame: null };
+        const record = { key, panel, host, section, handle, placeholder, layoutButton, state: saved.state || 'open', geometry: undefined, location: saved.location || 'inline', frame: null };
         layoutButton.addEventListener('click',()=>record.location === 'center' ? inline(record) : dock(record));
         placeholder.addEventListener('click',()=>restore(record));
         heading.appendChild(layoutButton);
@@ -298,10 +298,7 @@ window.ConversationUiPanels = (() => {
         }
         section.hidden = record.state !== 'open';
         host.append(section,placeholder);
-        if (record.geometry && record.location !== 'center') place(record, record.geometry);
-        section.addEventListener('pointerdown', () => focus(record));
-        pointerOperation(record, heading, false);
-        pointerOperation(record, handle, true);
+        // Dynamic UI stays embedded in the conversation or in the docked workspace.
         panels.set(key, record);
         if (record.location === 'center' && record.state === 'open') dock(record);
         updateMenu();
@@ -309,7 +306,7 @@ window.ConversationUiPanels = (() => {
     }
     window.addEventListener('message', event => {
         if (event.data?.kind === 'clawcross_ui_panel_select_v1') {
-            panels.forEach(record => { if (record.frame && event.source === record.frame.contentWindow && !record.geometry) dock(record); });
+            // Interacting with an embedded UI must not move it under the pointer.
             return;
         }
         if (!event.data || event.data.kind !== 'clawcross_ui_panel_resize_v1') return;

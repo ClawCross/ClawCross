@@ -23,7 +23,7 @@
       ]
     }
   };
-  const text = () => copy[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
+  const text = () => {const c=copy[document.documentElement.lang.startsWith('zh')?'zh':'en'];return window.ClawCrossLocale?{...c,title:ClawCrossLocale.text(copy.zh.title,copy.en.title),eyebrow:ClawCrossLocale.text(copy.zh.eyebrow,copy.en.eyebrow)}:c;};
   const escape = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
   const keys = ['idea', 'team', 'app'];
   function welcome({label = '', note = ''} = {}) {

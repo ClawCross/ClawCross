@@ -29,8 +29,8 @@ def build_ui_panel(title: str, html: str, css: str = "", javascript: str = "") -
 
 @mcp.tool()
 async def show_ui_panel(title: str, html: str, css: str = "", javascript: str = "") -> str:
-    """Show an interactive UI (form, chart, small tool) in the current Studio chat turn.
-    The user can open it beside the chat. It cannot reach the conversation, cookies or network,
+    """Show an embedded Dynamic UI (form, chart, small tool) in the current Studio chat turn.
+    It stays in place during interaction. The user can explicitly open it beside the chat. It cannot reach the conversation, cookies or network,
     so keep important results in your text reply too.
 
     :param title: Short accessible panel heading.

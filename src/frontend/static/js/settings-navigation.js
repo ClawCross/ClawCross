@@ -85,6 +85,7 @@ window.ClawcrossSettings = (() => {
         const overview=document.createElement('div');overview.className='settings-overview';
         overview.innerHTML=sections.map(([id,cn,en,,,path])=>`<button type="button" class="settings-overview-item" data-open-settings="${id}"><span class="settings-category-icon" data-tone="${id}">${icon(path)}</span><span><strong>${text(cn,en)}</strong><small>${text(...summaries[id])}</small></span>${icon('M9 5l7 7-7 7')}</button>`).join('');
         heading.after(overview);
+        if(window.ClawCrossLocale){const languages=document.createElement('div');languages.className='settings-language-choice';languages.innerHTML=ClawCrossLocale.picker();overview.append(languages);}
         const empty = document.createElement('div');
         empty.className = 'settings-empty';
         empty.textContent = text('没有找到相关设置，试试“模型”或“公网”。','No matching settings. Try “model” or “public”.');

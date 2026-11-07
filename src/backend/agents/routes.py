@@ -42,10 +42,11 @@ from agents.store import (
     valid_agent_id,
 )
 from common.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
+from common.avatars import AvatarStore, MAX_AVATAR_INPUT
 
 # Settings a caller may set; everything else in a driver's config is its own.
 # ``title`` names the work the session is doing (the agent or the user sets it).
-_SHARED_SETTINGS = ("persona", "title", "workspace_root", "workspaces", "connection_id", "remote_cwd")
+_SHARED_SETTINGS = ("persona", "title", "workspace_root", "workspaces", "connection_id", "remote_cwd", "archived", "avatar")
 TITLE_MAX = 80
 
 
@@ -59,6 +60,7 @@ _EXTERNAL_SETTINGS = ("api_url", "api_key", "model", "headers", "meta")
 class AgentCreate(BaseModel):
     agent_id: str = ""       # its session number; a new ag_… when not given
     name: str = ""
+    avatar: str = Field('', max_length=MAX_AVATAR_INPUT)
     creation_template: Literal['', 'chat', 'group', 'personal', 'admin'] = ''
     platform: str = WEBOT
     connection_id: str = Field('', max_length=100)
@@ -79,6 +81,16 @@ class AgentCreate(BaseModel):
 class AgentPatch(BaseModel):
     name: str | None = None
     settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class AvatarInput(BaseModel):
+    avatar: str = Field('', max_length=MAX_AVATAR_INPUT)
+
+
+class AvatarGenerationInput(BaseModel):
+    description: str = Field(min_length=1, max_length=500)
+    name: str = Field('', max_length=120)
+    kind: Literal['human', 'agent'] = 'agent'
 
 
 class RememberedPermissionCreate(BaseModel):
@@ -148,6 +160,7 @@ def agent_card(agent: Agent) -> dict[str, Any]:
     """What a caller sees of an agent. Secrets never leave; the driver is the agent's business."""
     config = agent.config
     settings = {key: config.get(key, "") for key in _SHARED_SETTINGS}
+    settings["archived"] = bool(config.get("archived", False))
     settings["teams"] = agent.teams  # changed only by joining or leaving a team
     if agent.driver == WEBOT:
         settings["tools"] = config.get("tools")
@@ -165,6 +178,7 @@ def agent_card(agent: Agent) -> dict[str, Any]:
         "created_at": agent.created_at,
         "updated_at": agent.updated_at,
         "creation_template": config.get('creation_template',''),
+        "archived": bool(config.get('archived', False)),
         "location": agent_location(agent),
     }
 
@@ -276,6 +290,33 @@ def create_agents_router(
             raise HTTPException(status_code=404, detail=f"no agent {ref!r}")
         return agent
 
+    from agents.avatar_generation import AvatarGenerator
+    avatar_generator = AvatarGenerator()
+    avatars = AvatarStore()
+
+    @router.get('/v1/agents/avatars/me')
+    async def my_avatar(authorization: str | None = Header(None)):
+        return avatars.user(user_of(authorization))
+
+    @router.put('/v1/agents/avatars/me')
+    async def save_my_avatar(body: AvatarInput, authorization: str | None = Header(None)):
+        try:
+            return avatars.save_user(user_of(authorization), body.avatar)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @router.post('/v1/agents/avatars/generate')
+    async def generate_avatar(body: AvatarGenerationInput, authorization: str | None = Header(None)):
+        if not body.description.strip():
+            raise HTTPException(400, '请先描述想要的头像')
+        return await avatar_generator.generate(user_of(authorization), body.description.strip(), body.name, body.kind)
+
+    @router.get('/v1/agents/{ref}/avatar')
+    async def agent_avatar(ref: str, authorization: str | None = Header(None)):
+        user = user_of(authorization)
+        agent = lookup(user, ref)
+        return {'avatar': agent.config.get('avatar', ''), 'url': avatars.get(user, agent.config.get('avatar', ''))}
+
     def target(user: str, ref: str, platform: str, workspace_root: str = '', cli_workspace: str = '') -> Agent:
         """The agent a message goes to; an id not seen before is a new agent."""
         agent = find(user, ref)
@@ -325,8 +366,10 @@ def create_agents_router(
 
     @router.get("/v1/agents")
     async def list_agents(authorization: str | None = Header(None), status: bool = Query(False),
-                          platform: str = Query("")):
+                          platform: str = Query(""), include_archived: bool = Query(False)):
         agents = store.list(user_of(authorization))
+        if not include_archived:
+            agents = [a for a in agents if not a.config.get('archived')]
         if platform:
             agents = [a for a in agents if a.platform == canonical_platform(platform)]
         if status:
@@ -382,6 +425,8 @@ def create_agents_router(
         user = user_of(authorization)
         try:
             driver, config = new_agent_config(body)
+            if body.avatar:
+                config['avatar'] = avatars.put(user, body.avatar)
             validate_agent_connection(user,config,driver)
             from webot.workspace import normalize_workspace_config
             if body.cli_workspace:
@@ -644,10 +689,17 @@ def create_agents_router(
         user = user_of(authorization)
         agent = lookup(user, ref)
         allowed = _SHARED_SETTINGS + (_WEBOT_SETTINGS if agent.driver == WEBOT else _EXTERNAL_SETTINGS)
+        if 'archived' in body.settings and type(body.settings['archived']) is not bool:
+            raise HTTPException(400, 'archived must be a boolean')
         unknown = sorted(set(body.settings) - set(allowed))
         if unknown:
             raise HTTPException(status_code=400, detail=f"unknown settings for {agent.platform}: {unknown}")
         config = {**agent.config, **body.settings}
+        if 'avatar' in body.settings:
+            try:
+                config['avatar'] = avatars.put(user, body.settings['avatar'])
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
         if agent.driver == ACPX and 'meta' in body.settings:
             from external.acp_settings import validate_settings
             meta = config.get('meta') or {}

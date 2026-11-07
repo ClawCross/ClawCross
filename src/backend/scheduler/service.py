@@ -289,7 +289,6 @@ async def lifespan(app: FastAPI):
     print("定时调度中心启动...")
     scheduler.start()
     restore_tasks()
-    restore_tinyfish_monitor_task()
     restore_dashboard_supabase_sync_task()
     yield
     print("定时调度中心关闭...")

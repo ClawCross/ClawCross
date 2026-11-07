@@ -153,10 +153,18 @@
     el('password-open').textContent = data.password_set ? '修改密码' : '设置密码';
     principal = data.principal; el('title').textContent = data.title; el('name').value = data.name;
     members = data.members;
+    const activity = el('guest-agent-activity');
+    if (activity) {
+      const active = members.filter(m => m.is_agent && m.activity?.state === 'running');
+      activity.hidden = !active.length;
+      activity.textContent = active.length ? active.slice(0, 2).map(m => m.name).join('、') +
+        (active.length > 2 ? ` 等 ${active.length} 位伙伴正在处理` : ' 正在处理') : '';
+    }
     el('member-count').textContent = '群成员 · ' + data.members.length;
     el('member-list').replaceChildren(...members.map(m => {
       const li = document.createElement('li'), button = document.createElement('button');
-      li.className = m.online ? 'online' : 'offline'; li.title = m.online ? '在线' : '离线';
+      li.className = (m.online ? 'online' : 'offline') + (m.activity?.state === 'running' ? ' is-working' : '');
+      li.title = m.activity?.state === 'running' ? '正在处理' : m.online ? '在线' : '离线';
       button.type = 'button'; button.textContent = m.name; button.setAttribute('aria-label', '提及 ' + m.name);
       button.addEventListener('click', () => { mentionRange = null; chooseMember(m); }); li.append(button);
       if(!m.is_agent){
@@ -164,6 +172,8 @@
         const info=document.createElement('button');info.type='button';info.className='member-profile-open';info.textContent='资料';info.setAttribute('aria-label',m.name+'的个人资料');
         info.addEventListener('click',()=>showHuman(m));li.append(info);
       }
+      const portrait = document.createElement('span'); portrait.className = 'guest-member-avatar';
+      portrait.innerHTML = Avatars.markup(m.avatar,m.name,{principal:m.principal}); button.prepend(portrait);
       return li;
     }));
     const box = el('messages'), nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 100;
@@ -174,6 +184,9 @@
       const article = document.createElement('article'); article.className = 'message' + (m.sender === principal ? ' own' : ''); article.dataset.messageId = m.id;
       const by = document.createElement('div'); by.className = 'byline';
       by.textContent = m.sender_name + ' · ' + new Date(m.created_at * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      const member = members.find(person => person.principal === m.sender);
+      if (member) { const portrait = document.createElement('span'); portrait.className = 'guest-message-avatar';
+        portrait.dataset.avatarSender = m.sender; portrait.innerHTML = Avatars.markup(member.avatar,member.name,{principal:member.principal}); by.prepend(portrait); }
       const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = m.content;
       bubble.dataset.groupMessageId = m.id; bubble.tabIndex = 0;
       const reference = m.reply || messageCache.get(m.reply_to);
@@ -188,6 +201,11 @@
       if (box.children.length > 500) box.firstElementChild.remove();
     }
     if (seen.size > 2000) { const recent = Array.from(seen).slice(-1000); seen.clear(); recent.forEach(id => seen.add(id)); }
+    for (const portrait of box.querySelectorAll('[data-avatar-sender]')) {
+      const person = members.find(m=>m.principal===portrait.dataset.avatarSender);
+      if (person && portrait.querySelector('[data-avatar]')?.dataset.avatar !== (person.avatar||''))
+        portrait.innerHTML = Avatars.markup(person.avatar,person.name,{principal:person.principal});
+    }
     if (nearBottom) box.scrollTop = box.scrollHeight;
     for (const label of box.querySelectorAll('.message-receipt')) {
       label.textContent = data.capabilities?.receipts === 'device-v1' ? GroupChatState.label(data.receipts, principal, Number(label.parentElement.dataset.messageId)) : '';
@@ -331,12 +349,15 @@
   });
   function showHuman(member) {
     HumanProfile.open({member,members,title:latest?.title||el('title').textContent,canEdit:member.principal===principal,
+      canGenerateAvatar:false,
+      loadAvatar:imageId=>api('avatar',undefined,new URLSearchParams({principal:member.principal,image_id:imageId}).toString()),
       loadImage:image=>api('image',undefined,new URLSearchParams({principal:member.principal,image_id:image.id}).toString()),
       save:async fields=>{const result=await api('profile',fields);await poll();return result;},
       mention:m=>{mentionRange=null;chooseMember(m);},
     });
   }
   el('rename').addEventListener('click', () => {const me=members.find(m=>m.principal===principal);if(me)showHuman(me);});
+  Avatars.setGuestLoader((member,imageId)=>api('avatar',undefined,new URLSearchParams({principal:member,image_id:imageId}).toString()));
   document.addEventListener('visibilitychange', () => { if (!document.hidden) void poll(); });
   // The agent this browser may bring into the group; it reads each poll's state.
   const agent = GuestAgent.start({ ticket, token: () => credential, refresh: () => poll() });

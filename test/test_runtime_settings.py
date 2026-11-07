@@ -39,9 +39,16 @@ class RuntimeSettingsTests(unittest.TestCase):
         patch.object(settings, "USER_FILES_DIR", Path(self.tmp.name)).start()
         patch.dict("os.environ", {"WEBOT_COMPRESSION_DISABLED": "0", "WEBOT_COMPRESSION_SUMMARY_TOKENS": "2000", "WEBOT_SUMMARIZER_MODEL": ""}).start()
 
+    def test_sandbox_defaults_follow_availability_and_preserve_explicit_off(self):
+        with patch('webot.command_sandbox.landlock_available', return_value=True), patch('ops.components.binary_path', return_value=None):
+            self.assertEqual(settings.ApprovalSettings().command_sandbox, 'auto')
+            self.assertEqual(settings.ApprovalSettings(command_sandbox='off').command_sandbox, 'off')
+        with patch('webot.command_sandbox.landlock_available', return_value=False), patch('ops.components.binary_path', return_value=None):
+            self.assertEqual(settings.ApprovalSettings().command_sandbox, 'off')
+
     def test_defaults_session_inheritance_and_reset(self):
         self.assertEqual(settings.get_runtime_settings("alice").approval.approvals_reviewer, "user")
-        self.assertEqual(settings.get_runtime_settings("alice").approval.command_sandbox, "off")
+        self.assertEqual(settings.get_runtime_settings("alice").approval.command_sandbox, settings.default_command_sandbox())
         settings.save_runtime_settings("alice", session_id="s", settings={"approval": {"command_sandbox": "srt"}})
         self.assertEqual(settings.get_runtime_settings("alice", "s").approval.command_sandbox, "srt")
         for backend in ('auto', 'landlock'):

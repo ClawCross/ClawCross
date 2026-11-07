@@ -1,7 +1,7 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261104043255443161",
+  "id": "vr_20261107133229252231",
   "candidate_id": "verification-loop-4",
   "skill_name": "repo-skill",
   "strategy": "repair-only",
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-11-04T04:32:55.443128+00:00"
+    "captured_at": "2026-11-07T13:32:29.252193+00:00"
   },
   "commands": [
     {
-      "command": "Playwright mobile Agent creation scroll regression",
-      "ok": false,
-      "stdout": "",
-      "stderr": "Regrouping the create-Agent form under Advanced left legacy .create-agent-drawer-body overflow:hidden and an inner-only scroll area. This clipped new fields. Use one outer scrolling form and place the action footer outside it. The regression must expand Advanced and reach its last field with actual wheel and touch gestures, not merely assert no horizontal overflow. Its first bottom-field assertion mixed mouse wheel immediately after emulated touch and failed; verify each input mode separately. The corrected expanded-form regression passed and the first-companion creation test passed. A read-only live Studio check also reached scrollTop=446/max=446."
+      "command": "Verify Studio recovery, dedicated main-API avatar generation and targeted regression tests",
+      "ok": true,
+      "stdout": "Recovered /studio and /mobile/group_chat: HTTP 200. User systemd service enabled, active/running; lingering enabled. Initial dedicated avatar call returned HTTP 502 with an empty model response at provider-default reasoning. After selecting the lowest supported reasoning level, the real frontend proxy returned HTTP 200 in 5.82s with a validated 3025-byte SVG. Backend regression suite: 182 passed and 57 subtests passed; added PUT forwarding and quiet second-cycle avatar sync regressions: 11 passed and 8 subtests passed. Avatar browser cases: 4 passed; Studio/mobile/Dynamic UI cases: 8 passed. Initial browser failures were incorrect selectors and test navigation, corrected without weakening application checks.",
+      "stderr": ""
     }
   ],
-  "overall_ok": false,
+  "overall_ok": true,
   "duration_ms": null,
-  "created_at": "2026-11-04T04:32:55.443182+00:00",
-  "asset_id": "sha256:85a1b23252fe90475556731fc3eab1e5a4bad89ad6df90a19c345acc149950f8"
+  "created_at": "2026-11-07T13:32:29.252253+00:00",
+  "asset_id": "sha256:910b5cec978f45c955e8d29b2893b6ca90dd8d7d593443109c1191dc8e9f6bdb"
 }

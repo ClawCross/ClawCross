@@ -1,5 +1,132 @@
 const {test,expect}=require('@playwright/test');
 
+const AVATAR_SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect width="256" height="256" rx="60" fill="#e5e9fc"/><circle cx="128" cy="128" r="70" fill="#6576c8"/></svg>';
+const AVATAR_URL='data:image/svg+xml;base64,'+Buffer.from(AVATAR_SVG).toString('base64');
+const AVATAR_REF='av_'+'1'.repeat(64);
+
+test('Agent avatar generation previews before save and cancel makes no changes',async({page})=>{
+  const {errors}=await mobileSetup(page);
+  const writes=[];let generated=0;
+  const agent={agent_id:'avatar_companion',name:'我的伙伴',driver:'webot',platform:'webot',settings:{}};
+  await page.route('**/v1/agents/**',route=>{
+    const req=route.request(),path=new URL(req.url()).pathname;
+    if(path.endsWith('/avatars/generate')) {generated++;expect(req.postDataJSON().kind).toBe('agent');return route.fulfill({json:{svg:AVATAR_SVG,url:AVATAR_URL}});}
+    if(req.method()==='PATCH') {writes.push(req.postDataJSON());agent.settings.avatar=AVATAR_REF;return route.fulfill({json:agent});}
+    if(path.endsWith('/avatar')) return route.fulfill({json:{avatar:agent.settings.avatar||'',url:agent.settings.avatar?AVATAR_URL:''}});
+    return route.fulfill({json:agent});
+  });
+  await page.evaluate(()=>AgentSettings.open('avatar_companion','avatar'));
+  const dialog=page.getByRole('dialog',{name:'设置头像',exact:true});
+  await dialog.locator('textarea').fill('蓝色猫咪');
+  await dialog.getByRole('button',{name:/生成头像$/}).click();
+  await expect(dialog.locator('.cc-avatar-preview img')).toBeVisible();
+  await dialog.getByRole('button',{name:'取消',exact:true}).click();
+  await expect(dialog).toHaveCount(0);expect(writes).toEqual([]);
+  await page.evaluate(()=>AgentSettings.open('avatar_companion','avatar'));
+  await dialog.locator('textarea').fill('蓝色猫咪');
+  await dialog.getByRole('button',{name:/生成头像$/}).click();
+  await expect(dialog.getByRole('button',{name:'保存头像'})).toBeEnabled();
+  await dialog.getByRole('button',{name:'保存头像'}).click();
+  await expect(dialog).toHaveCount(0);
+  expect(writes).toEqual([{settings:{avatar:AVATAR_URL}}]);expect(generated).toBe(2);
+  expect(errors).toEqual([]);
+});
+
+test('my avatar uploads through PUT and remains usable at phone and keyboard heights',async({page})=>{
+  const {errors}=await mobileSetup(page);let saved='';const writes=[];
+  await page.route('**/proxy_user_profile',route=>route.fulfill({json:{profile:'',images:[]}}));
+  await page.route('**/v1/agents/avatars/me',route=>{
+    if(route.request().method()==='PUT') {saved=route.request().postDataJSON().avatar;writes.push(saved);}
+    return route.fulfill({json:{avatar:saved?AVATAR_REF:'',url:saved?AVATAR_URL:''}});
+  });
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(()=>{goBack();switchTab('profile');});
+  await page.getByRole('button',{name:'修改我的头像',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'设置头像',exact:true});
+  await dialog.locator('input[type=file]').setInputFiles({name:'avatar.svg',mimeType:'image/svg+xml',buffer:Buffer.from(AVATAR_SVG)});
+  await expect(dialog.locator('.cc-avatar-preview img')).toBeVisible();
+  for(const height of [844,390]) {
+    await page.setViewportSize({width:390,height});
+    await dialog.getByRole('button',{name:'保存头像'}).scrollIntoViewIfNeeded();
+    const box=await dialog.getByRole('button',{name:'保存头像'}).boundingBox();
+    expect(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=height).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  }
+  await dialog.getByRole('button',{name:'保存头像'}).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-avatar-edit] img')).toBeVisible();
+  expect(writes).toEqual([AVATAR_SVG]);expect(errors).toEqual([]);
+});
+
+test('shared avatar references refresh historical messages and a direct chat has one Agent portrait',async({page})=>{
+  const {errors}=await mobileSetup(page);const fetched=[];
+  const second='av_'+'2'.repeat(64);
+  await page.route('**/proxy_groups/rg_one/members/*/avatar/*',route=>{
+    fetched.push(new URL(route.request().url()).pathname);return route.fulfill({json:{url:AVATAR_URL}});
+  });
+  await page.evaluate(({ref})=>{
+    const members=[{principal:'u:alice',name:'Alice',is_agent:false,avatar:ref},
+      {principal:'peer:helper',name:'我的伙伴',is_agent:true,remote:true,avatar:ref,agent:{agent_id:'helper',platform:'webot'}}];
+    renderMembers(members);
+    GroupPresence.detail({group_id:'rg_one',kind:'direct',members});
+    appendMessages([{id:99,sender:'peer:helper',sender_name:'我的伙伴',content:'你好，一起开始吧。',created_at:1790000030}]);
+    renderGroupList([{group_id:'rg_one',title:'我的伙伴',kind:'direct',member_count:2,member_names:['Alice','我的伙伴'],members}]);
+  },{ref:AVATAR_REF});
+  await expect(page.locator('#chat-room-avatar img')).toHaveCount(1);
+  await expect(page.locator('#chat-body [data-avatar-sender="peer:helper"] img')).toHaveCount(1);
+  await expect(page.locator('#group-list-container [data-gid="rg_one"] img')).toHaveCount(1);
+  await page.evaluate(({ref})=>GroupPresence.detail({group_id:'rg_one',kind:'direct',members:[
+    {principal:'u:alice',name:'Alice',is_agent:false},
+    {principal:'peer:helper',name:'我的伙伴',is_agent:true,remote:true,avatar:ref,agent:{agent_id:'helper',platform:'webot'}}
+  ]}),{ref:second});
+  await expect(page.locator('#chat-body [data-avatar-sender="peer:helper"] [data-avatar]')).toHaveAttribute('data-avatar',second);
+  await expect(page.locator('#chat-room-avatar img')).toHaveCount(1);
+  await expect.poll(()=>fetched.some(path=>path.endsWith(second))).toBe(true);
+  expect(fetched.every(path=>path.includes('/members/'))).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('shared group activity appears for a remote Agent and clears after it stops', async({page})=>{
+  const {errors}=await mobileSetup(page);
+  let running=true;
+  await page.route('**/proxy_groups/rg_one/typing', route=>route.fulfill({json:{
+    typing:running?['设计伙伴']:[],
+    agents:running?[{agent_id:'remote:design',principal:'remote:design',name:'设计伙伴',state:'running',remote:true,started_at:Date.now()/1000-15}]:[],
+  }}));
+  await page.evaluate(()=>pollTypingStatus());
+  await expect(page.locator('#typing-bar')).toContainText('设计伙伴 正在处理');
+  await expect(page.locator('#chat-running-status')).toBeVisible();
+  await expect(page.locator('#group-running-elapsed')).toHaveText(/\d+s/);
+  await page.evaluate(()=>AgentActivity.refresh());
+  await expect(page.locator('[data-gid="rg_one"] .group-activity-label')).toContainText('1');
+  await page.evaluate(()=>appendMessages([
+    {id:11,sender:'remote:design',sender_name:'设计伙伴',content:'我整理好了界面方向：先把重要的内容留出来，再让每个操作都有清晰的位置。',created_at:1790000010},
+    {id:12,sender:'u:alice',sender_name:'Alice',content:'好，我们一起继续。',created_at:1790000020},
+  ]));
+  for(const width of [390,1440]){
+    await page.setViewportSize({width,height:900});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await expect(page.locator('#msg-input')).toBeVisible();
+    await page.screenshot({path:`/tmp/clawcross-message-center-${width}.png`});
+  }
+  running=false;await page.evaluate(()=>pollTypingStatus());
+  await expect(page.locator('#typing-bar')).toBeHidden();
+  await expect(page.locator('#chat-running-status')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('browser guests can see another members Agent working', async({page})=>{
+  await page.addInitScript(()=>localStorage.setItem('group-guest:activity-test',JSON.stringify({token:'guest-token',name:'Carol'})));
+  let running=true;
+  await page.route('**/group-guest-api/**',route=>route.fulfill({json:{group_id:'g_activity',title:'未来之室',
+    name:'Carol',principal:'person',members:[{principal:'person',name:'Carol',is_agent:false,own:true,online:true},
+      {principal:'peer-agent',name:'设计伙伴',is_agent:true,online:true,activity:{state:running?'running':'idle'}}],
+    messages:[],requests:[],cursor:1,app:null}}));
+  await page.goto('/group-guest#activity-test');
+  await expect(page.locator('#guest-agent-activity')).toContainText('设计伙伴 正在处理');
+  running=false;await expect(page.locator('#guest-agent-activity')).toBeHidden({timeout:6000});
+});
+
 test('human member profiles show public details, edit self and keep remote members read only',async({page})=>{
   const {errors}=await mobileSetup(page);
   let members=[
@@ -136,12 +263,21 @@ test('camera denial keeps photo scanning available and never navigates unknown Q
 
 test('older cross-device history loads without replaying messages or overwriting the input',async({page})=>{
   const {errors,calls}=await mobileSetup(page);
-  let pages=0;
-  await page.route('**/proxy_groups/rg_one/history**',route=>{pages++;return route.fulfill({json:{messages:[{id:pages,sender:'friend',sender_name:'Bob',content:'更早的群聊记录 '+pages,created_at:1780000000}],next_before_id:pages===1?1:0,source:'server'}});});
+  await expect(page.locator('.group-history-bar')).toHaveCount(0);
+  const cursors=[];
+  await page.route('**/proxy_groups/rg_one/history**',route=>{
+    const before=Number(new URL(route.request().url()).searchParams.get('before_id'));
+    if(!before)return route.fulfill({json:{messages:[{id:10,sender:'friend',sender_name:'Bob',content:'当前记录',created_at:1790000000}],next_before_id:10,source:'server'}});
+    cursors.push(before);
+    return route.fulfill({json:{messages:[{id:before===10?5:1,sender:'friend',sender_name:'Bob',content:'更早的群聊记录 '+cursors.length,created_at:1780000000}],next_before_id:before===10?5:0,source:'server'}});
+  });
+  await page.evaluate(()=>loadChatHistory(currentGroupId,chatLoadSequence));
   await page.locator('#msg-input').fill('保留正在编辑的内容');
   const button=page.getByRole('button',{name:'加载更早的聊天记录',exact:true});await expect(button).toBeVisible();await button.click();
   await expect(page.locator('#chat-body')).toContainText('更早的群聊记录 1');await expect(page.locator('#msg-input')).toHaveValue('保留正在编辑的内容');
-  await button.click();await expect(page.locator('.group-history-bar')).toContainText('已到最早的聊天记录');
+  await button.click();await expect(page.locator('.group-history-bar')).toHaveCount(0);
+  await expect(page.locator('#chat-body')).toContainText('更早的群聊记录 2');
+  expect(cursors).toEqual([10,5]);
   expect(calls.filter(c=>c.method==='POST')).toEqual([]);expect(errors).toEqual([]);
 });
 
@@ -349,6 +485,7 @@ test('chat history loads despite an empty delivery cache and a stalled approval 
   await page.evaluate(()=>openChat('rg_history','历史群'));
   await expect(page.locator('#chat-body')).toContainText('已经存在的群聊记录');
   await expect(page.locator('#chat-body')).toContainText('新消息仍然正常加载');
+  await expect(page.locator('.group-history-bar')).toHaveCount(0);
   await expect(page.locator('.group-start')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

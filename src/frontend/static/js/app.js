@@ -27,14 +27,22 @@ document.addEventListener('touchmove', function(e) {
     e.preventDefault();
 }, { passive: false });
 
-// 3. Prevent double-tap zoom
+// 3. Keep text double taps from zooming without swallowing control activation.
 let lastTouchEnd = 0;
+let lastTouchTarget = null;
 document.addEventListener('touchend', function(e) {
+    const target = e.target instanceof Element ? e.target : e.target?.parentElement;
+    if (!target || target.closest('a,button,input,textarea,select,label,summary,[role="button"]')) {
+        lastTouchEnd = 0;
+        lastTouchTarget = null;
+        return;
+    }
     const now = Date.now();
-    if (now - lastTouchEnd <= 300) {
+    if (target === lastTouchTarget && now - lastTouchEnd <= 300) {
         e.preventDefault();
     }
     lastTouchEnd = now;
+    lastTouchTarget = target;
 }, false);
 
 // 4. Prevent pinch zoom
@@ -73,124 +81,59 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
-// 8. iOS standalone: handle navigation to stay in-app
-if (window.navigator.standalone) {
+// 8. Installed windows keep same-origin navigation, including Message, in-app.
+if (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) {
     document.addEventListener('click', function(e) {
-        const a = e.target.closest('a');
-        if (a && a.href && !a.target && a.hostname === location.hostname) {
+        const target = e.target instanceof Element ? e.target : e.target?.parentElement;
+        const a = target?.closest('a[href]');
+        if (!e.defaultPrevented && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey
+            && a && !a.target && !a.hasAttribute('download') && a.origin === location.origin) {
             e.preventDefault();
-            location.href = a.href;
+            location.assign(a.href);
         }
     });
 }
 
-// 9. Keyboard handling for mobile/PWA - comprehensive solution
+// 9. Keep the mobile shell inside the visible viewport as the iOS keyboard pans it.
 if (isTouchDevice && window.visualViewport) {
-    const chatMain = document.querySelector('.chat-main');
-    const chatContainer = document.querySelector('.chat-container');
-    const header = document.querySelector('header');
-    const inputArea = document.querySelector('.border-t.p-2');
-    
-    // PWA Standalone mode detection
-    const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
-                  window.navigator.standalone === true;
-    
-    let lastHeight = window.visualViewport.height;
-    
-    function handleViewportChange() {
-        const vh = window.visualViewport.height;
-        const windowHeight = window.innerHeight;
-        const keyboardHeight = windowHeight - vh;
-        
-        // Detect if keyboard is open (more than 100px difference)
-        const keyboardOpen = keyboardHeight > 100;
-        
-        if (isPWA || keyboardOpen) {
-            // PWA mode or keyboard open: adjust heights
-            const availableHeight = vh;
-            
-            // Update CSS variable for app height
-            document.documentElement.style.setProperty('--app-height', availableHeight + 'px');
-            
-            // Chat main takes full available height
-            if (chatMain) {
-                chatMain.style.height = availableHeight + 'px';
-                chatMain.style.maxHeight = availableHeight + 'px';
-            }
-            
-            // Ensure flex behavior
-            if (header) header.style.flexShrink = '0';
-            if (inputArea) inputArea.style.flexShrink = '0';
-            
-            // Chat container gets remaining space via flex
-            if (chatContainer) {
-                chatContainer.style.flex = '1';
-                chatContainer.style.minHeight = '0';
-            }
-        } else {
-            // Normal mode: reset to CSS defaults
-            document.documentElement.style.removeProperty('--app-height');
-            
-            if (chatMain) {
-                chatMain.style.height = '';
-                chatMain.style.maxHeight = '';
-            }
-            
-            if (header) header.style.flexShrink = '';
-            if (inputArea) inputArea.style.flexShrink = '';
-            
-            if (chatContainer) {
-                chatContainer.style.flex = '';
-                chatContainer.style.minHeight = '';
-            }
+    const viewport = window.visualViewport;
+    const mobile = window.matchMedia('(max-width: 768px)');
+    const shell = document.getElementById('chat-screen');
+    const root = document.documentElement;
+    const properties = ['--app-height','--studio-viewport-top','--studio-viewport-left','--studio-viewport-width'];
+    let frame = 0;
+    let restingHeight = Math.max(window.innerHeight,viewport.height);
+    function syncViewport() {
+        frame = 0;
+        if (!shell || !mobile.matches) {
+            properties.forEach(name=>root.style.removeProperty(name));
+            shell?.classList.remove('studio-keyboard-open');
+            return;
         }
-        
-        lastHeight = vh;
+        if (!Number.isFinite(viewport.height) || viewport.height <= 0) return;
+        const editing = document.activeElement?.matches('input,textarea,[contenteditable="true"]');
+        if (!editing) restingHeight = Math.max(window.innerHeight,viewport.height);
+        const keyboardOpen = editing && Math.max(restingHeight,window.innerHeight) - viewport.height > 100;
+        shell.classList.toggle('studio-keyboard-open',Boolean(keyboardOpen));
+        root.style.setProperty('--app-height',viewport.height+'px');
+        root.style.setProperty('--studio-viewport-top',Math.max(0,viewport.offsetTop || 0)+'px');
+        root.style.setProperty('--studio-viewport-left',Math.max(0,viewport.offsetLeft || 0)+'px');
+        root.style.setProperty('--studio-viewport-width',(viewport.width || window.innerWidth)+'px');
     }
-    
-    // Debounced resize handler
-    let resizeTimeout;
-    function debouncedHandleViewportChange() {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(handleViewportChange, 50);
+    function scheduleViewport() {
+        if (!frame) frame = requestAnimationFrame(syncViewport);
     }
-    
-    // Initial call
-    handleViewportChange();
-    
-    // Listen for viewport changes
-    window.visualViewport.addEventListener('resize', debouncedHandleViewportChange);
-    window.visualViewport.addEventListener('scroll', handleViewportChange);
-    
-    // Also listen for window resize (orientation change)
-    window.addEventListener('resize', debouncedHandleViewportChange);
-    window.addEventListener('orientationchange', () => {
-        setTimeout(handleViewportChange, 100);
+    viewport.addEventListener('resize',scheduleViewport);
+    viewport.addEventListener('scroll',scheduleViewport);
+    window.addEventListener('resize',scheduleViewport);
+    window.addEventListener('orientationchange',()=>{
+        restingHeight = Math.max(window.innerHeight,viewport.height);
+        scheduleViewport();
     });
-}
-
-// Input focus: scroll into view on mobile
-const inputEl = document.getElementById('user-input');
-if (inputEl && isTouchDevice) {
-    inputEl.addEventListener('focus', () => {
-        setTimeout(() => {
-            // Scroll input into view
-            inputEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            // Also trigger viewport check
-            if (window.visualViewport) {
-                window.dispatchEvent(new Event('resize'));
-            }
-        }, 100);
-    });
-    
-    // On blur: reset after keyboard closes
-    inputEl.addEventListener('blur', () => {
-        setTimeout(() => {
-            if (window.visualViewport) {
-                window.dispatchEvent(new Event('resize'));
-            }
-        }, 200);
-    });
+    mobile.addEventListener('change',scheduleViewport);
+    document.addEventListener('focusin',scheduleViewport);
+    document.addEventListener('focusout',scheduleViewport);
+    syncViewport();
 }
 
 // ============================================================

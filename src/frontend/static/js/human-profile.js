@@ -8,7 +8,7 @@ window.HumanProfile = (() => {
   function action(label, callback, cls='gn-btn gn-btn-secondary') {
     const button=node('button',cls,label);button.type='button';button.addEventListener('click',callback);return button;
   }
-  function open({member, members=[], title='', canEdit=false, save, loadImage, mention, agent, remove}) {
+  function open({member, members=[], title='', canEdit=false, save, loadImage, loadAvatar, mention, agent, remove, canGenerateAvatar=true}) {
     const root=node('dialog','group-network-dialog human-profile');
     root.setAttribute('aria-label',text('个人资料','Personal profile'));
     const head=node('header','gn-head'), heading=node('h2','gn-title',text('个人资料','Personal profile'));
@@ -19,7 +19,20 @@ window.HumanProfile = (() => {
     function draw() {
       body.replaceChildren();status.textContent='';
       const profile=current.profile||{},hero=node('section','hp-hero');
-      const avatar=node('div','hp-avatar',Array.from(current.name||'?').slice(0,1).join(''));
+      const avatar=node(canEdit&&save?'button':'div','hp-avatar',Array.from(current.name||'?').slice(0,1).join(''));
+      if (window.Avatars) {
+        void Avatars.fill(avatar,current.avatar,current.name,{principal:current.principal,load:loadAvatar?()=>loadAvatar(current.avatar):undefined});
+        if (canEdit&&save) {
+          avatar.type='button';avatar.setAttribute('aria-label',text('修改头像','Change avatar'));
+          avatar.onclick=()=>{
+            root.close();
+            Avatars.editor({value:current.avatar||'',name:current.name,kind:'human',canGenerate:canGenerateAvatar,
+              load:loadAvatar?()=>loadAvatar(current.avatar):undefined,save:value=>save({avatar_image:value}),
+              onSaved:data=>{current=data.members?.find(m=>m.principal===current.principal)||current;members=data.members||members;},
+              onClose:()=>open({member:current,members,title,canEdit,save,loadImage,loadAvatar,mention,agent,remove,canGenerateAvatar})});
+          };
+        }
+      }
       const identity=node('div','hp-identity');identity.append(node('h3','',current.name||current.principal));
       const role=current.is_owner?text('群主','Group owner'):text('群成员','Member');
       const state=current.online===undefined?'':current.online?text('在线','Online'):text('离线','Offline');

@@ -40,7 +40,7 @@ class AgentJoin(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     platform: str = Field('agent', max_length=50)
     convert_to_group: bool = False
-    avatar: str = Field('', max_length=12000)  # its cyber cat (SVG)
+    avatar: str = Field('', max_length=100000)
 
 
 class GuestJoin(BaseModel):
@@ -219,7 +219,7 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
         cursor = body.get('cursor', 0)
         if type(cursor) is not int or cursor < 0:
             raise HTTPException(400, '无效的游标')
-        await invoke(store.acknowledge, credential, cursor)
+        await invoke(store.acknowledge, credential, cursor, agent_activity=body.get('agent_activity'))
         if body.get('device_id') is not None:
             await invoke(store.receipt, credential, body['device_id'], body.get('received_cursor', cursor))
         return {'type': 'events', **await invoke(store.events, credential, cursor)}
@@ -227,6 +227,10 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     @router.get('/group')
     async def group(authorization: str | None = Header(None)):
         return await invoke(store.detail, token(authorization))
+
+    @router.post('/activity')
+    async def agent_activity(body: dict, authorization: str | None = Header(None)):
+        return await invoke(store.agent_activity, token(authorization), body.get('running'))
 
     @router.get('/messages')
     async def messages(after_id: int = 0, authorization: str | None = Header(None)):
@@ -262,7 +266,10 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
 
     @router.post('/agents')
     async def add_agent(body: AgentJoin, authorization: str | None = Header(None)):
-        return await invoke(store.add_agent, token(authorization), **body.model_dump())
+        credential = token(authorization)
+        from groups.relay_store import digest
+        limited('avatar-agent:' + digest(credential), 40)
+        return await invoke(store.add_agent, credential, **body.model_dump())
 
     @router.post('/guest-invites')
     async def guest_invite(body: dict, authorization: str | None = Header(None)):
@@ -309,6 +316,9 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     @router.post('/guest/profile')
     async def guest_profile(body: dict, authorization: str | None = Header(None)):
         credential = token(authorization)
+        if 'avatar_image' in body:
+            from groups.relay_store import digest
+            limited('avatar:' + digest(credential), 12)
         await invoke(store.manage, credential, 'profile', body)
         state = await invoke(store.guest_state, credential, 0)
         return {'members': state['members']}
@@ -317,9 +327,17 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     async def guest_image(principal: str, image_id: str, authorization: str | None = Header(None)):
         return await invoke(store.profile_image, token(authorization), principal, image_id)
 
+    @router.get('/guest/avatar')
+    async def guest_avatar(principal: str, image_id: str, authorization: str | None = Header(None)):
+        return await invoke(store.member_avatar, token(authorization), principal, image_id)
+
     @router.post('/manage/{action}')
     async def manage(action: str, body: dict, authorization: str | None = Header(None)):
-        return await invoke(store.manage, token(authorization), action, body)
+        credential = token(authorization)
+        if action == 'profile' and 'avatar_image' in body:
+            from groups.relay_store import digest
+            limited('avatar:' + digest(credential), 12)
+        return await invoke(store.manage, credential, action, body)
 
     @router.post('/app/key')
     async def make_app_key(authorization: str | None = Header(None)):
@@ -404,7 +422,8 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
                 await ws.close(1013)
                 return
             device_id = hello.get('device_id')
-            await asyncio.to_thread(store.acknowledge, credential, max(0, int(hello.get('cursor', 0))))
+            await asyncio.to_thread(store.acknowledge, credential, max(0, int(hello.get('cursor', 0))),
+                                    agent_activity=hello.get('agent_activity'))
             if device_id is not None:
                 await asyncio.to_thread(store.receipt, credential, device_id, hello.get('received_cursor', hello.get('cursor', 0)))
             sockets[identity] += 1
@@ -414,7 +433,8 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
             while True:
                 packet = await asyncio.to_thread(store.events, credential, cursor)
                 # The card is sent again when it changes, or when a device goes online or offline.
-                card = (packet['group']['version'], [m['online'] for m in packet['group']['members']], packet.get('receipts'))
+                card = (packet['group']['version'],
+                        [(m['online'], m.get('activity')) for m in packet['group']['members']], packet.get('receipts'))
                 if packet['events'] or card != seen:
                     await ws.send_json({'type': 'events', **packet})
                     if packet['events']:
@@ -427,6 +447,8 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
                         if ack > cursor:
                             raise RelayError('确认了未发送的事件')
                         await asyncio.to_thread(store.acknowledge, credential, ack, device_id)
+                    elif reply.get('type') == 'activity':
+                        await asyncio.to_thread(store.agent_activity, credential, reply.get('running'))
                 except asyncio.TimeoutError:
                     pass
         except (WebSocketDisconnect, asyncio.TimeoutError):

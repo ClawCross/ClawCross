@@ -2,7 +2,7 @@
    the steps it took (text between tools, tool calls) folded into one line, and the
    final answer last. A running turn shows its steps as they happen. */
 (function (global) {
-    const zh = () => (typeof currentLang === 'undefined' ? 'zh-CN' : currentLang) === 'zh-CN';
+    const zh = () => document.documentElement.lang.startsWith('zh');
     const esc = value => escapeHtml(String(value ?? ''));
 
     function duration(seconds) {
@@ -88,7 +88,7 @@
         const seconds = times.length > 1 ? times[times.length - 1] - times[0] : null;
         let html = turn.prompt ? promptHtml(turn.prompt) : '';
         if (steps.length) {
-            html += `<div class="flex justify-start agent-turn-row"><details class="agent-turn-process"${answer ? '' : ' open'}>` +
+            html += `<div class="flex justify-start agent-turn-row"><details class="agent-turn-process">` +
                 `<summary>${esc(summary(false, seconds, steps.length))}</summary>` +
                 `<div class="agent-turn-steps">${steps.map(stepHtml).join('')}</div></details></div>`;
         }
@@ -105,7 +105,7 @@
     function live(turn) {
         const root = document.createElement('div');
         root.className = 'agent-turn-live';
-        root.innerHTML = '<div class="flex justify-start agent-turn-row"><details class="agent-turn-process" open>' +
+        root.innerHTML = '<div class="flex justify-start agent-turn-row"><details class="agent-turn-process">' +
             '<summary></summary><div class="agent-turn-steps"></div></details></div>' +
             '<div class="flex justify-start" hidden><div class="p-4 max-w-[85%] shadow-sm bg-white border text-gray-800 message-agent markdown-body tc-markdown"></div></div>';
         const processRow = root.firstElementChild;

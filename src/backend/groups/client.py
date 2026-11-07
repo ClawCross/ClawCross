@@ -21,6 +21,7 @@ from groups.config import frontend_url, own_front_ends, service_key, service_url
 from groups.delivery import render_digest
 from groups.service import GroupError
 from groups.outbox import OutboxStore
+from common.avatars import AvatarStore
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +241,7 @@ class GroupClient:
         self.sends = {}
         self.outbox_task = None
         self.receives = {}
+        self.avatar_tasks = {}
 
     @staticmethod
     def headers(row):
@@ -350,6 +352,10 @@ class GroupClient:
         # Remove the credential first so in-flight responses cannot recreate the cache.
         self.store.remove(owner, alias)
         task = self.tasks.pop((owner, alias), None)
+        avatar_task = self.avatar_tasks.pop((owner, alias), None)
+        if avatar_task is not None:
+            avatar_task.cancel()
+            await asyncio.gather(avatar_task, return_exceptions=True)
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
@@ -360,7 +366,8 @@ class GroupClient:
         agent = self.agents.get(owner, aid)
         if not agent:
             raise ClientError('只能引入自己拥有的 agent', 403)
-        fields = {'agent_id': aid, 'name': agent.name, 'platform': agent.platform}
+        fields = {'agent_id': aid, 'name': agent.name, 'platform': agent.platform,
+                  'avatar': AvatarStore().get(owner, agent.config.get('avatar', ''))}
         if convert_to_group:
             fields['convert_to_group'] = True
         group = self.request(row, 'POST', '/agents', fields)
@@ -403,16 +410,15 @@ class GroupClient:
             principal = (member['agent_id'] or 'u:' + row['owner']) if local else member['principal']
             agent = None
             if member['is_agent']:
-                state = 'remote' if not local else 'idle'
+                state = member.get('activity', {}).get('state', 'remote') if not local else 'idle'
                 original = self.agents.get(row['owner'], member['agent_id']) if local else None
                 busy = getattr(self.gateway, 'is_busy', None)
                 if original and callable(busy):
-                    from agents.store import ACPX, WEBOT
-                    if original.driver in (ACPX, WEBOT):
-                        state = 'running' if busy(original) else 'idle'
+                    state = 'running' if busy(original) else 'idle'
                 agent = {'agent_id': principal, 'name': member['name'], 'platform': member['platform'],
                          'remote': not local, 'settings': {'persona': '', 'tools': [], 'teams': []},
-                         'status': {'state': state, 'actions': []}}
+                         'status': {'state': state, 'actions': [],
+                                    'started_at': member.get('activity', {}).get('started_at')}}
             members.append({**member, 'principal': principal, 'agent': agent, 'nickname': '', 'remote': not local,
                             'can_edit_profile': local and not member['is_agent'],
                             'is_owner': not member['is_agent'] and member['connection_id'] == group.get('owner'),
@@ -694,6 +700,13 @@ class GroupClient:
         key = (owner, alias)
         if self.closed:
             return
+        if key not in self.avatar_tasks or self.avatar_tasks[key].done():
+            avatar_task = asyncio.create_task(self._sync_avatars(owner, alias))
+            self.avatar_tasks[key] = avatar_task
+            def avatar_finished(done):
+                if self.avatar_tasks.get(key) is done:
+                    self.avatar_tasks.pop(key, None)
+            avatar_task.add_done_callback(avatar_finished)
         if key not in self.tasks or self.tasks[key].done():
             task = asyncio.create_task(self.worker(owner, alias))
             self.tasks[key] = task
@@ -701,6 +714,36 @@ class GroupClient:
                 if self.tasks.get(key) is done:
                     self.tasks.pop(key, None)
             task.add_done_callback(finished)
+
+    async def _sync_avatars(self, owner, alias):
+        """Publish only changed identity, independently of chat and activity heartbeats."""
+        assets = AvatarStore()
+        delay = 2
+        try:
+            while not self.closed:
+                await asyncio.sleep(delay)
+                row = self.store.get(owner, alias)
+                if not row or not row['active']:
+                    return
+                try:
+                    members = json.loads(row['metadata']).get('members', [])
+                    own = [m for m in members if m.get('connection_id') == row['connection_id']]
+                    human = next((m for m in own if not m['is_agent']), None)
+                    picture = assets.user(owner)
+                    if human and picture['configured'] and picture['avatar'] != human.get('avatar', ''):
+                        await asyncio.to_thread(self.manage, owner, alias, 'profile', {'avatar_image': picture['url']})
+                    for member in own:
+                        if not member['is_agent']:
+                            continue
+                        agent = self.agents.get(owner, member['agent_id'])
+                        if agent and 'avatar' in agent.config and agent.config.get('avatar', '') != member.get('avatar', ''):
+                            await asyncio.to_thread(self.add_agent, owner, alias, agent.agent_id)
+                    delay = 15
+                except Exception:
+                    # Failed identity synchronization never retries a model or blocks group delivery.
+                    delay = min(300, max(30, delay * 2))
+        except asyncio.CancelledError:
+            return
 
     async def _receive(self, owner, alias, packet):
         """Apply one events packet; returns the cursor to acknowledge."""
@@ -717,19 +760,41 @@ class GroupClient:
         uri = row['url'].replace('https://', 'wss://', 1).replace('http://', 'ws://', 1) + '/relay/ws'
         async with connect(uri, open_timeout=10, max_size=2 * 1024 * 1024, proxy=None) as ws:
             await ws.send(json.dumps({'token': row['token'], 'cursor': row['cursor'],
-                                     'received_cursor': row['received_cursor'], 'device_id': self.store.node_id}))
+                                     'received_cursor': row['received_cursor'], 'device_id': self.store.node_id,
+                                     'agent_activity': self.running_agents(row)}))
             connected()
-            async for raw in ws:
-                packet = json.loads(raw)
-                if packet.get('type') == 'events':
-                    await ws.send(json.dumps({'type': 'ack', 'cursor': await self._receive(owner, alias, packet)}))
+            async def heartbeat():
+                while not self.closed:
+                    await asyncio.sleep(POLL_SECONDS)
+                    await ws.send(json.dumps({'type': 'activity', 'running': self.running_agents(self.require(owner, alias))}))
+            pulse = asyncio.create_task(heartbeat())
+            try:
+                async for raw in ws:
+                    packet = json.loads(raw)
+                    if packet.get('type') == 'events':
+                        await ws.send(json.dumps({'type': 'ack', 'cursor': await self._receive(owner, alias, packet)}))
+            finally:
+                pulse.cancel()
+                await asyncio.gather(pulse, return_exceptions=True)
+
+    def running_agents(self, row):
+        """Only this connection's admitted Agents; inspect local locks without starting a runtime."""
+        allowed = set(json.loads(row['allowed_agents']))
+        busy = getattr(self.gateway, 'is_busy', None)
+        if not callable(busy):
+            return []
+        members = json.loads(row['metadata']).get('members', [])
+        ids = {m['agent_id'] for m in members if m.get('connection_id') == row['connection_id']
+               and m.get('agent_id') in allowed}
+        return sorted(aid for aid in ids if (agent := self.agents.get(row['owner'], aid)) and busy(agent))
 
     async def _poll(self, owner, alias, connected):
         version = None
         while not self.closed:
             row = self.require(owner, alias)
             packet = await asyncio.to_thread(self.request, row, 'POST', '/poll', {
-                'cursor': row['cursor'], 'received_cursor': row['received_cursor'], 'device_id': self.store.node_id})
+                'cursor': row['cursor'], 'received_cursor': row['received_cursor'], 'device_id': self.store.node_id,
+                'agent_activity': self.running_agents(row)})
             connected()
             if packet['events'] or packet['group'].get('version') != version or 'receipts' in packet:
                 await self._receive(owner, alias, packet)
@@ -778,7 +843,7 @@ class GroupClient:
 
     async def close(self):
         self.closed = True
-        tasks = [*self.tasks.values(), *self.sends.values()]
+        tasks = [*self.tasks.values(), *self.sends.values(), *self.avatar_tasks.values()]
         if self.outbox_task is not None:
             tasks.append(self.outbox_task)
         for task in tasks:

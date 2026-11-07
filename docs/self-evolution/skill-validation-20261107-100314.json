@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261107100314154438",
+  "candidate_id": "verification-loop-2",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-07T10:03:14.154401+00:00"
+  },
+  "commands": [
+    {
+      "command": "/home/ubuntu/.clawcross/venv/bin/python -m pytest test/test_avatars.py test/test_group_activity.py -q",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Restricted sandbox run stalled without output in futex_do_wait. Its remaining task-owned pytest process was terminated with SIGTERM; exec reported exit code 143. The same targeted command outside that restriction passed: 9 passed, 8 subtests passed in 4.16s. The environment restriction is suspected, not a proven application defect. Keep failed-run evidence and do not kill unrelated runtime processes."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-07T10:03:14.154460+00:00",
+  "asset_id": "sha256:73da49b57b1b530067da979804bdbc14697306d19239b9b7afed1bb1c1963bb0"
+}

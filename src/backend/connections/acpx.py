@@ -21,6 +21,10 @@ class SSHAcpxAdapter(AcpxAdapter):
         launch=launch_settings(agent.config)
         self._agent_command=launch['agent_command'];self._agent_name=launch['agent_name']
 
+    def _default_agent_command(self, tool):
+        from external.acp_launcher import default_agent_command
+        return default_agent_command(tool, detect_local=False)
+
     def _local_config_options(self, name):
         return self.agent.runtime.get('remote_config_options') or []
 

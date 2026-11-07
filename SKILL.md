@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-04T04:32:55.443292+00:00`
+- Updated at: `2026-11-07T13:32:29.252339+00:00`
 - Strategy: `repair-only`
 - Heuristic candidate: `verification-loop-4`
 - Heuristic score: `0.886`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: Playwright mobile Agent creation scroll regression. Signals: verification-loop. stderr carried the strongest failure evidence.
+Command exited with code 0. Command: Verify Studio recovery, dedicated main-API avatar generation and targeted regression tests. Signals: verification-loop. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -553,12 +553,12 @@ Command exited with code 1. Command: Playwright mobile Agent creation scroll reg
 
 ### Latest Trigger Command
 
-`Playwright mobile Agent creation scroll regression`
+`Verify Studio recovery, dedicated main-API avatar generation and targeted regression tests`
 
 ### Latest Error Excerpt
 
 ```text
-Regrouping the create-Agent form under Advanced left legacy .create-agent-drawer-body overflow:hidden and an inner-only scroll area. This clipped new fields. Use one outer scrolling form and place the action footer outside it. The regression must expand Advanced and reach its last field with actual wheel and touch gestures, not merely assert no horizontal overflow. Its first bottom-field assertion mixed mouse wheel immediately after emulated touch and failed; verify each input mode separately. The corrected expanded-form regression passed and the first-companion creation test passed. A read-only live Studio check also reached scrollTop=446/max=446.
+Recovered /studio and /mobile/group_chat: HTTP 200. User systemd service enabled, active/running; lingering enabled. Initial dedicated avatar call returned HTTP 502 with an empty model response at provider-default reasoning. After selecting the lowest supported reasoning level, the real frontend proxy returned HTTP 200 in 5.82s with a validated 3025-byte SVG. Backend regression suite: 182 passed and 57 subtests passed; added PUT forwarding and quiet second-cycle avatar sync regressions: 11 passed and 8 subtests passed. Avatar browser cases: 4 passed; Studio/mobile/Dynamic UI cases: 8 passed. Initial browser failures were incorrect selectors and test navigation, corrected without weakening application checks.
 ```
 
 ### Governance Snapshot
@@ -566,7 +566,7 @@ Regrouping the create-Agent form under Advanced left legacy .create-agent-drawer
 - Suppressed signals: (none)
 - Consecutive repair cycles: `0`
 - Consecutive empty cycles: `0`
-- Recent failure ratio: `1.0`
+- Recent failure ratio: `0.0`
 
 ### Operating Adjustments
 
@@ -581,7 +581,7 @@ Regrouping the create-Agent form under Advanced left legacy .create-agent-drawer
 
 ### Recent Evidence
 
-- `2026-11-04T04:32:55.443292+00:00` `repo-skill` — Regrouping the create-Agent form under Advanced left legacy .create-agent-drawer-body overflow:hidden and an inner-only scroll area. This clip ...[truncated]
+- `2026-11-07T13:32:29.252339+00:00` `repo-skill` — Recovered /studio and /mobile/group_chat: HTTP 200. User systemd service enabled, active/running; lingering enabled. Initial dedicated avatar ...[truncated]
 
 ### Candidate Frontier Snapshot
 

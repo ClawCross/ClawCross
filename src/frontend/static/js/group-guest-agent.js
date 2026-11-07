@@ -8,6 +8,17 @@
     let unwatch=()=>{},unstatus=()=>{},chatBusy=false,ready=false,initializing=null;
     const settings=()=>R.personalAgents.get(selected||R.personalAgents.binding(group)?.agent_id||'');
     const self=()=>{const binding=R.personalAgents.binding(group);return members.find(m=>m.own&&m.is_agent&&m.agent_id===binding?.relay_id);};
+    let publishingActivity=false, publishedActivity=false, activityAt=0;
+    async function publishActivity(heartbeat=false){
+      const me=self(),running=['replying','compacting'].includes(state.state);
+      if(!me||!token()||publishingActivity||(!running&&!publishedActivity))return;
+      if(running===publishedActivity&&(!heartbeat||Date.now()-activityAt<2500))return;
+      publishingActivity=true;
+      try{await R.relayApi('activity',token(),{running:running?[me.agent_id]:[]},group);publishedActivity=running;activityAt=Date.now();}
+      catch(_){/* A stopped browser loses its activity lease automatically. */}
+      finally{publishingActivity=false;}
+    }
+    setInterval(()=>void publishActivity(true),3000);
     function select(id){
       if(selected===id&&runtime)return;
       runtime?.stop();unwatch();unstatus();selected=id;
@@ -19,6 +30,7 @@
     function show(next){view=next;render();if(next==='chat')void drawHistory();}
     function fail(error){el('agent-error').textContent=error?error.message||String(error):'';el('agent-error').hidden=!error;}
     function render(){
+      void publishActivity();
       const config=settings(),me=self();
       el('agent-open').hidden=!group;el('agent-open').disabled=!ready;
       el('agent-open').classList.toggle('running',Boolean(me)&&['idle','replying','compacting'].includes(state.state));

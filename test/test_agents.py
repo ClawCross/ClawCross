@@ -576,6 +576,21 @@ class ApiCase(StoreCase):
 
 
 class TestAgentsApi(ApiCase):
+    def test_archive_keeps_identity_and_can_be_restored(self):
+        agent = self.store.create('alice', driver=WEBOT, name='My companion')
+        url = '/v1/agents/' + agent.agent_id
+        response = self.call('PATCH', url, json={'settings': {'archived': True}})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['archived'])
+        self.assertEqual(self.call('GET', '/v1/agents').json()['data'], [])
+        archived = self.call('GET', '/v1/agents?include_archived=1').json()['data']
+        self.assertEqual(archived[0]['agent_id'], agent.agent_id)
+        self.assertIsNotNone(self.store.get('alice', agent.agent_id))
+        self.assertEqual(self.call('PATCH', url, json={'settings': {'archived': False}}).status_code, 200)
+        self.assertEqual(self.call('GET', '/v1/agents').json()['data'][0]['agent_id'], agent.agent_id)
+        self.assertEqual(self.call('PATCH', url, json={'settings': {'archived': 'false'}}).status_code, 400)
+        self.assertEqual(self.call('PATCH', url, user='bob', json={'settings': {'archived': True}}).status_code, 404)
+
     def test_creation_templates_persist_distinct_modes_and_sandboxes(self):
         from webot import runtime_settings, runtime_store
         self.enterContext(mock.patch.object(runtime_settings,'USER_FILES_DIR',Path(self.tmp.name)/'users'))

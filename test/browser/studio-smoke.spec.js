@@ -1,39 +1,114 @@
 const { test, expect } = require('@playwright/test');
 
-test('Studio switches to Message Center from a prominent top-right button',async({page})=>{
+test('Studio uses a mobile menu and a persistent desktop activity rail',async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await stubStudioNetwork(page,{}, {agents:[],approvals:[]});
   await page.goto('/studio');
-  const link=page.locator('.studio-mode-switch');
+  const link=page.locator('#tab-groupchat'),menu=page.locator('#studio-mobile-menu-toggle'),nav=page.locator('.studio-activity-bar');
   await expect(link).toHaveAttribute('href','/mobile/group_chat');
-  await expect(page.locator('.page-tab-bar > #tab-groupchat')).toHaveCount(1);
+  await expect(page.locator('.page-tab-bar')).toHaveCount(0);
   for(const width of [1440,390,360]){
     await page.setViewportSize({width,height:700});
-    for(const open of [false,true]){
-      await page.locator('.studio-conversation-switcher').evaluate((el,open)=>el.open=open,open);
+    if(width>768){
+      await expect(nav).toBeInViewport({ratio:1});
+      await expect(menu).toBeHidden();
+      expect((await nav.boundingBox()).width).toBe(56);
       await expect(link).toBeInViewport({ratio:1});
-      const navbar=await page.locator('.page-tab-bar').boundingBox();
-      const button=await link.boundingBox();
-      expect(navbar.x+navbar.width-button.x-button.width).toBeLessThan(12);
-      expect(button.y-navbar.y).toBeLessThan(10);
-      expect(button.height).toBeGreaterThanOrEqual(44);
-      expect(button.width).toBeGreaterThanOrEqual(108);
-      await expect(link.locator('span')).toBeVisible();
-      await expect(link).toHaveText('Message');
-      expect(await link.locator('span').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
-      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    }else{
+      await expect(nav).toBeHidden();
+      await expect(menu).toBeInViewport({ratio:1});
+      const content=await page.locator('.chat-main').boundingBox();
+      expect(content.x).toBe(0);expect(content.width).toBe(width);
+      await menu.click();
+      await expect(nav).toBeInViewport({ratio:1});
+      await expect(menu).toHaveAttribute('aria-expanded','true');
+      await expect(page.locator('#tab-agent-center')).toBeVisible();
+      await expect(page.locator('#tab-groupchat .studio-activity-label')).toHaveCSS('opacity','1');
+      await page.screenshot({path:`/tmp/clawcross-mobile-menu-open-${width}.png`});
+      await page.locator('#tab-agent-center').click();
+      await expect(nav).toBeHidden();
+      await expect(page.locator('#agent-center-modal')).toBeVisible();
+      await page.locator('.agent-center-close').click();
+      await menu.click();
+      await page.locator('#tab-group').click();
+      await expect(nav).toBeHidden();
+      await expect(page.locator('#page-group')).toBeVisible();
+      await menu.click();await page.keyboard.press('Escape');
+      await expect(menu).toHaveAttribute('aria-expanded','false');
+      await expect(menu).toBeFocused();
+      await menu.click();await page.locator('#tab-chat').click();
+      await expect(nav).toBeHidden();
+      await menu.click();await page.locator('#studio-mobile-agents-toggle').click();
+      await expect(nav).toBeHidden();
+      await expect(page.locator('.studio-conversation-switcher')).toHaveAttribute('open','');
+      await menu.click();
+      await expect(page.locator('.studio-conversation-switcher')).not.toHaveAttribute('open','');
+      await page.locator('#studio-mobile-menu-close').click();
+      await expect(nav).toBeHidden();
     }
-    await page.screenshot({path:`/tmp/clawcross-studio-switch-${width}.png`});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:`/tmp/clawcross-mobile-menu-closed-${width}.png`});
   }
-  await link.click();
-  await expect(page).toHaveURL(/\/mobile\/group_chat$/);
-  for(const width of [390,1440]){
-    await page.setViewportSize({width,height:700});
-    const studio=page.locator(width<1024?'.mobile-studio-header-link':'.tab-bar .mobile-studio-link');
-    await expect(studio).toBeInViewport({ratio:1});
-    await expect(studio).toHaveText('Studio');
-    expect(await studio.evaluate(el=>getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
-    await page.screenshot({path:`/tmp/clawcross-message-switch-${width}.png`});
-  }
+  await page.setViewportSize({width:390,height:500});await menu.click();
+  await expect(link).toBeInViewport({ratio:1});
+  await expect(page.locator('#studio-preferences')).toBeInViewport({ratio:1});
+  expect(errors).toEqual([]);
+  await link.click();await expect(page).toHaveURL(/\/mobile\/group_chat$/);
+  await expect(page.locator('.mobile-studio-header-link')).toBeInViewport({ratio:1});
+});
+
+test('installed mobile window accepts consecutive menu and Message taps',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:740},isMobile:true,hasTouch:true});
+  const page=await context.newPage();
+  try{
+    await page.addInitScript(()=>Object.defineProperty(navigator,'standalone',{configurable:true,get:()=>true}));
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await stubStudioNetwork(page,{}, {agents:[],approvals:[]});
+    await page.goto('/studio');
+    await expect(page.locator('#studio-mobile-menu-toggle')).toBeVisible();
+    await page.locator('#studio-mobile-menu-toggle').tap();
+    await page.locator('#tab-groupchat .ui-icon').tap();
+    await expect(page).toHaveURL(/\/mobile\/group_chat$/);
+  }finally{await context.close();}
+});
+
+test('iPhone safe area and keyboard keep navigation visible and composer at the bottom',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  const page=await context.newPage();let posts=0;
+  try{
+    await page.addInitScript(()=>{
+      Object.defineProperty(navigator,'standalone',{configurable:true,get:()=>true});
+      const viewport=new EventTarget();Object.assign(viewport,{height:844,width:390,offsetTop:0,offsetLeft:0,scale:1});
+      Object.defineProperty(window,'visualViewport',{configurable:true,value:viewport});
+      window.setTestKeyboardViewport=(height,top)=>{Object.assign(viewport,{height,offsetTop:top});viewport.dispatchEvent(new Event('resize'));viewport.dispatchEvent(new Event('scroll'));};
+    });
+    await stubStudioNetwork(page,{}, {agents:[],approvals:[]});
+    await page.route('**/v1/chat/completions',route=>{posts++;return route.fulfill({json:{choices:[]}});});
+    await page.goto('/studio');
+    await page.evaluate(()=>{document.documentElement.style.setProperty('--safe-top','59px');document.documentElement.style.setProperty('--safe-bottom','34px');});
+    const menu=page.locator('#studio-mobile-menu-toggle'),input=page.locator('#user-input'),dock=page.locator('.composer-dock');
+    await expect(menu).toBeInViewport({ratio:1});
+    expect((await menu.boundingBox()).y).toBeGreaterThanOrEqual(69);
+    await expect.poll(()=>dock.evaluate(el=>Math.abs(el.getBoundingClientRect().bottom-810))).toBeLessThan(2);
+    await menu.tap();
+    expect((await page.locator('#studio-mobile-menu-close').boundingBox()).y).toBeGreaterThanOrEqual(59);
+    await page.locator('#studio-mobile-menu-close').tap();
+    await input.fill('你好');
+    await page.evaluate(()=>window.setTestKeyboardViewport(420,160));
+    await expect(page.locator('#chat-screen')).toHaveClass(/studio-keyboard-open/);
+    await expect.poll(()=>dock.evaluate(el=>Math.abs(el.getBoundingClientRect().bottom-580))).toBeLessThan(2);
+    expect((await input.boundingBox()).y).toBeGreaterThan(480);
+    expect((await menu.boundingBox()).y).toBeGreaterThanOrEqual(229);
+    await input.dispatchEvent('keydown',{key:'Enter',isComposing:true,keyCode:229,bubbles:true,cancelable:true});
+    await expect(input).toHaveValue('你好');expect(posts).toBe(0);
+    await page.screenshot({path:'/tmp/clawcross-iphone-keyboard.png'});
+    await input.blur();await page.evaluate(()=>window.setTestKeyboardViewport(844,0));
+    await expect(page.locator('#chat-screen')).not.toHaveClass(/studio-keyboard-open/);
+    await expect.poll(()=>dock.evaluate(el=>Math.abs(el.getBoundingClientRect().bottom-810))).toBeLessThan(2);
+    await page.screenshot({path:'/tmp/clawcross-iphone-safe-area.png'});
+    await menu.tap();await page.locator('#tab-groupchat').tap();
+    await expect(page).toHaveURL(/\/mobile\/group_chat$/);
+  }finally{await context.close();}
 });
 
 test('Team pages keep the personal overview separate and preserve resource navigation',async({page})=>{
@@ -150,7 +225,8 @@ test('UI tool opens a resizable center workspace and keeps the conversation and 
   const panel=page.locator('.conversation-ui-panel[aria-label="我的工作台"]');
   const counter=page.frameLocator('.conversation-ui-panel[aria-label="我的工作台"] iframe').locator('#count');
   await expect(page.locator('#studio-ui-workspace')).toBeHidden();
-  await counter.click();await expect(panel).toHaveClass(/is-docked/);
+  await counter.click();await expect(panel).not.toHaveClass(/is-docked/);
+  await panel.getByRole('button',{name:'放到中间',exact:true}).click();await expect(panel).toHaveClass(/is-docked/);
   await expect(counter).toHaveText('1');
   await expect(page.locator('#user-input')).toHaveValue('未发送的草稿');
   const center=await page.locator('#studio-ui-workspace').boundingBox(),chat=await page.locator('#studio-chat-workspace').boundingBox();
@@ -165,6 +241,8 @@ test('UI tool opens a resizable center workspace and keeps the conversation and 
   await page.evaluate(()=>document.getElementById('chat-box').append(createConversationUiPanel({...testUi,title:'另一个界面'})));
   const second=page.locator('.conversation-ui-panel[aria-label="另一个界面"]');
   await page.frameLocator('.conversation-ui-panel[aria-label="另一个界面"] iframe').locator('#count').click();
+  await expect(second).not.toHaveClass(/is-docked/);
+  await second.getByRole('button',{name:'放到中间',exact:true}).click();
   await expect(second).toHaveClass(/is-docked/);await expect(counter).toHaveText('1');
   await panel.getByRole('button',{name:'放到中间',exact:true}).click();
   await expect(second).not.toHaveClass(/is-docked/);
@@ -189,7 +267,7 @@ test('UI tool opens a resizable center workspace and keeps the conversation and 
 });
 const creation=require('./agent-creation-fixture');
 
-test('Studio recent Agents collapse and long Team membership scrolls independently',async({page})=>{
+test('Studio recent Agents collapse and long Team membership uses one rail scroll',async({page})=>{
   await page.setViewportSize({width:1200,height:720});
   const agents=Array.from({length:90},(_,index)=>({agent_id:'scroll-'+index,name:'伙伴 '+index,platform:'webot',settings:{},status:{state:'idle'}}));
   await stubStudioNetwork(page,{}, {agents});
@@ -198,7 +276,7 @@ test('Studio recent Agents collapse and long Team membership scrolls independent
   await page.locator('#studio-recent-agents > summary').click();
   await expect(page.locator('#studio-conversation-list')).toBeHidden();
   const team=page.locator('.studio-team-node[data-team="Long team"]');await team.locator('summary').click();
-  const list=page.locator('#studio-team-agent-tree-list');
+  const list=page.locator('.studio-session-scroll');
   expect(await list.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
   await team.locator('.studio-team-agent').last().scrollIntoViewIfNeeded();
   await expect(team.locator('.studio-team-agent').last()).toBeVisible();
@@ -215,8 +293,8 @@ test('recent Agents stop at five and Team branches remain expanded after member 
   await page.goto('/studio');
   await page.locator('.studio-conversation-switcher > summary').click();
   await expect(page.locator('.studio-conversation-item')).toHaveCount(5);
-  expect(await page.locator('.studio-conversation-item > span').allTextContents()).toEqual(['Task 6','Task 5','Task 4','Task 3','Task 2']);
-  expect(await page.locator('.studio-conversation-agent').allTextContents()).toEqual(['Agent 6 · #cent-6','Agent 5 · #cent-5','Agent 4 · #cent-4','Agent 3 · #cent-3','Agent 2 · #cent-2']);
+  expect(await page.locator('.studio-conversation-item > span').allTextContents()).toEqual(['Agent 6','Agent 5','Agent 4','Agent 3','Agent 2']);
+  expect(await page.locator('.studio-conversation-agent').allTextContents()).toEqual(['Task 6','Task 5','Task 4','Task 3','Task 2']);
   const team=page.locator('.studio-team-node[data-team="Project"]');
   await team.locator('summary').click();
   await expect(team).toHaveAttribute('open','');
@@ -251,8 +329,8 @@ test('recent conversations show Agent names with virtual user space and update a
   await page.goto('/studio');
   await page.locator('.studio-conversation-switcher > summary').click();
   const row=page.locator('.studio-conversation-item[data-session-id="named-agent"]');
-  await expect(row.locator('span')).toHaveText('整理报告');
-  await expect(row.locator('small')).toContainText('研究员 Alice');
+  await expect(row.locator('span')).toHaveText('研究员 Alice');
+  await expect(row.locator('small')).toContainText('整理报告');
   await expect(page.locator('.studio-conversation-item[data-session-id="native-named"]')).toHaveCount(0);
   await page.evaluate(async()=>{await openAgentCenter();await openAgentCenterDetail('named-agent');});
   await page.locator('#agent-center-detail button').filter({hasText:'Agent 设置'}).click();
@@ -261,16 +339,16 @@ test('recent conversations show Agent names with virtual user space and update a
   await page.locator('#agent-settings-home [data-save]').click();
   await expect(page.locator('#agent-settings-home [data-status]')).toContainText('已保存');
   await page.locator('#agent-settings-home [data-close]').click();
-  await expect(row.locator('span')).toHaveText('整理报告');
-  await expect(row.locator('small')).toContainText('新版研究员');
+  await expect(row.locator('span')).toHaveText('新版研究员');
+  await expect(row.locator('small')).toContainText('整理报告');
   await page.evaluate(()=>closeAgentCenter());
   await page.setViewportSize({width:390,height:844});
   await expect(row).toBeVisible();
   await page.screenshot({path:'/tmp/clawcross-recent-agent-names.png'});
   await page.evaluate(async()=>{_ocChatMode='acp';_acpTool='codex';await acpLoadSessionsList();});
   const native=page.locator('.studio-conversation-item[data-session-id="native-named"]');
-  await expect(native.locator('span')).toHaveText('修复错误');
-  await expect(native.locator('small')).toContainText('代码助手');
+  await expect(native.locator('span')).toHaveText('代码助手');
+  await expect(native.locator('small')).toContainText('修复错误');
   expect(errors).toEqual([]);
 });
 
@@ -283,13 +361,13 @@ test('studio Agent templates keep administrative tools opt-in and platform compa
   await page.goto('/studio');
   await page.evaluate(tools=>{allTools=tools;void openAgentMetaModal('create');},creation.tools);
   await expect(page.locator('#studio-agent-advanced')).not.toHaveAttribute('open','');
-  await expect(page.locator('#studio-agent-creation-basics [data-style=warm]')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#agent-meta-name')).toHaveValue('我的伙伴');
+  await expect(page.locator('#studio-agent-creation-presets')).toBeVisible();
   await page.locator('#agent-meta-name').fill('小星');
   await expect.poll(()=>page.evaluate(()=>AgentCreationPresets.selected('studio-agent-creation-presets')?.id)).toBe('personal');
   expect(await page.evaluate(()=>_collectAgentMeta())).toMatchObject({name:'小星',platform:'webot',creation_template:'personal'});
   expect(await page.evaluate(()=>_collectAgentMeta().tools)).not.toContain('manage_team');
-  await page.locator('#studio-agent-creation-basics [data-style=brief]').click();
-  expect(await page.evaluate(()=>_collectAgentMeta().persona)).toContain('简洁直接');
+  await expect(page.locator('[data-style]')).toHaveCount(0);
   await page.screenshot({path:'/tmp/clawcross-studio-simple-create.png'});
   await page.locator('#studio-agent-advanced > summary').click();
   const choices=page.locator('#studio-agent-creation-presets');
@@ -868,14 +946,13 @@ test('studio workflow tab and settings actions stay responsive', async ({ page }
     return page.locator('#page-loading-overlay').evaluate((el) => el.classList.contains('loading-visible'));
   }).toBe(false);
 
-  await page.locator('.hamburger-btn').click();
-  await page.locator('#hamburger-panel button[onclick*="openSettings(); closeHamburgerMenu();"]').click();
+  await page.locator('#studio-preferences').click();
 
   await expect(page.locator('#settings-modal')).toBeVisible();
   await expect(page.locator('#settings-import-openclaw-btn')).toBeEnabled();
   await expect(page.locator('#settings-export-openclaw-btn')).toHaveCount(0);
   await page.locator('[data-settings-tab="integrations"]').click();
-  await expect(page.locator('#tinyfish-run-btn')).toBeVisible();
+  await expect(page.locator('#tinyfish-run-btn')).toHaveCount(0);
 
   await page.locator('[data-settings-tab="models"]').click();
   await page.locator('.settings-import-options > summary').click();
@@ -883,8 +960,7 @@ test('studio workflow tab and settings actions stay responsive', async ({ page }
   await expect.poll(() => calls.importOpenClaw).toBe(1);
 
   await page.locator('[data-settings-tab="integrations"]').click();
-  await page.locator('#tinyfish-run-btn').click();
-  await expect.poll(() => calls.tinyfishRun).toBe(1);
+  expect(calls.tinyfishRun).toBe(0);
 
   expect(pageErrors).toEqual([]);
 });
@@ -1278,14 +1354,14 @@ test('oasis town runtime mounts, draws canvas, and accepts live updates', async 
 });
 
 
-test('Agent Center replaces the hamburger Agents entry and update controls follow English', async ({page}) => {
+test('Agent Center opens from the activity rail and update controls follow English', async ({page}) => {
   const calls = {};
   await stubStudioNetwork(page, calls, {agents:[{agent_id:'test-codex',name:'Codex',platform:'codex',settings:{},status:{state:'idle'}}]});
   await page.addInitScript(() => localStorage.setItem('lang', 'en'));
   await page.goto('/studio');
-  await page.locator('.hamburger-btn').click();
   await expect(page.locator('#hamburger-panel button[onclick*="toggleSessionSidebar"]')).toHaveCount(0);
-  await page.locator('#hamburger-panel button[onclick*="openAgentCenter"]').click();
+  await page.locator('#tab-agent-center').click();
+  await expect(page.locator('#tab-agent-center')).toHaveAttribute('aria-current','page');
   await expect(page.locator('#agent-center-title')).toHaveText('Agent Center');
   await expect(page.locator('.agent-center-card').first()).toBeVisible();
   await page.screenshot({path:'/tmp/clawcross-agent-center-desktop.png'});
@@ -1326,7 +1402,7 @@ test('conversation rail lists history and has a separate New button without a ma
   await expect(page.locator('.studio-conversation-item[aria-current="true"]')).toHaveCount(0);
   await expect(page.locator('.studio-conversation-item')).toHaveCount(2);
   await expect(page.locator('#studio-new-conversation')).toContainText('新建 Agent');
-  await expect(page.locator('.hamburger-btn use')).toHaveAttribute('href','/static/icons.svg#settings');
+  await expect(page.locator('#studio-preferences use')).toHaveAttribute('href','/static/icons.svg#settings');
   let sentId='';
   await page.route('**/v1/chat/completions',route=>{
     sentId=route.request().postDataJSON().session_id;
@@ -1637,4 +1713,82 @@ test('settings categories preserve drafts, search configuration keys, and save h
   await expect(page.locator('#settings-user-password')).toBeFocused();
   await expect(page.locator('[data-settings-tab="account"]')).toHaveAttribute('aria-pressed','true');
   expect(errors).toEqual([]);
+});
+
+test('refinement: one scrolling rail, platform identity and archive restoration',async({page})=>{
+  await page.setViewportSize({width:1360,height:740});
+  const agent={agent_id:'rail-agent',name:'我的伙伴',platform:'webot',settings:{title:'Read project notes'},teams:[]};
+  const calls={};await stubStudioNetwork(page,calls,{agents:[agent],acpxStatusPayload:{available:true,tools:['codex','claude','antigravity']},approvals:[]});
+  const teams=Array.from({length:16},(_,i)=>({team:'Project '+i,members:[{agent,role:'Partner'}]}));
+  await page.route(/\/v1\/teams(\?.*)?$/,route=>route.fulfill({json:{data:teams}}));
+  await page.route(/\/v1\/agents(\?.*)?$/,route=>route.fulfill({json:{data:new URL(route.request().url()).searchParams.has('include_archived')?[agent]:agent.settings.archived?[]:[agent]}}));
+  await page.route('**/v1/agents/rail-agent',route=>{if(route.request().method()==='PATCH')Object.assign(agent.settings,route.request().postDataJSON().settings);return route.fulfill({json:agent});});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/studio');
+  await page.locator('.studio-conversation-switcher').evaluate(el=>el.open=true);
+  await expect(page.locator('.page-tab-bar .page-tab:not(#uid-display)')).toHaveCount(0);
+  await expect(page.locator('.studio-activity-primary > *')).toHaveCount(6);
+  await expect(page.locator('#tab-hub')).toHaveAttribute('href','https://clawcross.net/');
+  await expect(page.locator('#studio-preferences')).toBeInViewport();
+  expect((await page.locator('#studio-preferences').boundingBox()).y).toBeGreaterThan(620);
+  await expect(page.locator('#studio-platform-current')).toHaveText('ClawCross');
+  await expect(page.locator('.studio-team-node')).toHaveCount(17);
+  expect(await page.evaluate(()=>document.getElementById('studio-team-agent-tree').compareDocumentPosition(document.getElementById('studio-recent-agents'))&Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
+  const scrolls=await page.locator('.studio-session-rail-body').evaluate(root=>[...root.querySelectorAll('*')].filter(el=>el.clientHeight>0&&el.scrollHeight>el.clientHeight+2&&/auto|scroll/.test(getComputedStyle(el).overflowY)).map(el=>el.className));
+  expect(scrolls).toEqual(['studio-session-scroll']);
+  await expect(page.locator('.studio-rail-footer')).toBeInViewport();
+  const layout=await page.locator('.studio-rail-footer').evaluate(el=>{const a=[];for(let n=el;n&&a.length<7;n=n.parentElement){const s=getComputedStyle(n);a.push({cls:n.className,h:n.clientHeight,display:s.display,flex:s.flex,height:s.height,max:s.maxHeight,position:s.position});}return a;});
+  expect((await page.locator('.studio-rail-footer').boundingBox()).y,JSON.stringify(layout)).toBeGreaterThan(650);
+  await page.evaluate(()=>ocSwitchTo('acp','antigravity'));
+  await expect(page.locator('#studio-platform-current')).toContainText('Antigravity');
+  await expect(page.locator('#studio-platform-current use')).toHaveAttribute('href',/platform-icons\.svg.*#antigravity$/);
+  expect(calls.agentCreates).toEqual([]);
+  await page.evaluate(()=>ocSwitchTo('internal'));
+  await page.evaluate(()=>StudioSidebar.archive('rail-agent',true));
+  expect(agent.settings.archived).toBe(true);
+  await page.evaluate(()=>StudioSidebar.openArchived());
+  await expect(page.locator('#studio-archived-dialog')).toContainText('我的伙伴');
+  await page.locator('#studio-archived-dialog button',{hasText:'恢复'}).click();
+  expect(agent.settings.archived).toBe(false);
+  await page.locator('#studio-archived-dialog header button').click();
+  await page.locator('#tab-group').click();
+  await expect(page.locator('#page-group')).toBeVisible();
+  await expect(page.locator('#tab-group')).toHaveAttribute('aria-current','page');
+  await page.locator('#tab-orchestrate').click();
+  await expect(page.locator('#page-orchestrate')).toBeVisible();
+  await expect(page.locator('#tab-orchestrate')).toHaveAttribute('aria-current','page');
+  await page.locator('#tab-chat').click();
+  await expect(page.locator('#tab-chat')).toHaveAttribute('aria-current','page');
+  await expect(page.locator('.studio-activity-primary [aria-current="page"]')).toHaveCount(1);
+  await page.locator('#studio-platform-current').click();
+  await expect(page.locator('#oc-acp-tabs .studio-platform-icon')).toHaveCount(3);
+  await page.screenshot({path:'/tmp/clawcross-activity-platform-picker.png'});
+  await page.locator('#studio-platform-current').click();
+  await page.screenshot({path:'/tmp/clawcross-studio-refined-sidebar.png'});
+  expect(errors).toEqual([]);
+});
+
+test('refinement: language preferences persist and activity shows elapsed time',async({page})=>{
+  await stubStudioNetwork(page,{}, {agents:[],approvals:[]});
+  await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
+  await page.goto('/studio');
+  await page.evaluate(()=>ClawCrossLocale.open());
+  await expect(page.locator('.language-picker-list button')).toHaveCount(14);
+  await page.locator('.language-picker-list button[lang="ja-JP"]').click();
+  await expect(page.locator('#tab-chat')).toHaveText('チャット');
+  await page.reload();await expect(page.locator('#tab-chat')).toHaveText('チャット');
+  await page.evaluate(()=>{const el=document.createElement('div');el.id='activity-check';el.className='message-agent';document.getElementById('chat-box').append(el);RunActivity.start(el,Date.now()-5000);});
+  await expect(page.locator('#activity-check time')).toHaveText(/^[5-9]s$/);
+  await page.evaluate(()=>RunActivity.finish(document.getElementById('activity-check')));
+  await expect(page.locator('#activity-check time')).toHaveAttribute('data-ended-at',/\d+/);
+  await page.evaluate(()=>ClawCrossLocale.set('ar'));
+  await expect(page.locator('html')).toHaveAttribute('dir','rtl');
+  await page.evaluate(()=>ClawCrossLocale.set('en'));
+  await expect(page.locator('html')).toHaveAttribute('dir','ltr');
+  await expect(page.locator('#tab-chat')).toHaveText('Chat');
+  await page.locator('#studio-more-menu > summary').click();
+  await expect(page.locator('#tool-toggle-btn')).toBeVisible();
+  await page.locator('#tool-toggle-btn').click();
+  await expect(page.locator('#tool-panel')).not.toHaveClass(/collapsed/);
+  await page.screenshot({path:'/tmp/clawcross-refined-chat-controls.png'});
 });

@@ -19,7 +19,7 @@
           if (dot) { dot.hidden=state!=='running'; dot.title=english?'Agent is working':'Agent 正在处理'; dot.setAttribute('aria-label',dot.title); }
         } else {
           let ids=[]; try { ids=JSON.parse(row.dataset.groupAgentIds || '[]'); } catch (_) {}
-          const count=ids.filter(id=>states.get(id)?.state==='running').length;
+          const count=ids.filter(id=>states.get(id)?.state==='running').length + Number(row.dataset.remoteWorkingCount || 0);
           const label=row.querySelector('.group-activity-label');
           if (label) { label.hidden=!count; label.textContent=english?`${count} working`:`${count} 位伙伴处理中`; }
         }

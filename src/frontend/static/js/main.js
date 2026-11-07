@@ -129,7 +129,7 @@ const i18n = {
         // 汉堡菜单 (no emoji, icon is separate)
         hmenu_agents: 'Agents',
         hmenu_agent_center: 'Agent 中心',
-        hmenu_settings: '设置',
+        hmenu_settings: '偏好设置',
         hmenu_new: '新对话',
         hmenu_oasis: '工作流运行',
         hmenu_logout: '退出',
@@ -206,7 +206,7 @@ const i18n = {
         agent_error: '❌ 错误',
 
         // 工具面板
-        available_tools: '🧰 可用工具',
+        available_tools: '可用工具',
         tool_calling: '（调用工具中...）',
         tool_return: '🔧 工具返回',
         tool_call_args: '调用参数',
@@ -924,7 +924,7 @@ const i18n = {
         // Hamburger menu (no emoji, icon is separate)
         hmenu_agents: 'Agents',
         hmenu_agent_center: 'Agent Center',
-        hmenu_settings: 'Settings',
+        hmenu_settings: 'Preferences',
         hmenu_new: 'New Chat',
         hmenu_oasis: 'Workflow runs',
         hmenu_logout: 'Logout',
@@ -1001,7 +1001,7 @@ const i18n = {
         agent_error: '❌ Error',
 
         // Tool panel
-        available_tools: '🧰 Available Tools',
+        available_tools: 'Tool access',
         tool_calling: '(Calling tool...)',
         tool_return: '🔧 Tool Return',
         tool_call_args: 'Arguments',
@@ -1647,13 +1647,13 @@ const i18n = {
 };
 
 // 当前语言
-let currentLang = localStorage.getItem('lang') || 'zh-CN';
+let currentLang = localStorage.getItem('clawcross_ui_locale') || localStorage.getItem('lang') || 'zh-CN';
 // 确保语言值有效
-if (!i18n[currentLang]) { currentLang = 'zh-CN'; localStorage.setItem('lang', 'zh-CN'); }
+if (!i18n[currentLang] && !window.ClawCrossLocale?.has(currentLang)) { currentLang = 'zh-CN'; localStorage.setItem('lang', 'zh-CN'); }
 
 // 获取翻译文本
 function t(key, params) {
-    let text = (i18n[currentLang] && i18n[currentLang][key]) || i18n['zh-CN'][key] || key;
+    let text = window.ClawCrossLocale?.lookup(key,currentLang) || (i18n[currentLang] && i18n[currentLang][key]) || i18n[currentLang.startsWith('zh')?'zh-CN':'en'][key] || key;
     if (params) {
         Object.keys(params).forEach(k => {
             text = text.replace(new RegExp('\{' + k + '\}', 'g'), params[k]);
@@ -1663,19 +1663,14 @@ function t(key, params) {
 }
 
 // 切换语言
-function toggleLanguage() {
-    currentLang = currentLang === 'zh-CN' ? 'en' : 'zh-CN';
-    localStorage.setItem('lang', currentLang);
-    document.documentElement.lang = currentLang;
-    applyTranslations();
-}
+function toggleLanguage() { ClawCrossLocale.open(); }
 
 // 应用翻译到页面
 function applyTranslations() {
     // 更新语言按钮显示
     const langBtn = document.getElementById('lang-toggle-btn');
     if (langBtn) {
-        langBtn.textContent = currentLang === 'zh-CN' ? 'EN' : '中文';
+        langBtn.textContent = ClawCrossLocale.name(currentLang);
     }
 
     // 更新 data-i18n 属性的元素
@@ -1889,7 +1884,7 @@ function renderAgentCenterGrid() {
                 onclick="openAgentCenterDetail(this.dataset.agent)"
                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAgentCenterDetail(this.dataset.agent)}">
                 <div class="agent-center-card-portrait ${webot ? 'internal' : 'external'}">
-                    <span class="agent-center-card-sigil" aria-hidden="true"><svg class="ui-icon"><use href="/static/icons.svg#${webot ? 'bot' : 'plug'}"/></svg></span>
+                    <span class="agent-center-card-sigil" aria-hidden="true">${agent.settings?.avatar ? Avatars.markup(agent.settings.avatar,agent.name,{agentId:agent.agent_id}) : (window.StudioSidebar?.platformIcon(agent.platform) || '<svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg>')}</span>
                 </div>
                 <div class="agent-center-card-body">
                     <div class="agent-center-card-top">
@@ -1955,7 +1950,7 @@ function renderAgentCenterDetail() {
     host.innerHTML = `
         <div class="agent-dex-hero ${webot ? 'internal' : 'external'}">
             <button class="agent-dex-close" type="button" onclick="closeAgentCenterDetail()" aria-label="Close">×</button>
-            <div class="agent-dex-portrait" aria-hidden="true"><svg class="ui-icon"><use href="/static/icons.svg#${webot ? 'bot' : 'plug'}"/></svg></div>
+            <div class="agent-dex-portrait" aria-hidden="true">${agent.settings?.avatar ? Avatars.markup(agent.settings.avatar,agent.name,{agentId:agent.agent_id}) : (window.StudioSidebar?.platformIcon(agent.platform) || '<svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg>')}</div>
             <div class="agent-dex-index">${agentCenterEscape(agent.platform)} · ${agentCenterEscape(state)}</div>
             <div class="agent-dex-title">${agentCenterEscape(agent.name)}</div>
             <div class="agent-dex-subtitle">${agentCenterEscape(agent.agent_id)} · ${agentCenterEscape(agent.platform)}</div>
@@ -2159,6 +2154,7 @@ async function openAgentCenter() {
     const modal = document.getElementById('agent-center-modal');
     if (!modal || !currentUserId) return;
     modal.style.display = 'flex';
+    window.StudioSidebar?.updateNavigation('agents');
     await refreshAgentCenter();
 }
 
@@ -2166,6 +2162,7 @@ function closeAgentCenter() {
     const modal = document.getElementById('agent-center-modal');
     if (modal) modal.style.display = 'none';
     agentCenterSelectedKey = '';
+    window.StudioSidebar?.updateNavigation();
 }
 
 const _AGENT_CENTER_CONTROL_TEXT = {
@@ -2842,11 +2839,11 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
     document.getElementById('studio-agent-advanced').open=false;
     document.querySelector('#studio-agent-advanced > summary').textContent=currentLang==='zh-CN'?'高级设置':'Advanced settings';
     document.getElementById('agent-meta-name-label').textContent=currentLang==='zh-CN'?'伙伴叫什么？':'What shall we call your companion?';
-    document.getElementById('agent-meta-name').placeholder=currentLang==='zh-CN'?'例如：小曼、阿星':'For example: Luna or Nova';
+    document.getElementById('agent-meta-name').placeholder=ClawCrossLocale.text('我的伙伴','My companion');
     document.querySelector('#agent-meta-modal .agent-meta-btn-save').textContent=currentLang==='zh-CN'?'开始认识':'Meet my companion';
     document.querySelector('#agent-meta-modal .agent-meta-btn-cancel').textContent=currentLang==='zh-CN'?'取消':'Cancel';
-    AgentCreationBasics.mount('studio-agent-creation-basics');
-    document.getElementById('agent-meta-name').value = (existingMeta && existingMeta.name) || '';
+
+    document.getElementById('agent-meta-name').value = (existingMeta && existingMeta.name) || (mode==='create'?ClawCrossLocale.text('我的伙伴','My companion'):'');
     document.getElementById('agent-meta-title').value = (existingMeta && existingMeta.title) || '';
     document.getElementById('agent-meta-title').hidden = mode === 'create';
     document.querySelector('[data-agent-conversation-title]').hidden = mode === 'create';
@@ -5035,7 +5032,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
                 parts.push(`
                     <div class="flex justify-start">
                         <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown" data-tts-ready="1">
-                            ${toolCallsHtml}${msg.content ? renderMarkdown(msg.content) : '<span class="text-gray-400 text-xs">('+t('tool_calling')+')</span>'}
+                            ${toolCallsHtml}${msg.content ? renderMarkdown(msg.content) : ''}
                         </div>
                     </div>`);
             }
@@ -5082,6 +5079,7 @@ async function refreshStudioConversations() {
 function renderStudioConversations() {
     const host = document.getElementById('studio-conversation-list');
     if (!host) return;
+    window.StudioSidebar?.updatePlatform();
     const mode = _ocChatMode;
     const select = document.getElementById(mode === 'acp' ? 'oc-acp-session-pick' : 'oc-internal-session-pick');
     const selected = mode === 'acp' ? acpResolveSessionName() : currentSessionId;
@@ -5102,10 +5100,10 @@ function renderStudioConversations() {
         button.setAttribute('aria-current', item.id === selected ? 'true' : 'false');
         const title = document.createElement('span');
         title.className = 'studio-conversation-title';
-        title.textContent = item.title || (currentLang === 'zh-CN' ? '未命名对话' : 'Untitled conversation');
+        title.textContent = item.agent || agentMap[item.id]?.name || (currentLang === 'zh-CN' ? '我的伙伴' : 'My companion');
         const detail = document.createElement('small');
         detail.className = 'studio-conversation-agent';
-        detail.textContent = (item.agent || 'Agent') + ' · #' + item.id.slice(-6) + (agentMap[item.id]?.location?.kind==='ssh'?' · '+agentMap[item.id].location.name:'');
+        detail.textContent = item.title && item.title !== item.agent ? item.title : ('#' + item.id.slice(-6));
         button.append(title, detail);
         button.onclick = async () => {
             if (mode !== _ocChatMode) return;
@@ -5117,7 +5115,9 @@ function renderStudioConversations() {
             renderStudioConversations();
             if (window.matchMedia('(max-width: 768px)').matches) document.querySelector('.studio-conversation-switcher').open = false;
         };
-        host.appendChild(button);
+        const row=document.createElement('div');row.className='studio-conversation-row';row.append(button);
+        if(window.StudioSidebar)row.append(StudioSidebar.actions(item.id,item.agent || item.title));
+        host.appendChild(row);
     }
     if (!items.length) {
         const empty = document.createElement('p');
@@ -5137,7 +5137,7 @@ async function renderStudioTeamTree(force = false) {
     try {
         const [response, agentResponse] = await Promise.all([agentApi('GET', '/v1/teams'), agentApi('GET', '/v1/agents')]);
         const teams = response.data || [];
-        const allAgents = agentResponse.data || [];
+        const allAgents = (agentResponse.data || []).filter(agent=>!agent.archived && !agent.settings?.archived);
         const expanded = new Map([...host.querySelectorAll('.studio-team-node')].map(node=>[node.dataset.team,node.open]));
         host.replaceChildren();
         const addTeam = (teamName, memberRows, fixed = false) => {
@@ -5160,9 +5160,10 @@ async function renderStudioTeamTree(force = false) {
             }
             for (const member of memberRows) {
                 const agent = member.agent || {};
+                if(agent.archived || agent.settings?.archived) continue;
                 const button = document.createElement('button');
                 button.type = 'button'; button.className = 'studio-team-agent';
-                button.textContent = agent.name || agent.agent_id || member.role || 'Agent';
+                const mark=document.createElement('span');mark.className='studio-member-dot';mark.textContent='·';button.append(mark,document.createTextNode(' '+(agent.name || agent.agent_id || member.role || 'Agent')));
                 button.title = `${agent.name || ''} · ${agent.platform || 'webot'}`;
                 button.onclick = async () => {
                     if (agent.platform && agent.platform !== 'webot') {
@@ -5606,7 +5607,7 @@ const SETTINGS_GROUPS_ORDERED = [
     { id: 'bots', label: 'settings_group_bots', keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT'] },
     { id: 'comm', label: 'settings_group_comm', keys: ['OPENAI_STANDARD_MODE'] },
     { id: 'exec', label: 'settings_group_exec', keys: ['ALLOWED_COMMANDS', 'EXEC_TIMEOUT', 'MAX_OUTPUT_LENGTH'] },
-    { id: 'tinyfish', label: 'settings_group_tinyfish', keys: ['TINYFISH_API_KEY', 'TINYFISH_BASE_URL', 'TINYFISH_MONITOR_DB_PATH', 'TINYFISH_MONITOR_TARGETS_PATH', 'TINYFISH_MONITOR_ENABLED', 'TINYFISH_MONITOR_CRON'] },
+
     { id: 'security', label: 'settings_group_security', keys: ['INTERNAL_TOKEN'] },
 ];
 
@@ -5765,7 +5766,7 @@ function renderSettings(settings) {
     html += ClawcrossSettings.publicAccessMarkup(currentLang, componentControlMarkup('cloudflared'));
 
     // Collect all keys from settings
-    const allKeys = Object.keys(settings);
+    const allKeys = Object.keys(settings).filter(key=>!key.startsWith('TINYFISH_'));
     const usedKeys = new Set();
 
     // Render predefined groups
@@ -6547,11 +6548,11 @@ function renderToolCallDetails(toolCalls) {
         const name = escapeHtml(tc && tc.name ? tc.name : '');
         const args = tc && Object.prototype.hasOwnProperty.call(tc, 'args') ? tc.args : {};
         return `<details style="margin-top:8px;border:1px solid #dbeafe;border-radius:10px;background:#f8fbff;">
-            <summary style="cursor:pointer;list-style:none;padding:10px 12px;font-size:12px;font-weight:600;color:#1d4ed8;">🔧 ${name || ('tool_' + (idx + 1))}</summary>
+            <summary style="cursor:pointer;list-style:none;padding:10px 12px;font-size:12px;font-weight:600;color:#1d4ed8;">${escapeHtml(typeof toolDisplayName==='function'?toolDisplayName(tc?.name || ''):(tc?.name || 'Tool'))}</summary>
             <div style="padding:0 12px 12px 12px;">${renderToolPager(args, { title: t('tool_call_args') })}</div>
         </details>`;
     }).join('');
-    return `<div class="mb-2">${renderToolCallBadges(toolCalls)}</div><div class="tool-call-details">${items}</div>`;
+    return `<div class="tool-call-details">${items}</div>`;
 }
 
 function triggerBlobDownload(blob, filename) {
@@ -7977,7 +7978,8 @@ function restoreActiveChatRunForCurrentContext() {
         const segmentDiv = appendMessage(segment, false);
         markActiveRunBubble(segmentDiv, run);
     }
-    const liveDiv = appendMessage(run.fullText || 'crossing...', false);
+    const liveDiv = appendMessage(run.fullText || '', false);
+    if(!run.fullText)RunActivity.start(liveDiv,run.startedAt || Date.now());
     markActiveRunBubble(liveDiv, run);
     run.agentDiv = liveDiv;
     return liveDiv;
@@ -8178,10 +8180,7 @@ function showTyping() {
     const wrapper = document.createElement('div');
     wrapper.id = 'typing-indicator';
     wrapper.className = 'flex justify-start';
-    wrapper.innerHTML = `
-        <div class="message-agent bg-white border p-4 shadow-sm text-gray-700">
-            crossing...
-        </div>`;
+    const status=document.createElement('div');status.className='message-agent run-activity';RunActivity.start(status);wrapper.append(status);
     chatBox.appendChild(wrapper);
     scrollChatToBottom(chatBox, { settle: false });
 }
@@ -8357,6 +8356,7 @@ async function handleSend() {
         sessionId: currentSessionId,
         controller: streamAbortController,
         status: 'running',
+        startedAt: Date.now(),
         fullText: '',
         segments: [],
         agentDiv: null,
@@ -8405,6 +8405,7 @@ async function handleSend() {
         if (streamOwns()) {
             agentDiv = appendMessage('', false);
             chatRun.agentDiv = agentDiv;
+            RunActivity.start(agentDiv,chatRun.startedAt);
             markActiveRunBubble(agentDiv, chatRun);
         }
 
@@ -8441,6 +8442,7 @@ async function handleSend() {
             chatRun.fullText = '';
             if (streamOwns()) {
                 agentDiv = appendMessage('', false);
+                RunActivity.start(agentDiv,chatRun.startedAt);
                 markActiveRunBubble(agentDiv, chatRun);
                 chatRun.agentDiv = agentDiv;
             } else {
@@ -8465,7 +8467,9 @@ async function handleSend() {
                     }
                     const statusEl = indicator.querySelector('.stream-tool-status');
                     if (statusEl) {
-                        statusEl.textContent = '✅';
+                        statusEl.textContent = '';
+                        statusEl.classList.remove('run-activity-pulse');
+                        RunActivity.finish(indicator);
                         statusEl.classList.remove('stream-tool-running');
                         statusEl.classList.add('stream-tool-done');
                     }
@@ -8481,10 +8485,10 @@ async function handleSend() {
             const w = document.createElement('div');
             w.className = 'flex justify-start animate-in fade-in duration-200';
             const d = document.createElement('details');
-            d.open = true;
+            d.open = false;
             d.className = 'stream-tool-indicator';
             d.dataset.toolName = toolName;
-            d.innerHTML = `<summary><span class="stream-tool-icon">🔧</span> <span class="stream-tool-name">${escapeHtml(toolName)}</span> <span class="stream-tool-status stream-tool-running">…</span></summary><div class="stream-tool-result" style="display:none;margin-top:8px;"></div>`;
+            d.innerHTML = `<summary><span class="run-activity-pulse stream-tool-status stream-tool-running" aria-hidden="true"></span><span class="stream-tool-name">${escapeHtml(typeof toolDisplayName==='function'?toolDisplayName(toolName):toolName)}</span>${RunActivity.time()}</summary><div class="stream-tool-result" style="display:none;margin-top:8px;"></div>`;
             w.appendChild(d);
             chatBox.appendChild(w);
             scrollChatToBottom(chatBox, { settle: false });
@@ -8622,6 +8626,7 @@ async function handleSend() {
             activeChatRuns.delete(_streamOwnerKey);
         }
         // 仅复位本次流所属的当前视图，避免误清除另一会话的新流。
+        if(streamOwns())chatBox.querySelectorAll('.stream-tool-indicator').forEach(indicator=>{RunActivity.finish(indicator);indicator.open=false;});
         if (streamOwns()) {
             if (currentAbortController === streamAbortController) {
                 currentAbortController = null;
@@ -8636,6 +8641,7 @@ inputField.addEventListener('input', function() {
     this.style.height = (this.scrollHeight) + 'px';
 });
 inputField.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
 });
 inputField.addEventListener('paste', handlePasteImage);
@@ -8899,7 +8905,7 @@ function ocRenderAcpTabs(tools) {
         btn.dataset.acpTool = tName;
         btn.onclick = async () => { await ocSwitchTo('acp', tName); if(tName==='acp') await openExternalAgentSettings(); };
         btn.innerHTML =
-            '<span class="oc-acp-ico ' + _acpIconClass(tName) + '" aria-hidden="true"></span>' +
+            (window.StudioSidebar?.platformIcon(tName) || '<span class="oc-acp-ico ' + _acpIconClass(tName) + '" aria-hidden="true"></span>') +
             '<span>' + escapeHtml(_acpDisplayLabel(tName)) + '</span>';
         acpTabs.appendChild(btn);
     }
@@ -11691,6 +11697,8 @@ document.addEventListener('click', function(e) {
 
 async function switchPage(page) {
     currentPage = page;
+    closeAgentCenter();
+    window.StudioSidebar?.updateNavigation(page);
     showPageLoading();
     // Update tabs
     document.getElementById('tab-chat').classList.toggle('active', page === 'chat');
@@ -12924,7 +12932,9 @@ async function removeAgentFromTeam(team, agent, name) {
 
 // Delete an agent: it leaves every team and conversation. Returns whether it was deleted.
 async function deleteAgent(agent, name) {
-    if (!confirm(`确定删除 "${name}"？它会离开所有团队和群聊。`)) return false;
+    const question=window.ClawCrossLocale?.text('删除 Agent','Delete Agent') || 'Delete Agent';
+    const detail=document.documentElement.lang.startsWith('zh')?'它会离开所有团队和群聊。':'It will leave all teams and groups.';
+    if (!confirm(`${question} “${name}”? ${detail}`)) return false;
     await deleteSessionAgent(agent.agent_id);
     return true;
 }
@@ -15319,6 +15329,7 @@ async function ocSwitchTo(mode, acpTool) {
 
     _ocChatMode = mode;
     _acpTool = nextAcp;
+    window.StudioSidebar?.updatePlatform();
     if (mode !== 'acp' || acpToolChanged) {
         acpSetSessionStatus('');
     }

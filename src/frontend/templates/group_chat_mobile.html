@@ -2,13 +2,15 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<link rel="stylesheet" href="/static/css/avatars.css?v=20261107-avatars">
+<script src="/static/js/avatars.js?v=20261107-avatars"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Agent 消息中心</title>
-<script src="/static/js/agent-profile.js?v=20261104-hierarchy"></script>
-<script src="/static/js/human-profile.js?v=20261019-portrait-images"></script>
+<script src="/static/js/agent-profile.js?v=20261107-avatars"></script>
+<script src="/static/js/human-profile.js?v=20261107-avatars"></script>
 <script src="/static/js/user-portrait.js?v=20261019-images"></script>
 <link rel="stylesheet" href="/static/css/human-profile.css?v=20261019-portrait-images">
-<script src="/static/js/group-history.js?v=20261019"></script>
+<script src="/static/js/group-history.js?v=20261107-history-availability"></script>
 <script src="/static/js/group-chat-state.js?v=20261020-receipts"></script>
 <script src="/static/js/group-receipts.js?v=20261020-receipts"></script>
 <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
@@ -16,7 +18,8 @@
   // Early language detection to avoid flash of wrong lang
   (function(){
     var lang = localStorage.getItem('clawcross_lang') || 'zh';
-    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
+  document.documentElement.dir=lang==='ar'?'rtl':'ltr';
     if (lang === 'en') document.title = 'Agent Message Center';
   })();
 </script>
@@ -27,11 +30,12 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#f5f7fc">
 <meta name="format-detection" content="telephone=no">
-<link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="https://img.icons8.com/fluency/180/robot-2.png">
-<link rel="apple-touch-icon" sizes="152x152" href="https://img.icons8.com/fluency/152/robot-2.png">
-<link rel="apple-touch-icon" sizes="180x180" href="https://img.icons8.com/fluency/180/robot-2.png">
-<link rel="icon" href="https://img.icons8.com/fluency/32/robot-2.png" type="image/png">
+<link rel="manifest" href="/manifest.json?v=20261107-brand">
+<link rel="apple-touch-icon" href="/static/assets/clawcross-icon-180.png?v=20261107-brand">
+<link rel="apple-touch-icon" sizes="152x152" href="/static/assets/clawcross-icon-152.png?v=20261107-brand">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/assets/clawcross-icon-180.png?v=20261107-brand">
+<link rel="icon" sizes="32x32" href="/static/assets/clawcross-icon-32.png?v=20261107-brand" type="image/png">
+<link rel="icon" href="/static/assets/clawcross-mark.svg?v=20261107-brand" type="image/svg+xml">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -49,17 +53,17 @@
 <script src="/static/js/acp-launch-settings.js?v=20261017-custom-acp"></script>
 <script src="/static/js/external-agent-settings.js?v=20261104-hierarchy"></script>
 <link rel="stylesheet" href="/static/css/agent-settings.css?v=20261104-hierarchy">
-<script src="/static/js/agent-settings.js?v=20261104-hierarchy"></script>
+<script src="/static/js/agent-settings.js?v=20261107-avatars"></script>
 <script src="/static/js/model-profiles.js?v=20261104-hierarchy"></script>
 <script src="/static/js/approval-ui.js?v=20261017-approval-dedup"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
-<script src="/static/js/settings-navigation.js?v=20261104-settings-directory"></script>
+<script src="/static/js/settings-navigation.js?v=20261107-refinements"></script>
 
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
 <script src="/static/js/native-session-browser.js?v=20261017-custom-acp"></script>
 <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
-<script src="/static/js/tinyfish-live-shared.js"></script>
+
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
 <script src="/static/js/pretext_text_core.js?v=20260402-pretext"></script>
 <style>
@@ -4080,8 +4084,8 @@
 </style>
 <link rel="stylesheet" href="/static/css/mobile-agent-create.css?v=20261104-create-scroll">
 <link rel="stylesheet" href="/static/css/agent-creation-presets.css?v=20261104-simple-create">
-<script src="/static/js/agent-creation-presets.js?v=20261104-simple-create"></script>
-<script src="/static/js/tool-catalog.js?v=20261006-agent-templates"></script>
+<script src="/static/js/agent-creation-presets.js?v=20261107-refinements"></script>
+<script src="/static/js/tool-catalog.js?v=20261107-refinements"></script>
 <script src="/static/js/mobile-agent-create-tools.js?v=20261006-tool-table"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
@@ -4091,7 +4095,7 @@
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
 <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
-<script src="/static/js/runtime-settings.js?v=20261104-hierarchy"></script>
+<script src="/static/js/runtime-settings.js?v=20261107-refinements"></script>
 <script src="/static/js/workspace-settings.js?v=20261104-hierarchy"></script>
 <link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005-team-skills">
 <link rel="stylesheet" href="/static/css/mobile-panel-layout.css?v=20261008">
@@ -4099,11 +4103,12 @@
 <link rel="stylesheet" href="/static/css/agent-activity.css?v=20261009">
 <link rel="stylesheet" href="/static/css/group-device-map.css?v=20261011-devices">
 <script src="/static/js/group-device-map.js?v=20261011-devices2"></script>
-<script defer src="/static/js/agent-activity.js?v=20261009"></script>
+<script defer src="/static/js/agent-activity.js?v=20261107-shared-presence"></script>
 <link rel="stylesheet" href="/static/css/conversation-polish.css?v=20261018-view-switch-right">
 <link rel="stylesheet" href="/static/css/workspace-pages.css?v=20261018-contacts-scroll">
 <link rel="stylesheet" href="/static/css/agent-profile.css?v=20261019">
 <style>.group-history-bar{display:flex;flex-direction:column;align-items:center;gap:5px;margin:0 auto 20px;padding:7px 12px;max-width:100%;font-size:11px;color:var(--text-secondary,#8190a2)}.group-history-bar button{border:0;border-radius:99px;background:var(--bg-card,#fff);color:var(--primary,#1479ec);padding:9px 16px;min-height:36px;font:inherit;font-size:12px;cursor:pointer}.group-history-bar button:disabled{opacity:.5}.group-history-bar button[hidden],#action-group-host[hidden],#profile-group-host[hidden]{display:none}</style>
+<script src="/static/js/ui-languages.js?v=20261107-activity-rail"></script><script src="/static/js/run-activity.js?v=20261107-final"></script>
 </head>
 <body>
 
@@ -4193,7 +4198,8 @@
     <button class="header-back-btn" onclick="goBack()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
-    <button type="button" class="chat-heading" onclick="toggleDrawer()" data-i18n-title="view_members" title="查看群成员"><span class="header-title" id="chat-title" data-i18n="header_agent_msg">聊天</span><span class="chat-heading-meta" id="chat-context-meta"></span></button>
+    <div class="chat-room-avatar" id="chat-room-avatar" aria-hidden="true"></div>
+    <button type="button" class="chat-heading" onclick="toggleDrawer()" data-i18n-title="view_members" title="查看群成员"><span class="header-title" id="chat-title" data-i18n="header_agent_msg">聊天</span><span class="chat-heading-subline"><span class="chat-heading-meta" id="chat-context-meta"></span><span id="chat-running-status" hidden></span></span></button>
     <div style="display:flex;gap:2px;align-items:center;margin-left:auto;">
       <button type="button" class="header-btn" id="list-toggle-btn" onclick="toggleGroupList()" title="收起群聊列表" aria-label="收起群聊列表"><svg class="ui-icon"><use href="/static/icons.svg#panel-left"/></svg></button>
       <button type="button" class="header-btn" id="app-fullscreen-btn" onclick="toggleAppFullscreen()" title="全屏" aria-label="小程序全屏"><svg class="ui-icon"><use href="/static/icons.svg#maximize"/></svg></button>
@@ -4212,7 +4218,7 @@
   </div>
   <div class="typing-bar" id="typing-bar">
     <div class="typing-dots"><span></span><span></span><span></span></div>
-    <span id="typing-text"></span>
+    <span id="typing-text" role="status" aria-live="polite"></span><span id="group-running-elapsed" aria-hidden="true"></span>
   </div>
   <div class="input-bar-wrap">
     <div id="group-reply-preview" class="group-reply-preview" hidden>
@@ -4688,8 +4694,8 @@
     <div class="create-agent-form create-agent-basics-form">
       <div class="agent-creation-emblem" aria-hidden="true"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg></div>
       <label class="side-panel-label" for="create-agent-name" data-i18n="companion_name_question">伙伴叫什么？</label>
-      <input type="text" id="create-agent-name" class="side-panel-input" maxlength="160" autocomplete="off" data-i18n="agent_creation_name_placeholder" placeholder="例如：小曼、阿星" onkeydown="if(event.key==='Enter'){if(mobileCreateAgentMode==='acp')mobileSubmitCreateAcpAgent();else submitCreateAgent();}">
-      <div id="mobile-agent-creation-basics"></div>
+      <input type="text" id="create-agent-name" class="side-panel-input" maxlength="160" autocomplete="off" data-i18n="agent_creation_name_placeholder" placeholder="我的伙伴" onkeydown="if(event.key==='Enter'){if(mobileCreateAgentMode==='acp')mobileSubmitCreateAcpAgent();else submitCreateAgent();}">
+      <section id="mobile-agent-capability-presets" class="create-agent-capabilities"><label class="side-panel-label" id="mobile-agent-capability-summary" data-i18n="capability_template">能力模板</label><div id="mobile-agent-creation-presets"></div><p id="mobile-agent-template-hint" class="agent-creation-preset-hint"></p></section>
     </div>
     <div id="mobile-group-role-picker" hidden></div>
     <details id="mobile-create-agent-advanced" class="create-agent-advanced"><summary data-i18n="agent_creation_settings">高级设置</summary>
@@ -4705,10 +4711,6 @@
       <button type="button" class="add-agent-mode-btn" data-mode="acp" role="tab" aria-selected="false" aria-controls="create-agent-panel-acp" tabindex="-1" onclick="setCreateAgentMode('acp')"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#plug"/></svg><span data-i18n="mobile_create_agent_mode_acp">外部 Agent</span></button>
     </div>
     <div id="create-agent-panels-scroll">
-      <details id="mobile-agent-capability-presets" class="create-agent-advanced"><summary id="mobile-agent-capability-summary">能力模板</summary>
-        <div id="mobile-agent-creation-presets"></div>
-        <p id="mobile-agent-template-hint" class="agent-creation-preset-hint"></p>
-      </details>
       <div id="create-agent-panel-webot" role="tabpanel">
         <div class="create-agent-form">
             <details class="create-agent-advanced"><summary data-i18n="agent_creation_advanced">人设 · 可选</summary>
@@ -4828,7 +4830,7 @@
 
     <div style="margin-bottom:16px;">
       <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="group_title_label">聊天名称</label>
-      <input type="text" id="create-custom-name" data-i18n="group_title_placeholder" placeholder="例如：周末读书会" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg-card);" oninput="updateGroupNamePreview()" onkeydown="if(event.key==='Enter')submitCreateGroup()">
+      <input type="text" id="create-custom-name" data-i18n="group_title_placeholder" placeholder="未来之室" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg-card);" oninput="updateGroupNamePreview()" onkeydown="if(event.key==='Enter')submitCreateGroup()">
     </div>
 
     <details id="create-group-advanced" style="margin-bottom:16px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);">
@@ -5275,7 +5277,7 @@ const I18N = {
     // ── Create group ──
     create_group: '创建聊天',
     group_title_label: '聊天名称',
-    group_title_placeholder: '例如：周末读书会',
+    group_title_placeholder: '未来之室',
     group_advanced_options: '高级选项 · 导入 Team 或添加 Team 成员',
     select_team_optional: '导入 Team 成员（可选）',
     import_team: '导入团队',
@@ -5448,7 +5450,7 @@ const I18N = {
     builtin_companion: 'ClawCross 内置伙伴',
     create_new_agent: '新建 Agent',
     agent_creation_intro: '取个名字，就可以开始对话。',
-    agent_creation_name_placeholder: '例如：小曼、阿星',
+    agent_creation_name_placeholder: '我的伙伴',
     agent_creation_team_options: '加入 Team · 可选',
     companion_name_question: '伙伴叫什么？',
     agent_creation_settings: '高级设置',
@@ -5960,7 +5962,7 @@ const I18N = {
 
     create_group: 'Create Chat',
     group_title_label: 'Chat name',
-    group_title_placeholder: 'For example: Weekend book club',
+    group_title_placeholder: 'Room of Tomorrow',
     group_advanced_options: 'Advanced · Import a Team or add its members',
     select_team_optional: 'Add Team members (optional)',
     import_team: 'Import Team',
@@ -6130,7 +6132,7 @@ const I18N = {
     builtin_companion: 'ClawCross companion',
     create_new_agent: 'New Agent',
     agent_creation_intro: 'Give your Agent a name to start chatting.',
-    agent_creation_name_placeholder: 'For example: Luna or Nova',
+    agent_creation_name_placeholder: 'My companion',
     agent_creation_team_options: 'Join a Team · Optional',
     companion_name_question: 'What shall we call your companion?',
     agent_creation_settings: 'Advanced settings',
@@ -6471,15 +6473,15 @@ const I18N = {
   },
 };
 
-let _currentLang = localStorage.getItem('clawcross_lang') || 'zh';
+let _currentLang = (localStorage.getItem('clawcross_ui_locale') || localStorage.getItem('clawcross_lang') || 'zh').replace(/^zh-CN$/,'zh');
 window.__currentUserHasPassword = false;
 window.__currentLoginMode = '';
 let _localPasswordBannerDismissed = false;
 
 /** Translate a key, optionally interpolating {placeholders}. */
 function t(key, vars) {
-  const dict = I18N[_currentLang] || I18N.zh;
-  let s = dict[key] ?? I18N.zh[key] ?? key;
+  const dict = I18N[_currentLang] || (_currentLang.startsWith('zh') ? I18N.zh : I18N.en);
+  let s = window.ClawCrossLocale?.lookup(key,_currentLang) ?? dict[key] ?? I18N.en[key] ?? key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
       s = s.replaceAll(`{${k}}`, v);
@@ -6493,7 +6495,7 @@ function getLang() { return _currentLang; }
 
 /** Switch language and persist. */
 function setLang(lang) {
-  if (!I18N[lang]) return;
+  if (!I18N[lang] && !ClawCrossLocale.has(lang)) return;
   _currentLang = lang;
   localStorage.setItem('clawcross_lang', lang);
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
@@ -7596,7 +7598,8 @@ function renderGroupList(list) {
         const initial = n ? avatarLabelFromDisplayName(n) : '';
         const bg = n ? stringToColor(n) : '#ccc';
         if (initial) {
-          cells.push(`<div class="grid-cell" style="background:${bg}">${esc(initial)}</div>`);
+          const person = (g.members || [])[i];
+          cells.push(`<div class="grid-cell" style="background:${bg}">${person ? Avatars.markup(person.avatar,n,{principal:person.principal,groupId:gid}) : esc(initial)}</div>`);
         } else {
           cells.push(`<div class="grid-cell" style="background:#ddd"></div>`);
         }
@@ -7606,7 +7609,8 @@ function renderGroupList(list) {
       const otherName = groupListAvatarPeerName(g, memberNames, name);
       const initial = avatarLabelFromDisplayName(otherName);
       const bg = stringToColor(otherName || name);
-      avatarHtml = `<div class="group-avatar" style="background:${bg}">${esc(initial)}</div>`;
+      const person = (g.members || []).find(m => m.is_agent) || (g.members || []).find(m => m.principal !== selfPrincipal());
+      avatarHtml = `<div class="group-avatar" style="background:${bg}">${person ? Avatars.markup(person.avatar,otherName,{principal:person.principal,groupId:gid}) : esc(initial)}</div>`;
     }
 
     const isMutedGroup = mutedGroupIds.has(gid);
@@ -7616,7 +7620,7 @@ function renderGroupList(list) {
     const activeClass = currentGroupId && String(currentGroupId) === String(gid) ? ' active' : '';
 
     return `
-      <div class="swipe-wrapper${isPinned ? ' pinned' : ''}${activeClass}" data-gid="${esc(gid)}" data-group-agent-ids="${esc(JSON.stringify((g.members || []).filter(m=>m.is_agent&&!m.remote).map(m=>m.agent?.agent_id || m.principal)))}">
+      <div class="swipe-wrapper${isPinned ? ' pinned' : ''}${activeClass}" data-gid="${esc(gid)}" data-remote-working-count="${(g.members || []).filter(m=>m.remote&&m.agent?.status?.state==='running').length}" data-group-agent-ids="${esc(JSON.stringify((g.members || []).filter(m=>m.is_agent&&!m.remote).map(m=>m.agent?.agent_id || m.principal)))}">
         <div class="group-item" onclick="openChat('${escapedGid}', '${escapedName}')" ontouchstart="prefetchGroupDetail('${escapedGid}')" onmouseenter="prefetchGroupDetail('${escapedGid}')">
           ${avatarHtml}
           <div class="group-info">
@@ -8636,6 +8640,7 @@ function _resetCreateAgentPanels() {
 }
 
 async function showCreateAgentModal(preferredTeam = '', purpose = '') {
+  closeCreateModal();
   hideCreateMenu();
   closeOasisSidebar();
   document.getElementById('create-agent-modal').classList.add('show');
@@ -8643,16 +8648,18 @@ async function showCreateAgentModal(preferredTeam = '', purpose = '') {
   createAgentTagOptions = [];
   mobileCreateAgentPurpose=purpose;mobileGroupRole='companion';mobileCreationPermissionsCustomized=false;
   _resetCreateAgentPanels();
-  AgentCreationBasics.mount('mobile-agent-creation-basics');
+
   document.getElementById('create-agent-title').textContent=purpose==='first'?(_currentLang==='zh'?'给第一个伙伴取个名字':'Name your first companion'):t('create_new_agent');
+  document.getElementById('create-agent-name').value=ClawCrossLocale.text('我的伙伴','My companion');
   document.getElementById('create-agent-name').focus();
+  document.getElementById('create-agent-name').select();
   const platformGeneration=document.getElementById('create-agent-panel-acp').dataset.generation;
   void _mobileFetchAcpPlatforms().then(platforms=>{
     if(document.getElementById('create-agent-modal').classList.contains('show')&&document.getElementById('create-agent-panel-acp').dataset.generation===platformGeneration)renderMobileCompanionOptions(platforms);
   });
   renderMobileGroupRoles();
   const capability=document.getElementById('mobile-agent-capability-presets');
-  capability.open=false;capability.classList.remove('is-general-create');
+  capability.classList.remove('is-general-create');
   document.getElementById('mobile-agent-capability-summary').textContent=_currentLang==='zh'?'能力模板':'Capability template';
   const presetHost=document.getElementById('mobile-agent-creation-presets');
   presetHost.removeEventListener('click',markMobileCreationPermissions,true);
@@ -8738,6 +8745,7 @@ async function submitCreateAgent() {
 }
 
 async function showCreateGroupModal() {
+  closeCreateAgentModal();
   hideCreateMenu();
   closeOasisSidebar();
   document.getElementById('create-custom-name').value = '';
@@ -8845,6 +8853,7 @@ function applyGroupDetail(detail) {
   networkStatus.textContent = detail.federated ? (detail.connection_error || (detail.external_access_enabled === false
     ? (_currentLang === 'zh' ? '外部联网已暂停 · 本机连接正常' : 'External access paused · Host connected')
     : (_currentLang === 'zh' ? '群连接正常' : 'Group connected'))) : '';
+  networkStatus.dataset.connected = String(!!detail.federated && !detail.connection_error && detail.external_access_enabled !== false);
   document.getElementById('action-group-sharing').style.display = detail.federated ? '' : 'none';
   document.getElementById('action-group-leave').style.display = detail.federated && String(detail.owner || '').startsWith('remote:') ? '' : 'none';
   document.getElementById('action-group-remove-local').style.display = detail.federated ? '' : 'none';
@@ -8864,6 +8873,7 @@ function applyGroupDetail(detail) {
   isMuted = !!detail.dnd;
   if (isMuted) mutedGroupIds.add(detail.group_id); else mutedGroupIds.delete(detail.group_id);
   renderMembers(detail.members || []);
+  window.GroupPresence?.detail(detail);
   MobileRooms.update(detail);
   GroupReceipts.update(detail);
 }
@@ -8913,7 +8923,7 @@ async function loadChatHistory(groupId, sequence, detailTask) {
       if (groupReplyMessages.has(id)) merged.set(id, groupReplyMessages.get(id));
     }
     renderedMsgIds.clear();
-    renderMessages([...merged.values()].sort((a, b) => a.id - b.id));
+    renderMessages([...merged.values()].sort((a, b) => a.id - b.id), history);
     chatHistoryReady = history.source !== 'cache';
   } catch (_) {
     if (isCurrentChat(groupId, sequence)) renderChatHistoryError();
@@ -9039,7 +9049,7 @@ function fillGroupGreeting() {
   input.dispatchEvent(new Event('input', {bubbles: true}));
   input.focus();
 }
-function renderMessages(msgs) {
+function renderMessages(msgs, history = {}) {
   groupReplyMessages.clear();
   const body = document.getElementById('chat-body');
   if (!msgs.length) {
@@ -9050,11 +9060,11 @@ function renderMessages(msgs) {
       <p data-i18n="${direct ? 'group_start_direct_desc' : 'group_start_desc'}">${esc(t(direct ? 'group_start_direct_desc' : 'group_start_desc'))}</p>
       <div class="group-start-actions"><button type="button" onclick="fillGroupGreeting()"><svg class="ui-icon"><use href="/static/icons.svg#pencil"/></svg><span data-i18n="group_start_write">${esc(t('group_start_write'))}</span></button><button type="button" onclick="toggleDrawer()"><svg class="ui-icon"><use href="/static/icons.svg#users"/></svg><span data-i18n="group_start_members">${esc(t('group_start_members'))}</span></button></div>
     </section>`;
-    GroupHistory.attach(currentGroupId, msgs);
+    GroupHistory.attach(currentGroupId, msgs, history);
     return;
   }
   body.innerHTML = msgs.map(m => renderOneMsgHTML(m)).join('');
-  GroupHistory.attach(currentGroupId, msgs);
+  GroupHistory.attach(currentGroupId, msgs, history);
   if (window.ClawcrossMarkdown) window.ClawcrossMarkdown.highlight(body);
   // 将初始加载的消息 ID 加入去重集合，防止后续 poll 重复渲染
   msgs.forEach(m => { if (m.id) renderedMsgIds.add(m.id); });
@@ -9178,9 +9188,11 @@ function renderOneMsgHTML(m) {
   const avatarAttrs = isAgent
     ? ` onclick="showAgentDetail('${sender.replace(/'/g, "\\'")}')" title="${t('tip_view_detail')}"`
     : '';
+  const avatarMember = currentMembers.find(member => member.principal === sender || member.agent_id === sender);
+  const avatarMarkup = avatarMember ? Avatars.markup(avatarMember.avatar,displayName,{principal:avatarMember.principal,groupId:currentGroupId}) : esc(initial);
   return `
     <div class="msg-row ${colorClass}">
-      <div class="msg-avatar ${isAgent ? 'clickable' : ''}" style="background:${stringToColor(sender)}"${avatarAttrs}>${esc(initial)}</div>
+      <div class="msg-avatar ${isAgent ? 'clickable' : ''}" data-avatar-sender="${esc(sender)}" style="background:${stringToColor(sender)}"${avatarAttrs}>${avatarMarkup}</div>
       <div class="msg-body">
         <div class="msg-sender">${esc(displayName)}</div>
         <div class="${bubbleClass}"${isSelf ? ' data-group-self="true"' : ''}${Number.isSafeInteger(Number(m.id)) ? ` data-group-message-id="${Number(m.id)}" tabindex="0"` : ''}>${quoteHTML}${contentHTML}${attachHTML}</div>
@@ -12034,13 +12046,17 @@ async function pollTypingStatus() {
   try {
     const data = await chatApi(`/proxy_groups/${encodeURIComponent(groupId)}/typing`);
     if (!isCurrentChat(groupId, sequence)) return;
-    updateTypingBar(data.typing || []);
+    updateTypingBar(data.names || data.typing || [], data.agents);
   } catch (_) {
     // silent - don't break polling on error
   }
 }
 
-function updateTypingBar(names) {
+function updateTypingBar(names, agents) {
+  if (window.GroupPresence) {
+    GroupPresence.update(agents || names.map(name => ({name, state:'running'})), currentGroupId);
+    return;
+  }
   const bar = document.getElementById('typing-bar');
   const text = document.getElementById('typing-text');
   if (!bar || !text) return;
@@ -12144,7 +12160,7 @@ function renderMembers(members) {
       return `
       <div class="member-item">
         <button type="button" class="human-member-entry" onclick="showHumanDetail('${jsPrincipal}')" aria-label="${esc(name)} · ${_currentLang === 'zh' ? '个人资料' : 'Personal profile'}">
-          <span class="member-avatar owner">${esc(initial)}</span>
+          <span class="member-avatar owner">${Avatars.markup(m.avatar,name,{principal,groupId:currentGroupId})}</span>
           <span class="member-info" style="flex:1;">
             <span class="member-name">${esc(name)}</span>
             <span class="member-tag">${m.is_owner ? t('owner') : (_currentLang === 'zh' ? '群成员' : 'Member')}${m.online === undefined ? '' : ' · ' + (m.online ? (_currentLang === 'zh' ? '在线' : 'Online') : (_currentLang === 'zh' ? '离线' : 'Offline'))}</span>
@@ -12166,8 +12182,8 @@ function renderMembers(members) {
           <button onclick="event.stopPropagation();showAgentStatus('${jsPrincipal}','${jsName}')" class="member-action-btn" title="${t('tip_agent_status')}">📊</button>
         </div>`;
     return `
-      <div class="member-item" ${m.remote?'':`data-agent-activity="${esc(agent.agent_id)}"`} onclick="insertMention('${jsPrincipal}', '${jsName}')">
-        <div class="member-avatar ${agentAvatarClass(agent.platform)} clickable" onclick="event.stopPropagation();showAgentDetail('${jsPrincipal}')" title="${t('tip_view_detail')}">${esc(initial)}<span class="agent-activity-dot" role="img" hidden></span></div>
+      <div class="member-item" data-group-principal="${esc(principal)}" ${m.remote?'':`data-agent-activity="${esc(agent.agent_id)}"`} onclick="insertMention('${jsPrincipal}', '${jsName}')">
+        <div class="member-avatar ${agentAvatarClass(agent.platform)} clickable" onclick="event.stopPropagation();showAgentDetail('${jsPrincipal}')" title="${t('tip_view_detail')}">${Avatars.markup(m.avatar,name,{principal,groupId:currentGroupId})}<span class="agent-activity-dot" role="img" hidden></span></div>
         <div class="member-info" style="flex:1;">
           <div class="member-name">${esc(name)}</div>
           <div class="member-tag">${esc(agentPlatformLabel(agent.platform))} · ${esc(agent.agent_id)}${m.muted ? ' · 已禁言' : ''}${isPrimary ? ' · ⭐ 主 agent' : ''}</div>
@@ -12188,7 +12204,9 @@ function showHumanDetail(principal) {
   HumanProfile.open({member, members:currentMembers, title:currentGroupName,
     canEdit:!!member.can_edit_profile,
     loadImage:image=>api('GET', `/proxy_groups/${encodeURIComponent(gid)}/members/${encodeURIComponent(member.principal)}/profile-images/${encodeURIComponent(image.id)}`),
+    loadAvatar:imageId=>api('GET', `/proxy_groups/${encodeURIComponent(gid)}/members/${encodeURIComponent(member.principal)}/avatar/${encodeURIComponent(imageId)}`),
     save:async fields => {
+      if ('avatar_image' in fields) await Avatars.request('/v1/agents/avatars/me','PUT',{avatar:fields.avatar_image});
       const group = await api('PATCH', `/proxy_groups/${encodeURIComponent(gid)}/profile`, fields);
       if (gid === currentGroupId) renderMembers(group.members || []);
       window.dispatchEvent(new CustomEvent('group-network-changed', {detail:group}));
@@ -12592,7 +12610,7 @@ async function loadAddAgentMembers() {
       html += renderAgentGroupsHtml(agents, 'addmbr-', (entry) => `
           <label class="contact-item" style="cursor:pointer;display:flex;align-items:center;">
             ${checkbox('agent:' + entry.agent.agent_id, { agent_id: entry.agent.agent_id })}
-            <div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(entry.name))}</div>
+            <div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${Avatars.markup(entry.agent.settings?.avatar,entry.name,{agentId:entry.agent.agent_id})}</div>
             <div class="contact-name">${esc(entry.name)}</div>
             ${entry.tag ? `<span class="contact-tag">${esc(entry.tag)}</span>` : ''}
           </label>`);
@@ -13900,7 +13918,7 @@ function renderAgentContactRow(entry) {
   const name = entry.name || entry.agent.name || entry.agent.agent_id;
   const metadata = [agentPlatformLabel(entry.agent.platform), entry.team, entry.tag,
     entry.agent.location?.kind === 'ssh' ? entry.agent.location.name + ' · SSH' : ''].filter(Boolean);
-  return `<div class="contact-item contact-agent" role="button" tabindex="0" data-agent-activity="${esc(entry.agent.agent_id)}" onclick="showAgentDetail('${entry.agent.agent_id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(name))}<span class="agent-activity-dot" role="img" hidden></span></div><div class="contact-main"><div class="contact-name" title="${esc(name)}">${esc(name)}${entry.is_lead ? ' <span class="contact-lead" title="Lead">★</span>' : ''}</div><div class="contact-meta-line">${metadata.map(text => `<span>${esc(text)}</span>`).join('')}</div></div><svg class="ui-icon contact-chevron"><use href="/static/icons.svg#chevron-right"/></svg></div>`;
+  return `<div class="contact-item contact-agent" role="button" tabindex="0" data-agent-activity="${esc(entry.agent.agent_id)}" onclick="showAgentDetail('${entry.agent.agent_id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${Avatars.markup(entry.agent.settings?.avatar,name,{agentId:entry.agent.agent_id})}<span class="agent-activity-dot" role="img" hidden></span></div><div class="contact-main"><div class="contact-name" title="${esc(name)}">${esc(name)}${entry.is_lead ? ' <span class="contact-lead" title="Lead">★</span>' : ''}</div><div class="contact-meta-line">${metadata.map(text => `<span>${esc(text)}</span>`).join('')}</div></div><svg class="ui-icon contact-chevron"><use href="/static/icons.svg#chevron-right"/></svg></div>`;
 }
 
 function renderPersonaContactRow(exp, avatarClass) {
@@ -14149,7 +14167,7 @@ async function loadProfile() {
 
   container.innerHTML = `
     <div class="profile-card">
-      <div class="profile-avatar-large">${esc(initial)}</div>
+      <button type="button" class="profile-avatar-large" data-avatar-edit aria-label="${_currentLang === 'zh' ? '修改我的头像' : 'Change my avatar'}">${esc(initial)}</button>
       <div class="profile-info">
         <div class="profile-name">${esc(userId)}</div>
         <div class="profile-id">${_currentLang === 'zh' ? 'ClawCross 账号：' : 'ClawCross ID: '}${esc(userId)}</div>
@@ -14168,10 +14186,7 @@ async function loadProfile() {
       <div class="profile-row profile-language-row">
         <span class="profile-row-icon profile-icon-blue">${icon('languages')}</span>
         <span class="profile-row-label">${t('language_label')}</span>
-        <div class="segmented" role="group" aria-label="${esc(t('language_label'))}">
-          <button type="button" onclick="setLang('zh')" aria-pressed="${_currentLang === 'zh'}" class="${_currentLang === 'zh' ? 'active' : ''}">中文</button>
-          <button type="button" onclick="setLang('en')" aria-pressed="${_currentLang === 'en'}" class="${_currentLang === 'en' ? 'active' : ''}">English</button>
-        </div>
+        ${ClawCrossLocale.picker()}
       </div>
     </div>
 
@@ -14184,6 +14199,9 @@ async function loadProfile() {
     <button type="button" class="profile-logout-btn" onclick="doLogout()">${t('logout')}</button>
   `;
   GroupHistory.refreshHostEntry();
+  const avatarButton = container.querySelector('[data-avatar-edit]');
+  avatarButton.onclick = () => Avatars.editUser(() => { void loadProfile(); });
+  void Avatars.request('/v1/agents/avatars/me').then(data => Avatars.fill(avatarButton,data.url,userId)).catch(()=>{});
 }
 
 // ── Profile Sub-page  ──
@@ -14277,7 +14295,7 @@ async function saveProfile() {
 // ══════════════════════════════════════════════════════════
 const SETTINGS_GROUPS_ORDERED = [
     { id: 'llm',      labelKey: 'sg_llm',      keys: ['LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL', 'LLM_PROVIDER', 'LLM_VISION_SUPPORT'] },
-    { id: 'tinyfish', labelKey: 'sg_tinyfish', keys: ['TINYFISH_API_KEY', 'TINYFISH_BASE_URL', 'TINYFISH_MONITOR_DB_PATH', 'TINYFISH_MONITOR_TARGETS_PATH', 'TINYFISH_MONITOR_ENABLED', 'TINYFISH_MONITOR_CRON'] },
+
     { id: 'tts',      labelKey: 'sg_tts',      keys: ['TTS_MODEL', 'TTS_VOICE', 'STT_MODEL'] },
     { id: 'oasis',    labelKey: 'sg_oasis',    keys: ['OASIS_BASE_URL'] },
     { id: 'ports',    labelKey: 'sg_ports',    keys: ['PORT_AGENT', 'PORT_SCHEDULER', 'PORT_OASIS', 'PORT_FRONTEND', 'PORT_BARK'] },
@@ -14452,7 +14470,7 @@ function renderSettings(settings) {
     html += ClawcrossSettings.publicAccessMarkup(_currentLang, componentControlMarkup('cloudflared'));
 
     // Collect all keys
-    const allKeys = Object.keys(settings);
+    const allKeys = Object.keys(settings).filter(key=>!key.startsWith('TINYFISH_'));
     const usedKeys = new Set();
 
     // Render predefined groups
@@ -15555,7 +15573,7 @@ if ('serviceWorker' in navigator) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  document.documentElement.lang = _currentLang === 'zh' ? 'zh-CN' : 'en';
+  document.documentElement.lang = _currentLang === 'zh' ? 'zh-CN' : _currentLang;
   document.title = t('page_title');
   applyLangToDOM();
   _resumePendingRestartNotice();
@@ -15720,5 +15738,8 @@ window.addEventListener('group-network-changed', async event => {
   else if (currentGroupId) { try { await reloadGroupDetail(); } catch (_) { goBack(); } }
 });
 </script>
+<link rel="stylesheet" href="/static/css/studio-refinements.css?v=20261107-iphone-viewport">
+<link rel="stylesheet" href="/static/css/message-center.css?v=20261107-single-avatar">
+<script src="/static/js/group-presence.js?v=20261107-avatars"></script>
 </body>
 </html>
