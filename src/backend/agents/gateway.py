@@ -84,6 +84,7 @@ class AgentGateway:
             LLM: LlmRuntime(),
             **(runtimes or {}),
         }
+        self.group_reply_handler = None
 
     def runtime(self, agent: Agent) -> Runtime:
         try:

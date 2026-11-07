@@ -20,6 +20,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `src/cli/` | interactive CLI and API command interface |
 | `src/cli/commands/` | CLI subcommands, profiles, pickers and API client |
 | `src/cli/commands/join.py` | invitation join with an existing Agent or exact native session; see `docs/agent-join.md` |
+| `src/cli/commands/webot_acp.py`, `local_runtime.py` | stdio ACP entrance to normal WeBot Agents and local account selection; see `docs/acp-server.md` |
 | `src/backend/ops/setup/` | runtime configuration, user setup and the read-only OpenClaw LLM import |
 | `tools/build/` | development and frontend/preset build tools |
 | `package.json` / `docs/npm-packaging.md` | npm runtime file list and direct source packaging; tarballs go to `dist/` |
@@ -244,6 +245,7 @@ For external AI agent communication via the Agent Client Protocol:
 |---|---|
 | `src/backend/external/acpx.py` | Singleton `AcpxAdapter` wrapping the `acpx` CLI; manages sessions and prompt execution |
 | `src/backend/external/acp_launcher.py`, `src/frontend/static/js/acp-launch-settings.js` | Per-Agent custom launch command or configured acpx alias; shared Studio/mobile form and CodeBuddy/ZCode presets |
+| `src/backend/external/native_tool_policy.py` | Native-tool off switch: block unsupported ACP execution instead of claiming advisory tool flags enforce isolation |
 | `src/backend/external/acp.py` | the only acpx consumer: the runtime of codex, claude-code, gemini … agents |
 | `src/backend/external/session.py`, `src/backend/external/history.py` | what the external runtimes share: the session named after the agent id, the identity prompt, the exchange log |
 | `src/backend/agents/platforms.py` | which platforms are ACP tools (the `acpx` agent list) |

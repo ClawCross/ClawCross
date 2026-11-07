@@ -23,6 +23,10 @@ from external.inbox import InboxRuntime
 def adapter(agent: Agent | None = None):
     from external.acpx import AcpxError, get_acpx_adapter
 
+    if agent:
+        from external.native_tool_policy import require_native_execution
+        require_native_execution(agent.config)
+
     if agent and agent.config.get('connection_id'):
         from connections.acpx import SSHAcpxAdapter
         try:return SSHAcpxAdapter(agent)
@@ -312,6 +316,9 @@ class AcpRuntime(InboxRuntime):
     async def status(self, agent: Agent) -> dict[str, Any]:
         # Availability and open transport sessions are separate from an active
         # turn. Polling status must not spawn npx/adapters or enumerate histories.
+        from external.native_tool_policy import native_tools_enabled
+        if not native_tools_enabled(agent.config) and not self.is_busy(agent):
+            return {'state':'paused','reason':'native_tools_disabled'}
         return {"state": "running" if self.is_busy(agent) else "idle"}
 
     def is_busy(self, agent: Agent) -> bool:

@@ -120,6 +120,8 @@ def bridge_router():
         if not turn and body.action != 'catalog':
             raise HTTPException(403, 'No active authorized Agent turn')
         current = get_store().require(*key)
+        if turn and turn['context'].get('group_auto_reply') and body.action == 'call' and body.name == 'send_to_group':
+            raise HTTPException(403, '本轮使用群聊自动回复通道，直接输出回复即可，无需重复发送。')
         if not ((current.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools', True):
             raise HTTPException(403, 'ClawCross connector disabled')
         if turn and turn['mode'] == 'chat' and body.action != 'catalog':

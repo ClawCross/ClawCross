@@ -32,6 +32,8 @@ class NativeSessionTests(unittest.IsolatedAsyncioTestCase):
         agent=native_sessions.register('alice',ticket,'My Codex',self.store)
         self.assertEqual(agent.runtime,{'native_resume_id':'native-one','acp_cwd':str(self.root)})
         self.assertEqual(agent.config['meta']['acp']['clawcross_tools'],True)
+        self.assertIs(agent.config['meta']['acp']['native_tools'], False)
+        self.assertFalse(agent.config['workspaces']['teams'])
         self.assertEqual(native_sessions.register('alice',ticket,'Again',self.store).agent_id,agent.agent_id)
         rows=await native_sessions.catalog('bob','codex', adapter=self.adapter)
         self.assertEqual(rows['sessions'],[])
@@ -109,6 +111,7 @@ class NativeSessionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_registered_runtime_uses_original_cwd_and_native_id_without_replaying_history(self):
         from agents.messages import AgentMessage
+        from agents.runtime import ControlError
         from external.acp import AcpRuntime
         from external.acpx import AcpxPromptTrace
         rows = await native_sessions.catalog('alice', 'codex', adapter=self.adapter)
@@ -120,6 +123,11 @@ class NativeSessionTests(unittest.IsolatedAsyncioTestCase):
         with patch('external.acpx.get_acpx_adapter', return_value=adapter) as factory, \
              patch.object(runtime, '_native_session', return_value=(None, None, {})), \
              patch('external.history.get_store', return_value=history):
+            with self.assertRaises(ControlError):
+                await runtime.test_connection(agent)
+            factory.assert_not_called()
+            config = {**agent.config, 'meta':{'acp':{**agent.config['meta']['acp'], 'native_tools':True}}}
+            agent = self.store.update(agent.owner, agent.agent_id, config=config)
             await runtime.test_connection(agent)
             factory.assert_called_with(cwd=str(self.root), agent_name='', agent_command='')
             self.assertEqual(adapter.ensure_session.call_args.kwargs['resume_session_id'], 'native-one')

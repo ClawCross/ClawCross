@@ -2869,8 +2869,12 @@ def main(argv: list[str] | None = None) -> int:
         return autostart_main(raw[command_index+1:])
     if command == 'join':
         from src.cli.commands.join import main as join_main
-        user = raw[1] if command_index == 2 else raw[0].split('=', 1)[1] if command_index == 1 else DEFAULT_USER
+        user = raw[1] if command_index == 2 else raw[0].split('=', 1)[1] if command_index == 1 else None
         return join_main(raw[command_index+1:], default_user=user)
+    if command in {'accounts', 'acp'}:
+        from src.cli.commands.local_runtime import main as runtime_main
+        user = raw[1] if command_index == 2 else raw[0].split('=', 1)[1] if command_index == 1 else None
+        return runtime_main(command, raw[command_index+1:], user=user)
     if command == "tunnel":
         return _cmd_tunnel(raw[command_index + 1] if len(raw) > command_index + 1 else "status")
     if command in api_commands:

@@ -50,8 +50,8 @@
 <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
 <script src="/static/js/connections.js?v=20261011"></script>
 <script src="/static/js/mobile-rooms.js?v=20261017-preserve-focus"></script>
-<script src="/static/js/acp-launch-settings.js?v=20261017-custom-acp"></script>
-<script src="/static/js/external-agent-settings.js?v=20261104-hierarchy"></script>
+<script src="/static/js/local-accounts.js?v=20261108"></script><script src="/static/js/acp-launch-settings.js?v=20261108"></script>
+<script src="/static/js/external-agent-settings.js?v=20261108"></script>
 <link rel="stylesheet" href="/static/css/agent-settings.css?v=20261104-hierarchy">
 <script src="/static/js/agent-settings.js?v=20261107-avatars"></script>
 <script src="/static/js/model-profiles.js?v=20261104-hierarchy"></script>
@@ -12473,7 +12473,7 @@ function onAddAgentTeamChanged() {
 
 
 const MOBILE_ACP_PLATFORM_FALLBACK = [
-  'codebuddy', 'zcode', 'acp',
+  'codebuddy', 'zcode', 'deepseek-harness', 'acp',
   'openclaw', 'codex', 'claude', 'claude-code', 'gemini', 'gemini-cli', 'aider', 'cursor', 'copilot', 'droid',
   'iflow', 'kilocode', 'kimi', 'kiro', 'opencode', 'pi', 'qoder', 'qwen', 'trae',
 ];
@@ -12848,6 +12848,7 @@ function getPlatformBadgeInfo(raw) {
     codex: { short: 'CX', label: 'Codex' },
     codebuddy: { short: 'CB', label: 'CodeBuddy' },
     zcode: { short: 'ZC', label: 'ZCode' },
+    'deepseek-harness': { short: 'DS', label: 'DeepSeek Harness' },
     claudecode: { short: 'CC', label: 'Claude Code' },
     claude: { short: 'CL', label: 'Claude' },
     gemini: { short: 'GM', label: 'Gemini' },
@@ -14182,6 +14183,7 @@ async function loadProfile() {
 
     <div class="profile-section">
       ${row(t('system_settings'), 'settings', 'showSettingsInfo()', 'gray')}
+      ${row(_currentLang === 'zh' ? '选择账号' : 'Choose account', 'user', 'ClawCrossAccounts.open()', 'blue')}
       <a id="profile-group-host" href="/group-host" class="profile-row" hidden style="text-decoration:none;color:inherit"><span class="profile-row-icon profile-icon-blue">${icon('globe')}</span><span class="profile-row-label">${_currentLang === 'zh' ? '群聊服务器与联网' : 'Group server and networking'}</span><span class="profile-row-arrow">${icon('chevron-right')}</span></a>
       <div class="profile-row profile-language-row">
         <span class="profile-row-icon profile-icon-blue">${icon('languages')}</span>
@@ -15660,6 +15662,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await _consumeHubReturnParams();
       await refreshGroups();
+      const requestedGroup = new URLSearchParams(location.search).get('group');
+      const requestedCard = requestedGroup && groups.find(group => group.group_id === requestedGroup);
+      if (requestedCard) await openChat(requestedCard.group_id, requestedCard.title || requestedCard.name);
       startGroupsPolling();
       await prefetchContactsBootstrap();
     } catch (e) {

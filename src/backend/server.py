@@ -150,6 +150,7 @@ gateway = AgentGateway(store=agent_store, runtimes={WEBOT: webot})
 set_gateway(gateway)
 team_store = get_team_store(agent_store)
 group_client = GroupClient(ClientStore(DATA_DIR / 'group-client.db'), agent_store, gateway)
+gateway.group_reply_handler = group_client.reply_to_inbox
 group_service = GroupFacade(group_client, names=team_store.address)
 set_group_membership_provider(group_service.memberships)
 

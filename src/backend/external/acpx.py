@@ -153,6 +153,8 @@ def _apply_permission_flags(
         cmd.extend(["--non-interactive-permissions", nip])
     if allowed_tools is not None:
         cmd.extend(["--allowed-tools", allowed_tools])
+        if allowed_tools == '':
+            cmd.extend(['--no-fs', '--no-terminal'])
 
 
 def normalize_acpx_run_options(
@@ -178,7 +180,7 @@ def normalize_acpx_run_options(
     ttl_raw = options.get("ttl_sec")
     approve_all = _coerce_bool(options.get("approve_all"))
     if approve_all is None:
-        approve_all = _env_bool("ACPX_APPROVE_ALL", True)
+        approve_all = _env_bool("ACPX_APPROVE_ALL", False)
     permission_policy = _coerce_permission_policy(options.get("permission_policy"))
     nip = str(
         options.get(
@@ -517,7 +519,7 @@ await fn(process.argv[2]);'''
         """Ops-only: ``--format quiet`` (control output is not JSON-RPC)."""
         assert self._acpx_bin is not None
         if approve_all is None and not permission_policy:
-            approve_all = _env_bool("ACPX_APPROVE_ALL", True)
+            approve_all = _env_bool("ACPX_APPROVE_ALL", False)
         nip = (non_interactive_permissions or os.getenv("ACPX_NON_INTERACTIVE_PERMISSIONS", "") or "").strip()
         cmd: list[str] = [
             self._acpx_bin,
@@ -1049,7 +1051,7 @@ await fn(process.argv[2]);'''
             f.write(json_content)
         
         if approve_all is None and not permission_policy:
-            approve_all = _env_bool("ACPX_APPROVE_ALL", True)
+            approve_all = _env_bool("ACPX_APPROVE_ALL", False)
         nip = (non_interactive_permissions or os.getenv("ACPX_NON_INTERACTIVE_PERMISSIONS", "") or "").strip()
         cmd: list[str] = [
             self._acpx_bin,
@@ -1110,7 +1112,7 @@ await fn(process.argv[2]);'''
         # Opt out: ACPX_APPROVE_ALL=0|false|no|off. Optional: ACPX_NON_INTERACTIVE_PERMISSIONS=<policy>.
         # An explicit permission_policy (approve-reads / deny-all) suppresses the default approve-all fallback.
         if approve_all is None and not permission_policy:
-            approve_all = _env_bool("ACPX_APPROVE_ALL", True)
+            approve_all = _env_bool("ACPX_APPROVE_ALL", False)
         nip = (non_interactive_permissions or os.getenv("ACPX_NON_INTERACTIVE_PERMISSIONS", "") or "").strip()
         cmd: list[str] = [
             self._acpx_bin,

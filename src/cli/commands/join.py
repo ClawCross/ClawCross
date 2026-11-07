@@ -71,12 +71,19 @@ def _bridge(platform, prepare):
         current = (0, 0)
     if version.returncode or current < (22, 13):
         raise JoinError('ACP 转接需要 Node.js 22.13 或更新版本；本次没有安装不兼容的 acpx。')
+    if platform == 'deepseek-harness' and current < (24, 9):
+        raise JoinError('DeepSeek Harness 需要 Node.js 24.9+；本次没有安装不兼容的 DSH。')
     binary = BIN_DIR/'node/node_modules/.bin'/('acpx.cmd' if os.name == 'nt' else 'acpx')
-    if shutil.which('acpx') or binary.is_file():
-        return
-    if not prepare:
-        raise JoinError('缺少 acpx。请加 --prepare，或先执行 clawcross install-component acpx。')
-    _lifecycle('install-component', 'acpx')
+    if not (shutil.which('acpx') or binary.is_file()):
+        if not prepare:
+            raise JoinError('缺少 acpx。请加 --prepare，或先执行 clawcross install-component acpx。')
+        _lifecycle('install-component', 'acpx')
+    if platform == 'deepseek-harness':
+        dsh = BIN_DIR/'node/node_modules/.bin'/('dsh.cmd' if os.name == 'nt' else 'dsh')
+        if not (shutil.which('dsh') or dsh.is_file()):
+            if not prepare:
+                raise JoinError('缺少 DeepSeek Harness。请加 --prepare 或执行 clawcross install-component deepseek-harness。')
+            _lifecycle('install-component', 'deepseek-harness')
 
 
 def _launcher_running():
@@ -120,7 +127,9 @@ def connect(args, default_user):
             raise JoinError('本机 ClawCross 启动后仍未就绪。')
     if not token:
         raise JoinError('找不到本机认证配置；请先执行 clawcross start。')
-    owner = args.user or default_user
+    from src.backend.common.local_accounts import default_account, select_account
+    selected_user = args.user or default_user
+    owner = select_account(selected_user, create=True) if selected_user else default_account(create=True)
     headers = {'Authorization':f'Bearer {token}:{owner}'}
 
     def request(method, path, body=None, *, host_prepare=False):
@@ -168,13 +177,24 @@ def connect(args, default_user):
         aid = 'ag_join_'+hashlib.sha256(identity.encode()).hexdigest()[:24]
         code, agent = api._req('GET', base+'/v1/agents/'+aid, headers=headers)
         if code == 404:
+            # A new public-group companion never inherits this install's source
+            # tree, personal files, teams, or unrestricted tool catalogue.
+            native = args.platform not in {'webot', 'internal', 'http', 'llm'}
             agent = request('POST', '/v1/agents', {'agent_id':aid, 'platform':args.platform,
-                'name':args.name or '我的伙伴', 'cli_workspace':str(Path.cwd().resolve())})
+                'name':args.name or '我的伙伴',
+                'creation_template':'personal' if native else 'group',
+                'tools':['get_current_time'],
+                'workspaces':{'companion':True,'user_shared':False,'cli':False,'teams':False,'paths':[]},
+                'meta':{'forwarding':{'reply':'automatic'}, 'acp':{
+                    'native_tools':getattr(args, 'allow_native_tools', False),
+                    'permission_policy':'approve-reads', 'non_interactive_permissions':'deny'}}})
             source = 'created'
         elif code != 200:
             raise JoinError(f'[{code}] 无法确认 Agent 是否存在，没有重复创建。')
     aid = agent['agent_id']
-    if args.prepare and agent['platform'] not in {'webot', 'internal', 'http', 'llm'}:
+    acp_settings = (agent.get('settings', {}).get('meta') or agent.get('meta') or {}).get('acp') or {}
+    native_blocked = agent['platform'] not in {'webot', 'internal', 'http', 'llm'} and acp_settings.get('native_tools') is False
+    if args.prepare and not native_blocked and agent['platform'] not in {'webot', 'internal', 'http', 'llm'}:
         _bridge(agent['platform'], True)
         # Initialization/login checks use ACP session/new or session/load, never
         # session/prompt. Only incoming group work should spend model tokens.
@@ -193,14 +213,17 @@ def connect(args, default_user):
         startup = enable()
     # Output only the identity/result, never credentials, group history or member profiles.
     return {'ok':connection.get('state') == 'connected', 'joined':True,
-            'agent_id':aid, 'platform':agent['platform'], 'source':source,
+            'owner':owner, 'agent_id':aid, 'platform':agent['platform'], 'source':source,
+            'agent_ready':not native_blocked,
+            'message_center':f'http://127.0.0.1:{os.environ.get("PORT_FRONTEND", "51209")}/mobile/group_chat?group='+quote(group['group_id'],safe=''),
+            **({'warning':'已入群并保留可见成员；原生工具关闭，此适配器暂停运行，不消耗额度。请在所属账号的 Agent 设置中明确选择权限。'} if native_blocked else {}),
             'group_id':group['group_id'], 'title':group.get('title', ''),
             'native_history':(agent.get('native_history') or {}).get('status', ''),
             'handover_required':source == 'native', 'connection':connection,
             **({'autostart':startup} if startup else {})}
 
 
-def main(argv=None, *, default_user='admin'):
+def main(argv=None, *, default_user=None):
     parser = argparse.ArgumentParser(prog='clawcross join', description='使用同一个 Agent 加入官网或其他部署的群聊')
     parser.add_argument('invite', help='完整邀请链接（请用引号包住）')
     identity = parser.add_mutually_exclusive_group(required=True)
@@ -214,6 +237,7 @@ def main(argv=None, *, default_user='admin'):
     parser.add_argument('-u', '--user', help='本机用户身份')
     parser.add_argument('--prepare', action='store_true', help='准备转接模式、acpx 和所选适配器；不需要前端或主模型 Key')
     parser.add_argument('--autostart', action='store_true', help='入群后启用当前用户的系统自启动')
+    parser.add_argument('--allow-native-tools', action='store_true', help='仅用于新建 Agent：明确允许外部 CLI 原生工具（不受 ClawCross 沙盒控制）')
     parser.add_argument('--wait-seconds', type=int, default=15, choices=range(1, 61), metavar='1-60', help='等待后台接收连接就绪，默认 15 秒')
     parser.add_argument('--json', action='store_true', help='只输出可供其他 Agent 使用的 JSON 结果')
     args = parser.parse_args(argv)
@@ -228,6 +252,9 @@ def main(argv=None, *, default_user='admin'):
         print(json.dumps(result, ensure_ascii=False))
     else:
         print(f'已加入「{result["title"]}」 · Agent {result["agent_id"]} · 群 {result["group_id"]}')
+        print(f'所属账号：{result["owner"]} · 群聊入口：{result["message_center"]}')
+        if result.get('warning'):
+            print(result['warning'])
         print('转接模式：后台接收群消息，不需要打开前端。' if result['ok'] else '已入群，但后台接收尚未就绪；请检查 clawcross status。')
         if result.get('autostart'):
             print('自启动已启用：'+('开机后运行' if result['autostart']['trigger'] == 'boot' else '登录系统后运行'))

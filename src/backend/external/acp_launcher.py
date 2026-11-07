@@ -5,6 +5,7 @@ import shutil
 LAUNCH_PRESETS = {
     'codebuddy': {'label': 'CodeBuddy', 'agent_command': 'codebuddy --acp'},
     'zcode': {'label': 'ZCode', 'agent_command': 'zcode-acp-server'},
+    'deepseek-harness': {'label': 'DeepSeek Harness', 'agent_command': 'dsh --profile acp'},
     'acp': {'label': '自定义 ACP', 'agent_command': ''},
 }
 

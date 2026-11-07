@@ -63,12 +63,15 @@ def capability_card(agent):
     options = [{**item, 'reasoning_level_map':level_map([choice.get('value') for choice in item.get('options', [])])}
                if item.get('id') in {'reasoning_effort', 'effort'} else item for item in options]
     from external.acp_launcher import launch_settings
+    from external.native_tool_policy import policy_card, native_tools_enabled
     return {'platform': agent.platform, 'transport': 'acpx', 'streaming_tools': True,
             'launcher': launch_settings(agent.config),
             'connection_id':agent.config.get('connection_id',''),'remote_cwd':agent.config.get('remote_cwd',''),
             'mode': effective_session_mode(agent.owner, agent.agent_id),
             'native_workspace': {'cwd': native_workspace_cwd(agent), 'pinned': native_workspace_pinned(agent)},
             'clawcross_tools': bool(acp.get('clawcross_tools', True)),
+            'native_tools': native_tools_enabled(agent.config),
+            'native_tool_policy': policy_card(agent.config),
             'config_options': options, 'settings': {'clawcross_tools': True, **acp},
             'modes': ['chat', 'readonly', 'manual', 'auto', 'bypass'],
             'supports': {'native_config': True, 'tool_bridge': True,
@@ -78,7 +81,7 @@ def capability_card(agent):
 def validate_settings(agent, value):
     if not isinstance(value, dict):
         raise ValueError('ACP settings must be an object')
-    allowed = {'clawcross_tools', 'config_options', 'timeout_sec', 'ttl_sec', 'tools', 'reasoning_level', 'agent_name', 'agent_command'}
+    allowed = {'clawcross_tools', 'native_tools', 'config_options', 'timeout_sec', 'ttl_sec', 'tools', 'reasoning_level', 'agent_name', 'agent_command'}
     if set(value) - allowed:
         raise ValueError('Unknown ACP setting')
     from external.acp_launcher import validate_launch_settings, launch_settings
@@ -96,6 +99,8 @@ def validate_settings(agent, value):
         raise ValueError('请填写自定义 ACP Agent 名称或启动命令')
     if 'clawcross_tools' in value and not isinstance(value['clawcross_tools'], bool):
         raise ValueError('clawcross_tools must be a boolean')
+    if 'native_tools' in value and not isinstance(value['native_tools'], bool):
+        raise ValueError('native_tools must be a boolean')
     if 'reasoning_level' in value:
         if type(value['reasoning_level']) is not int or not 0 <= value['reasoning_level'] <= 7:
             raise ValueError('reasoning_level must be an integer between 0 and 7')

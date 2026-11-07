@@ -595,6 +595,13 @@ def create_agents_router(
         meta['acp'] = {**(meta.get('acp') or {}), **settings}
         model = (settings.get('config_options') or {}).get('model', agent.config.get('model', ''))
         updated = store.update(agent.owner, agent.agent_id, config={**agent.config, 'meta': meta, 'model': model})
+        if settings.get('native_tools') is False and gateway.is_busy(agent):
+            # The saved off switch first fences new turns. Cancel with the old
+            # permitted config so it can stop the already running native server.
+            try:
+                await gateway.control(agent, 'cancel')
+            except ControlError as exc:
+                raise HTTPException(409, '原生工具已关闭，但当前任务停止未完成：'+str(exc)) from exc
         return capability_card(updated)
 
     @router.get('/v1/agents/{ref}/events')

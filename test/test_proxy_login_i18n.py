@@ -17,14 +17,28 @@ class ProxyLoginI18nTests(unittest.TestCase):
     def setUp(self):
         self.client = front.app.test_client()
 
-    def test_space_app_tunnel_needs_no_login(self):
-        # Members' sandboxed app pages and the owner's app server carry their own credentials, not a login.
+    def test_account_picker_is_local_only_and_does_not_leak_remote_accounts(self):
+        with mock.patch('common.local_accounts.default_account',return_value='alice'), \
+             mock.patch('common.local_accounts.accounts',return_value=['alice','bob']):
+            local=self.client.get('/proxy_local_accounts',environ_overrides={'REMOTE_ADDR':'127.0.0.1'})
+            self.assertEqual(local.status_code,200)
+            self.assertEqual(local.get_json()['default'],'alice')
+            remote=self.client.get('/proxy_local_accounts',base_url='https://clawcross.example',environ_overrides={'REMOTE_ADDR':'203.0.113.10'})
+            self.assertIn(remote.status_code,(401,403))
+            self.assertNotIn('bob',remote.get_data(as_text=True))
+            proxied=self.client.get('/proxy_local_accounts',base_url='https://clawcross.example',headers={'X-Forwarded-For':'203.0.113.10'},
+                environ_overrides={'REMOTE_ADDR':'127.0.0.1'})
+            self.assertIn(proxied.status_code,(401,403))
+
+    def test_space_app_pages_are_public_but_host_sdk_control_is_not(self):
+        # Public members may open signed pages. The app SDK poll/control endpoint
+        # is host-only, even if an arbitrary public request claims a bearer key.
         reply = mock.Mock(status_code=200, content=b'{}', headers={'Content-Type': 'application/json'})
         with mock.patch('frontend.proxies.group_guests.requests.Session.request', return_value=reply) as forward:
             response = self.client.get('/relay/app/site/abc.def/state?after=0')
             poll = self.client.post('/relay/app/poll', json={}, headers={'Authorization': 'Bearer app_key'})
-        self.assertEqual((response.status_code, poll.status_code), (200, 200))
-        self.assertEqual(forward.call_count, 2)
+        self.assertEqual((response.status_code, poll.status_code), (200, 403))
+        self.assertEqual(forward.call_count, 1)
 
     def test_local_login_without_username_returns_bilingual_error(self):
         response = self.client.post(

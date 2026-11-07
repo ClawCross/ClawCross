@@ -91,6 +91,19 @@ class ExternalInboxTests(unittest.IsolatedAsyncioTestCase):
             mode="chat", on_complete=None)
         self.assertEqual(len(self.calls), 1)
 
+    async def test_restart_restores_group_reply_without_in_memory_callback(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        groups = [{'group_id':'rg_group', 'automatic_reply_id':f'chat-reply:7:{self.agent.agent_id}'}]
+        runtime_store.create_inbox_message(self.agent.owner, target_session=self.agent.agent_id,
+            target_agent_id=self.agent.agent_id, source_session='u:friend', content='reply after restart',
+            metadata={'context':{'groups':groups},'wait_reply':True})
+        handler = AsyncMock()
+        with patch('agents.gateway.get_gateway',return_value=SimpleNamespace(group_reply_handler=handler)):
+            self.runtime.resume_inbox(self.agent)
+            await self.drain()
+        handler.assert_awaited_once_with(self.agent, groups, 'done')
+
     async def test_reader_cannot_read_another_user_or_agent(self):
         other = runtime_store.create_inbox_message("other-user", target_session=self.agent.agent_id, content="PRIVATE")
         result = await read_session_inbox(self.agent.owner, [other.message_id], source_session=self.agent.agent_id)

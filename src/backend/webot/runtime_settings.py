@@ -49,10 +49,8 @@ class SandboxGrant(BaseModel):
 
 
 def default_command_sandbox() -> str:
-    """Use an installed isolation backend by default, without downloading one."""
-    from webot.command_sandbox import landlock_available
-    from ops.components import binary_path
-    return 'auto' if landlock_available() or binary_path('srt') else 'off'
+    """Require isolation by default; a missing backend must never mean host execution."""
+    return 'auto'
 
 
 class ApprovalSettings(BaseModel):

@@ -102,8 +102,8 @@ def register(owner: str, ticket: str, name: str, store):
         if not Path(row['cwd']).is_dir():
             raise ValueError('The original session workspace no longer exists')
         agent = store.create(owner, driver=ACPX, name=name.strip()[:160] or row['title'] or row['platform'],
-                             config={'platform':row['platform'], 'meta':{'acp':{'clawcross_tools':True}},
-                                     'workspaces':{'companion':True,'user_shared':False,'cli':True,'teams':True,'paths':[]}})
+                             config={'platform':row['platform'], 'meta':{'acp':{'clawcross_tools':True,'native_tools':False}},
+                                     'workspaces':{'companion':True,'user_shared':False,'cli':False,'teams':False,'paths':[row['cwd']]}})
         try:
             from webot.workspace import set_cli_workspace
             set_cli_workspace(owner, agent.agent_id, row['cwd'])
@@ -125,6 +125,9 @@ def release_agent(owner: str, agent_id: str) -> None:
 async def import_history(agent, store, *, adapter=None, history_store=None) -> dict:
     """Load a native snapshot once. Later managed turns are appended to the same DB."""
     from external import history, session
+    from external.native_tool_policy import native_tools_enabled
+    if adapter is None and not native_tools_enabled(agent.config):
+        return {'status':'paused', 'detail':'原生工具已关闭；开启后可加载原生历史，不会自动发送模型请求。'}
     native_id = agent.runtime.get('native_resume_id')
     if not native_id:
         raise ValueError('This Agent is not registered to an existing native session')

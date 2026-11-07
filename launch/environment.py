@@ -226,6 +226,18 @@ def install_component(name: str, adapters: list[str]) -> None:
         _run([npm, "install", "--ignore-scripts", "--save-exact", "--prefix", str(target), "acpx@latest"])
         print(f"acpx installed under {target}")
         return
+    if name == 'deepseek-harness':
+        npm = shutil.which('npm.cmd' if os.name == 'nt' else 'npm')
+        if not npm:
+            raise RuntimeError('npm and Node.js are required to install DeepSeek Harness')
+        node = shutil.which('node')
+        version = subprocess.run([node, '-p', 'process.versions.node'], capture_output=True, text=True, timeout=5) if node else None
+        if not version or version.returncode or tuple(map(int, version.stdout.strip().split('.')[:2])) < (24, 9):
+            raise RuntimeError('DeepSeek Harness requires Node.js 24.9+; no incompatible package was installed')
+        target = _node_component_target()
+        _run([npm, 'install', '--ignore-scripts', '--save-exact', '--prefix', str(target), '@deepseek-ai/dsh@0.2.2-rc.1'])
+        print(f'DeepSeek Harness installed under {target}; ACP uses dsh --profile acp')
+        return
     if name == "srt":
         npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
         if not npm:
@@ -271,7 +283,7 @@ def main() -> int:
     sub.add_parser("ensure-core", help="Install core Python dependencies if needed")
     sub.add_parser("components", help="Report optional component availability")
     install = sub.add_parser("install", help="Explicitly install an optional component")
-    install.add_argument("component", choices=("acpx", "nonebot", "channels", "weclaw", "cloudflared", "srt"))
+    install.add_argument("component", choices=("acpx", "deepseek-harness", "nonebot", "channels", "weclaw", "cloudflared", "srt"))
     install.add_argument("--adapter", action="append", default=[], help="NoneBot adapter name")
     args = parser.parse_args()
     try:

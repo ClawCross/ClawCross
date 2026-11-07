@@ -22,7 +22,10 @@ def arguments(**values):
 
 
 @pytest.fixture
-def backend(monkeypatch):
+def backend(monkeypatch, tmp_path):
+    from src.backend.common import local_accounts
+    monkeypatch.setattr(local_accounts, 'USER_FILES_DIR', tmp_path/'users')
+    monkeypatch.setattr(local_accounts, 'USERS_FILE', tmp_path/'users.json')
     calls=[];agents={'owned':{'agent_id':'owned','platform':'codex','settings':{'persona':'original'}}}
     native=[{'session_id':'original-thread','ticket':'selection-ticket','cwd':'/project','registered_agent_id':''}]
     def request(method,url,headers=None,data=None,timeout=30,**_):
@@ -92,13 +95,16 @@ def test_current_session_never_falls_back_to_an_unrelated_or_new_agent(backend,m
     assert not any(method=='POST' for method,_,_,_ in calls)
 
 
-def test_explicit_new_mode_is_idempotent_and_preserves_workspace(backend,tmp_path,monkeypatch):
+def test_explicit_new_mode_is_idempotent_and_does_not_inherit_project_access(backend,tmp_path,monkeypatch):
     calls,_,_=backend;args=arguments();args.agent=None;args.new=True
     monkeypatch.chdir(tmp_path)
     first=join.connect(args,'alice');second=join.connect(args,'alice')
     assert first['agent_id']==second['agent_id']
     created=[body for _,path,body,_ in calls if path=='/v1/agents']
-    assert len(created)==1 and created[0]['cli_workspace']==str(tmp_path)
+    assert len(created)==1 and not created[0].get('cli_workspace')
+    assert created[0]['workspaces']=={'companion':True,'user_shared':False,'cli':False,'teams':False,'paths':[]}
+    assert created[0]['meta']['acp']['native_tools'] is False
+    assert first['owner']=='alice' and first['agent_ready'] is False
 
 
 @pytest.mark.parametrize('link',['https://chat.example/map','http://remote.example/group-guest#t',

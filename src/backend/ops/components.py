@@ -9,12 +9,14 @@ from importlib.metadata import PackageNotFoundError, distribution
 import threading
 from common.runtime_paths import BIN_DIR, PROJECT_ROOT
 
-COMPONENTS = {"srt": "Anthropic Sandbox Runtime", "acpx": "ACP agent bridge", "srt-system": "Sandbox system dependencies", "weclaw": "WeClaw", "cloudflared": "Cloudflare Tunnel", "nonebot": "NoneBot", "channels": "QQ and Telegram connectors"}
+COMPONENTS = {"deepseek-harness": "DeepSeek Harness", "srt": "Anthropic Sandbox Runtime", "acpx": "ACP agent bridge", "srt-system": "Sandbox system dependencies", "weclaw": "WeClaw", "cloudflared": "Cloudflare Tunnel", "nonebot": "NoneBot", "channels": "QQ and Telegram connectors"}
 _lock = threading.Lock()
 _jobs = {}
 
 
 def binary_path(name):
+    if name == 'deepseek-harness':
+        name = 'dsh'
     if name in {"weclaw", "cloudflared"}:
         local = BIN_DIR / (name + (".exe" if os.name == "nt" else ""))
         return shutil.which(name) or (str(local) if local.is_file() else None)

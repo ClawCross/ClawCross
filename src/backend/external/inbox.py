@@ -79,7 +79,7 @@ class InboxRuntime(Runtime):
             self._background.add(task)
             task.add_done_callback(self._background.discard)
 
-    async def _settle(self, message_id, reply):
+    async def _settle(self, message_id, reply, *, agent=None, groups=()):
         callback = self._inbox_callbacks.pop(message_id, None)
         if callback:
             try:
@@ -88,6 +88,11 @@ class InboxRuntime(Runtime):
                     await result
             except Exception:
                 logger.exception("External inbox completion callback failed")
+        elif agent and reply.ok and reply.content and any(g.get('automatic_reply_id') for g in groups):
+            from agents.gateway import get_gateway
+            handler = getattr(get_gateway(), 'group_reply_handler', None)
+            if handler:
+                await handler(agent, groups, reply.content)
 
     async def _drain_inbox(self, agent):
         key = (agent.owner, agent.agent_id)
@@ -121,7 +126,7 @@ class InboxRuntime(Runtime):
                         mark_inbox_handled(*key, item.message_id)
                     else:
                         mark_inbox_delivered(agent.owner, [item.message_id])
-                    await self._settle(item.message_id, reply)
+                    await self._settle(item.message_id, reply, agent=current, groups=context.get('groups') or [])
         except asyncio.CancelledError:
             for item in list_inbox_messages(*key, status="queued", limit=None):
                 await self._settle(item.message_id, AgentReply(ok=False, error="Agent turn cancelled"))

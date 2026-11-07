@@ -2064,6 +2064,18 @@ def proxy_check_session():
     return jsonify({"valid": False})
 
 
+@app.route('/proxy_local_accounts')
+def proxy_local_accounts():
+    # Public/tunnel sessions cannot enumerate accounts or select another one.
+    # localhost uses the same passwordless trust boundary as /proxy_login.
+    if not _is_direct_local_request():
+        return jsonify({'error':'Localhost only'}), 403
+    from common.local_accounts import accounts, default_account
+    selected = default_account(create=True)
+    return jsonify({'accounts':accounts(), 'default':selected,
+                    'current':session.get('user_id', '')})
+
+
 @app.route("/proxy_login", methods=["POST"])
 def proxy_login():
     """代理登录请求到后端 Agent

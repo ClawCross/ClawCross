@@ -1,5 +1,20 @@
 const { test, expect } = require('@playwright/test');
 
+test('account picker shows the default and logs in through the existing endpoint',async({page})=>{
+  const calls={};await stubStudioNetwork(page,calls,{agents:[],approvals:[]});
+  await page.route('**/proxy_local_accounts',route=>route.fulfill({json:{accounts:['alice','bob'],default:'alice',current:'alice'}}));
+  const logins=[];
+  await page.route('**/proxy_login',route=>{logins.push(route.request().postDataJSON());return route.fulfill({json:{ok:true,user_id:'bob'}});});
+  await page.setViewportSize({width:1280,height:800});await page.goto('/studio');
+  await page.locator('.studio-activity-footer button[title="选择账号"],.studio-activity-footer button[title="Choose account"]').click();
+  const dialog=page.locator('#local-account-dialog');await expect(dialog).toBeVisible();
+  await expect(dialog.locator('select')).toHaveValue('alice');
+  await expect(dialog.locator('option[value="alice"]')).toContainText(/默认|Default/);
+  await dialog.locator('select').selectOption('bob');await dialog.locator('[type=submit]').click();
+  await expect.poll(()=>logins.length).toBe(1);
+  expect(logins[0]).toEqual({user_id:'bob',password:''});
+});
+
 test('Studio uses a mobile menu and a persistent desktop activity rail',async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await stubStudioNetwork(page,{}, {agents:[],approvals:[]});

@@ -12964,7 +12964,7 @@ function addExtOnPlatformChange() {
 }
 
 const ADD_EXT_PLATFORM_FALLBACK = [
-    'codebuddy', 'zcode', 'acp',
+    'codebuddy', 'zcode', 'deepseek-harness', 'acp',
     'openclaw',
     'codex',
     'claude',
@@ -12991,7 +12991,7 @@ function addExtPlatformLabel(value) {
     const v = String(value || '').trim().toLowerCase();
     if (!v) return '';
     const map = {
-        codebuddy: 'CodeBuddy', zcode: 'ZCode', acp: '自定义 ACP / Custom ACP',
+        codebuddy: 'CodeBuddy', zcode: 'ZCode', 'deepseek-harness': 'DeepSeek Harness', acp: '自定义 ACP / Custom ACP',
         openclaw: 'OpenClaw',
         codex: 'Codex',
         claude: 'Claude',

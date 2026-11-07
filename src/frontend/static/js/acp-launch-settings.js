@@ -3,7 +3,7 @@
   const esc = value => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const en = () => document.documentElement.lang.startsWith('en');
   const text = (zh, english) => en() ? english : zh;
-  const presets = {codebuddy:'codebuddy --acp', zcode:'zcode-acp-server', acp:''};
+  const presets = {codebuddy:'codebuddy --acp', zcode:'zcode-acp-server', 'deepseek-harness':'dsh --profile acp', acp:''};
   function mount(id, platform, saved = {}, locked = false) {
     const host = document.getElementById(id); if (!host) return;
     const name = saved.agent_name || '', command = saved.agent_command || presets[platform] || '';

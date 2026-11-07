@@ -489,6 +489,17 @@ class SystemService:
                             return
                         snapshot = await self.agent.agent_app.aget_state(config)
                         reply = self._reply_text(list((snapshot.values or {}).get("messages", [])))
+                        # The original process may have died after accepting this
+                        # group message. Restore its normal outbox reply rather
+                        # than consuming a model turn with no visible answer.
+                        if item.message_id not in self._inbox_waiters and any(
+                                g.get('automatic_reply_id') for g in item.metadata.get('groups', [])):
+                            from agents.gateway import get_gateway
+                            from agents.store import get_store
+                            handler = getattr(get_gateway(), 'group_reply_handler', None)
+                            if handler:
+                                current = get_store().require(user_id, session_id)
+                                await handler(current, item.metadata.get('groups') or [], reply)
                         if not mark_inbox_handled(user_id, session_id, item.message_id):
                             raise RuntimeError(f"Inbox message changed before reply completion: {item.message_id}")
                         pending = self._inbox_waiters.pop(item.message_id, None)

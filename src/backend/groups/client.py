@@ -427,6 +427,10 @@ class GroupClient:
                 busy = getattr(self.gateway, 'is_busy', None)
                 if original and callable(busy):
                     state = 'running' if busy(original) else 'idle'
+                    if state == 'idle' and original.driver == 'acpx':
+                        from external.native_tool_policy import native_tools_enabled
+                        if not native_tools_enabled(original.config):
+                            state = 'paused'
                 agent = {'agent_id': principal, 'name': member['name'], 'platform': member['platform'],
                          'remote': not local, 'settings': {'persona': '', 'tools': [], 'teams': []},
                          'status': {'state': state, 'actions': [],
@@ -678,11 +682,16 @@ class GroupClient:
     async def _wake(self, row, card, agent, visible, event_id, message, human_requests):
         """Wakes one local agent with a group message or an app request; its reply goes back to the group."""
         aid = agent.agent_id
-        automatic = agent.config.get('creation_template') == 'chat'
-        if automatic:
-            from webot.runtime import effective_session_mode
-            automatic = effective_session_mode(agent.owner,agent.agent_id) == 'chat'
-        text_reply=automatic or (agent.config.get('connection_id') and not ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools',True))
+        if agent.driver == 'acpx':
+            from external.native_tool_policy import native_tools_enabled
+            if not native_tools_enabled(agent.config):
+                self.store.mark_delivered(row, event_id, aid)
+                return  # Membership remains visible; disabled native sessions never queue or spend.
+        from webot.runtime import effective_session_mode
+        automatic = effective_session_mode(agent.owner,agent.agent_id) == 'chat'
+        forwarding = ((agent.config.get('meta') or {}).get('forwarding') or {}).get('reply') == 'automatic'
+        tools = agent.config.get('tools') if agent.driver == 'webot' else ((agent.config.get('meta') or {}).get('acp') or {}).get('tools')
+        text_reply=automatic or forwarding or (tools is not None and 'send_to_group' not in tools) or (agent.driver == 'acpx' and not ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools',True))
         completion = None
         if text_reply:
             async def completion(reply, owner=row['owner'], alias=row['alias'], target=aid):
@@ -692,11 +701,14 @@ class GroupClient:
                     except ClientError:
                         logger.warning('群回复暂未发送：%s/%s', owner, alias, exc_info=True)
         reply_meta = self.metadata(card,visible)
+        if text_reply:
+            reply_meta['automatic_reply_id'] = f'chat-reply:{event_id}:{aid}'
         reply_meta['reply_channel'] = '直接输出文字；系统会发送到当前群，不需要调用工具。' if text_reply else reply_channel(agent,row['alias'])
         try:
             receipt = await self.gateway.inbox(agent, message, context={'conversation_id': row['alias'],
                 'delivery_id': f'relay:{row["alias"]}:{event_id}:{aid}',
                 'group_human_requests': human_requests,
+                'group_auto_reply': bool(text_reply),
                 'groups': [reply_meta]},mode='chat' if automatic else None,on_complete=completion)
             error = '' if receipt.accepted else receipt.error or '未接受'
         except Exception as exc:
@@ -707,6 +719,16 @@ class GroupClient:
             logger.warning('群消息 #%s 未送达 agent %s：%s', event_id, aid, error)
             return
         self.store.mark_delivered(row, event_id, aid)
+
+    async def reply_to_inbox(self, agent, groups, content):
+        """Restore the normal group reply after a service restart loses callbacks."""
+        if not content or not content.strip():
+            return
+        for group in groups:
+            key = group.get('automatic_reply_id', '')
+            if key.startswith('chat-reply:') and key.endswith(':'+agent.agent_id):
+                await self.post(agent.owner, group['group_id'], agent.agent_id, content,
+                                client_msg_id=key)
 
     def ensure(self, owner, alias):
         key = (owner, alias)

@@ -56,7 +56,9 @@
       if (!uncreated) return;
       const launch = AcpLaunchSettings.value('external-acp-launch', card.platform);
       await studioEnsureAgent(id, {platform: card.platform,connection_id:overlay.querySelector('#external-connection').value,
-        remote_cwd:overlay.querySelector('#external-remote-cwd').value.trim(), meta:{acp:launch}});
+        remote_cwd:overlay.querySelector('#external-remote-cwd').value.trim(), meta:{acp:{...launch,
+          native_tools:overlay.querySelector('#external-native-tools').checked,
+          clawcross_tools:overlay.querySelector('#external-tools').checked}}});
       card.launcher = launch;
       card.connection_id=overlay.querySelector('#external-connection').value;
       card.remote_cwd=overlay.querySelector('#external-remote-cwd').value.trim();
@@ -97,6 +99,8 @@
           </select>${item.description ? `<small>${escape(item.description)}</small>` : ''}</label>`;
       }).join('') : '<p>连接成功后会显示模型和思考强度。</p>'}
       <label class="external-settings-toggle"><input type="checkbox" id="external-tools" ${settings.clawcross_tools ? 'checked' : ''}> 使用 ClawCross 工具</label>
+      <label class="external-settings-toggle"><input type="checkbox" id="external-native-tools" ${card.native_tools !== false ? 'checked' : ''}> 允许原生 CLI 工具</label>
+      <small>原生工具不受 ClawCross 沙盒控制。关闭后，此适配器会取消当前任务并阻止启动；开启前请在原生 CLI 配置权限和沙盒。</small>
       <small>通过 MCP 接入，默认启用。调用受当前用户、Agent 工具名单、模式、命令规则及审核约束。原生 CLI 工具使用自身的权限策略；“替我审核”只审核 ClawCross 工具。</small>
       <details><summary>连接与工具范围</summary>
         <label>调用超时（秒）<input id="external-timeout" type="number" min="5" max="3600" value="${escape(settings.timeout_sec || 180)}"></label>
@@ -150,6 +154,9 @@
       try {
         await createIfNeeded();
         await saveConnection();
+        await request('/v1/agents/'+encodeURIComponent(id)+'/acp-settings','PATCH', {
+          native_tools:overlay.querySelector('#external-native-tools').checked,
+          clawcross_tools:overlay.querySelector('#external-tools').checked});
         const fresh = await request('/v1/agents/' + encodeURIComponent(id) + '/test-connection', 'POST');
         cache.set(id, {value:fresh, at:Date.now()});
         if (!overlay.isConnected) return;
@@ -160,6 +167,7 @@
           if (!el.hasAttribute('data-unified-effort') && value !== el.dataset.initialValue) changed[el.dataset.option] = value;
         });
         const draft = {clawcross_tools: overlay.querySelector('#external-tools').checked,
+          native_tools: overlay.querySelector('#external-native-tools').checked,
           timeout_sec: Number(overlay.querySelector('#external-timeout').value),
           ttl_sec: Number(overlay.querySelector('#external-ttl').value)};
         const effortInput = overlay.querySelector('[data-unified-effort]');
@@ -188,6 +196,7 @@
         await saveConnection();
         const saved = await request('/v1/agents/' + encodeURIComponent(id) + '/acp-settings', 'PATCH', {
           config_options, ...(effortInput ? {reasoning_level:Number(effortInput.value)} : {}), clawcross_tools: overlay.querySelector('#external-tools').checked,
+          native_tools: overlay.querySelector('#external-native-tools').checked,
           timeout_sec: Number(overlay.querySelector('#external-timeout').value),
           ttl_sec: Number(overlay.querySelector('#external-ttl').value), tools: names.length ? names : null});
         cache.set(id, {value: saved, at: Date.now()});

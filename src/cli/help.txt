@@ -16,6 +16,9 @@ ClawCross — 与你的 Agent 在终端协作
   clawcross join LINK --current      复用当前 Codex 原生会话（需要适配器支持）
   clawcross join LINK --new --prepare 新建伙伴，准备转接模式并入群
   clawcross join LINK --new --prepare --autostart  入群并启用系统自启动
+  clawcross accounts --json          查看本机账号和默认账号；--user 可选择
+  clawcross acp --agent ID           将已有 WeBot 作为 stdio ACP 服务
+  clawcross acp                      ACP 创建正常可见的 WeBot 伙伴，默认群聊能力
   clawcross start                    准备核心环境并启动本地服务
   clawcross start --bridge           转接模式：后台接群，不运行前端
   clawcross autostart enable|disable|status  设置、关闭或查看自启动
@@ -23,6 +26,7 @@ ClawCross — 与你的 Agent 在终端协作
   clawcross stop / status / doctor   服务控制与诊断
   clawcross components              查看可选组件
   clawcross install-component acpx   显式安装外部 Agent 组件
+  clawcross install-component deepseek-harness  安装官方 DSH（默认 ACP）
   clawcross --version                显示 npm 包版本
 
 交互式命令：/help、/new session、/resume [ID]、/use、/agents、/history、

@@ -1,5 +1,23 @@
 # ClawCross 交接（2026-11-08）
 
+## 当前修复：账号归属、普通加群与工具边界（2026-11-08）
+
+本节取代下方旧记录里把 `connected` 等同“可用”的结论。
+
+- 用户最终确认：CLI 本质是调用现有群聊的加群流程；默认用户可以是第一个创建用户，允许选择其他用户，连接不需要向所有本机用户开放。
+- 加群仍用 `POST /groups/join`，不新增旁路群或隐藏会话。`join` 返回 `owner`、`message_center`、`agent_ready`；`ok` 仅代表传输正常。首次使用会准备默认用户，`clawcross accounts` 查询，`--user` 选择。侧栏底部和 Message “我的”页增加账号入口，公网不枚举账号，远程切换要求密码。
+- 新建 CLI 转接 Agent 只有伙伴目录、最小 ClawCross 工具，没有 CLI 项目、个人共享或团队目录。命令沙盒默认 `auto`，缺少后端时禁止自动退回 `off`；显式用户设置保持有效。
+- 首次登记原生会话同样默认关闭原生执行，仅保留原 cwd 作为明确选定路径，不自动开放所有团队目录；未明确开启时原生历史加载返回 paused。
+- 原生工具开关是**暂停原生程序**：当前没有验证过能让任意 ACP 适配器全部关闭内置工具后继续聊天的通用机制。`native_tools:false` 在组件探测之前阻止启动、阻止群消息唤醒，并取消正在运行的任务；不是给 prompt 加一句“禁用工具”。新建原生 CLI 转接伙伴默认关闭。原生工具开启后仍由原 CLI 管理，不可声称被 ClawCross 沙盒隔离。
+- 无发送工具、纯聊天或关闭连接器时，最终文字通过正常群消息 API / outbox 回到原群，固定编号去重；原生/WeBot 收件箱都保存自动回复目标，重启丢失内存回调后可恢复。
+- `clawcross acp --user USER --agent ID` 将正常 WeBot Agent 提供为 ACP v1 stdio server；复用用户、Agent ID、历史、流式对话和控制 API，不引入其他模型运行时。默认新建群聊能力模板；不接受客户端扩大 cwd、MCP 或运行模式。目前只支持文字。
+- DeepSeek Harness 平台 `deepseek-harness` 默认 `dsh --profile acp`；可选安装固定官方 npm `@deepseek-ai/dsh@0.2.2-rc.1`。官方包要求 Node 24.9+，已加检查。**本机 Node 22.22.1，因此尚未安装/实测 DSH 模型连通性**，不要将预设配置测试说成真实模型测试。
+- 之前新建的 Codex 已先移出群并取消，随后限制权限、空闲受控重载后，作为 `cathy` 的普通成员重新加入原“未来之室”。仍为 Agent `ag_join_a6d96a1144efa8df99a7ed71`、群 `rg_cf9828b0f1ef3f8bbb621699`。实际检查：该账号群成员可见、Agent 状态 `paused`、待执行队列 0；`joined:true`、`agent_ready:false`、连接 `connected`。未发送群测试消息或模型 prompt，未建立第二个系统自启动服务。
+- 已加载修复，重载前所有 26 个 Agent 均空闲；本机和公网 Studio / Message 都返回 200。Hub 仓库未修改。
+- 验证：126 项 Python 用例、16 个 subtests 通过；真实 WeBot ACP stdio initialize/EOF 退出通过；桌面/手机侧栏浏览器用例 1 项、账号选择器浏览器用例 1 项通过；npm 发布文件清单通过。ACP 完整回复通过真实路由 + 替身模型验证，不消耗线上模型额度。
+- 最后针对原生会话、CLI 和权限的 35 项定向回归通过（与上面的测试有重叠）。本地 npm 产物 `dist/clawcross-0.0.29.tgz` 已重建，832 文件、14.9 MB；未发布 npm registry。构建在受限执行沙盒中遇到子进程 EPERM，在获准的本机执行环境中通过，未移除 prepack 校验。
+- 旧前端用例要求公网 `/relay/app/poll` 成功，与已经限制为主机使用的 SDK 控制接口冲突。只修正用例为公开签名页面 200、主机 SDK 403；**没有放开 SDK**。
+
 
 ## 真实入群修复（2026-11-08）
 

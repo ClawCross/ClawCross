@@ -12,10 +12,10 @@ VALID_RUN_MODES = ("chat", "readonly", "manual", "auto", "bypass")
 # The same modes expressed as acpx run options.
 ACPX_OVERRIDES_BY_MODE: dict[str, dict[str, Any]] = {
     "chat": {
-        # All three together: tools hidden, and even if an old agent ignores
-        # --allowed-tools, approve-all is moot because no tool calls happen.
-        "permission_policy": "approve-all",
-        "non_interactive_permissions": "",
+        # Some ACP servers ignore allowed_tools. Deny their permission requests
+        # as well; the separate native_tools switch blocks unsupported servers.
+        "permission_policy": "deny-all",
+        "non_interactive_permissions": "deny",
         "allowed_tools": "",
     },
     "readonly": {
