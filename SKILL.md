@@ -538,28 +538,28 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-07T19:00:18.646021+00:00`
-- Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-approval-auth`
-- Heuristic score: `0.628`
+- Updated at: `2026-11-07T20:10:10.195796+00:00`
+- Strategy: `repair-only`
+- Heuristic candidate: `verification-loop-1`
+- Heuristic score: `0.886`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: CLI join ownership, native permissions and group reply recovery. Signals: verification-loop, approval-auth. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: Restricted Codex ACP forwarding verification. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
-- Intent mix: repair `0.4`, optimize `0.4`, innovate `0.2`
-- Shift toward stability, bounded retries, and verifier quality.
+- Intent mix: repair `0.8`, optimize `0.2`, innovate `0.0`
+- Emergency mode for repeated failures where repair guidance must dominate.
 
 ### Latest Trigger Command
 
-`CLI join ownership, native permissions and group reply recovery`
+`Restricted Codex ACP forwarding verification`
 
 ### Latest Error Excerpt
 
 ```text
-A real CLI-created Codex joined under the canonical first local user, invisible to a different frontend account. Membership and a connected poller did not prove a usable group reply. Native CLI built-ins bypass ClawCross command sandbox; ACP allowed_tools is advisory. Report owner and Agent readiness separately, retain the normal group APIs, default new joins to isolated workspaces with native execution disabled, expose a native off switch, and persist normal group reply targets across restart. Do not relax the host-only app SDK proxy to make an old test pass.
+The normal group membership was connected but native_tools=false paused the Agent, so the user received no reply. ChatGPT workspace routing requires preserving the official origin; an HTTP proxy must frame metadata with Content-Length and SSE with chunked encoding. Codex sends zstd requests and response.metadata events. Treating transport success or ok=true alone as a reply proof is insufficient. Keep native tools disabled, validate a complete real private response, then confirm the original human request receives one normal group outbox reply. Block inference retries after a rejected tool event.
 ```
 
 ### Governance Snapshot
@@ -571,24 +571,22 @@ A real CLI-created Codex joined under the canonical first local user, invisible 
 
 ### Operating Adjustments
 
-1. Start from the narrowest reproducible failure before broad retries.
-2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
-3. End every fix attempt with an explicit verifier command and observed result.
+1. State the exact failure mode before editing anything.
+2. Choose the narrowest reproducer first, then a broader regression command.
+3. Record pass/fail status immediately after each attempted fix.
 
 ### Validation Loop
 
-1. Run the minimal reproducer first, then the broader regression command.
-2. Persist the command and result summary in the evolution report.
+1. Rerun the minimal reproducer before any broad test suite.
+2. When a fix passes, note the exact verifier command in the skill.
 
 ### Recent Evidence
 
-- `2026-11-07T19:00:18.646021+00:00` `repo-skill` — A real CLI-created Codex joined under the canonical first local user, invisible to a different frontend account. Membership and a connected po ...[truncated]
+- `2026-11-07T20:10:10.195796+00:00` `repo-skill` — The normal group membership was connected but native_tools=false paused the Agent, so the user received no reply. ChatGPT workspace routing re ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth` score `0.628` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-1` score `0.588` — Tighten verification loops (intent `repair`)
-- `approval-auth-1` score `0.588` — Preflight auth and approval constraints (intent `repair`)
+- `verification-loop-1` score `0.886` — Tighten verification loops (intent `repair`)
 
 ### Local State Snapshot
 

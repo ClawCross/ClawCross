@@ -187,13 +187,18 @@ def connect(args, default_user):
                 'workspaces':{'companion':True,'user_shared':False,'cli':False,'teams':False,'paths':[]},
                 'meta':{'forwarding':{'reply':'automatic'}, 'acp':{
                     'native_tools':getattr(args, 'allow_native_tools', False),
+                    'text_only':args.platform == 'codex' and sys.platform == 'linux',
                     'permission_policy':'approve-reads', 'non_interactive_permissions':'deny'}}})
             source = 'created'
         elif code != 200:
             raise JoinError(f'[{code}] 无法确认 Agent 是否存在，没有重复创建。')
     aid = agent['agent_id']
     acp_settings = (agent.get('settings', {}).get('meta') or agent.get('meta') or {}).get('acp') or {}
-    native_blocked = agent['platform'] not in {'webot', 'internal', 'http', 'llm'} and acp_settings.get('native_tools') is False
+    from src.backend.external.native_tool_policy import runtime_allowed
+    native_config = {**agent.get('settings',{}),'platform':agent['platform'],
+                     'connection_id':agent.get('connection_id') or agent.get('settings',{}).get('connection_id'),
+                     'meta':{'acp':acp_settings}}
+    native_blocked = agent['platform'] not in {'webot', 'internal', 'http', 'llm'} and not runtime_allowed(native_config)
     if args.prepare and not native_blocked and agent['platform'] not in {'webot', 'internal', 'http', 'llm'}:
         _bridge(agent['platform'], True)
         # Initialization/login checks use ACP session/new or session/load, never

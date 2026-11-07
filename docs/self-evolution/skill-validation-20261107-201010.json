@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261107201010195655",
+  "candidate_id": "verification-loop-1",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-07T20:10:10.195626+00:00"
+  },
+  "commands": [
+    {
+      "command": "Restricted Codex ACP forwarding verification",
+      "ok": false,
+      "stdout": "",
+      "stderr": "The normal group membership was connected but native_tools=false paused the Agent, so the user received no reply. ChatGPT workspace routing requires preserving the official origin; an HTTP proxy must frame metadata with Content-Length and SSE with chunked encoding. Codex sends zstd requests and response.metadata events. Treating transport success or ok=true alone as a reply proof is insufficient. Keep native tools disabled, validate a complete real private response, then confirm the original human request receives one normal group outbox reply. Block inference retries after a rejected tool event."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-07T20:10:10.195678+00:00",
+  "asset_id": "sha256:c7bd3cac854edec671a422b76b2c6687825561a3094b408df220cfe8431d3e38"
+}

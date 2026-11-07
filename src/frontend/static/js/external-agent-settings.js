@@ -100,7 +100,7 @@
       }).join('') : '<p>连接成功后会显示模型和思考强度。</p>'}
       <label class="external-settings-toggle"><input type="checkbox" id="external-tools" ${settings.clawcross_tools ? 'checked' : ''}> 使用 ClawCross 工具</label>
       <label class="external-settings-toggle"><input type="checkbox" id="external-native-tools" ${card.native_tools !== false ? 'checked' : ''}> 允许原生 CLI 工具</label>
-      <small>原生工具不受 ClawCross 沙盒控制。关闭后，此适配器会取消当前任务并阻止启动；开启前请在原生 CLI 配置权限和沙盒。</small>
+      <small>${escape(card.native_tool_policy?.warning || '原生工具不受 ClawCross 沙盒控制。无受限聊天路径时，关闭后会取消任务并暂停；开启前请配置原生 CLI 的权限和沙盒。')}</small>
       <small>通过 MCP 接入，默认启用。调用受当前用户、Agent 工具名单、模式、命令规则及审核约束。原生 CLI 工具使用自身的权限策略；“替我审核”只审核 ClawCross 工具。</small>
       <details><summary>连接与工具范围</summary>
         <label>调用超时（秒）<input id="external-timeout" type="number" min="5" max="3600" value="${escape(settings.timeout_sec || 180)}"></label>

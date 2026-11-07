@@ -81,7 +81,7 @@ def capability_card(agent):
 def validate_settings(agent, value):
     if not isinstance(value, dict):
         raise ValueError('ACP settings must be an object')
-    allowed = {'clawcross_tools', 'native_tools', 'config_options', 'timeout_sec', 'ttl_sec', 'tools', 'reasoning_level', 'agent_name', 'agent_command'}
+    allowed = {'clawcross_tools', 'native_tools', 'text_only', 'config_options', 'timeout_sec', 'ttl_sec', 'tools', 'reasoning_level', 'agent_name', 'agent_command'}
     if set(value) - allowed:
         raise ValueError('Unknown ACP setting')
     from external.acp_launcher import validate_launch_settings, launch_settings
@@ -101,6 +101,8 @@ def validate_settings(agent, value):
         raise ValueError('clawcross_tools must be a boolean')
     if 'native_tools' in value and not isinstance(value['native_tools'], bool):
         raise ValueError('native_tools must be a boolean')
+    if 'text_only' in value and not isinstance(value['text_only'], bool):
+        raise ValueError('text_only must be a boolean')
     if 'reasoning_level' in value:
         if type(value['reasoning_level']) is not int or not 0 <= value['reasoning_level'] <= 7:
             raise ValueError('reasoning_level must be an integer between 0 and 7')

@@ -37,7 +37,15 @@ def adapter(agent: Agent | None = None):
         raise ControlError("acpx is not installed")
     try:
         from external.acp_launcher import launch_settings
-        return get_acpx_adapter(cwd=session.native_workspace_cwd(agent), **launch_settings(agent.config)) if agent else get_acpx_adapter()
+        launch = launch_settings(agent.config) if agent else {}
+        if agent:
+            from external.native_tool_policy import native_tools_enabled, supports_text_only
+            if not native_tools_enabled(agent.config) and supports_text_only(agent.config):
+                import os,shlex,subprocess,sys
+                from pathlib import Path
+                command = [sys.executable, '-P', str(Path(__file__).with_name('codex_tool_gate.py'))]
+                launch = {'agent_name':'','agent_command':subprocess.list2cmdline(command) if os.name=='nt' else shlex.join(command)}
+        return get_acpx_adapter(cwd=session.native_workspace_cwd(agent), **launch) if agent else get_acpx_adapter()
     except AcpxError as exc:
         raise ControlError(str(exc)) from exc
 
@@ -241,8 +249,14 @@ class AcpRuntime(InboxRuntime):
 
         key = (agent.owner, agent.agent_id)
         turn = _Turn(context.get('group_id') or context.get('conversation_id'))
+        from external.native_tool_policy import native_tools_enabled, supports_text_only, clean_transport_warning
+        text_only = not native_tools_enabled(agent.config) and supports_text_only(agent.config)
 
         async def on_event(event):
+            if text_only and event.get('type') == 'text':
+                event = {**event,'text':clean_transport_warning(event.get('text',''))}
+                if not event['text']:
+                    return
             item = acp_events.apply(turn.items, event)
             if item is not None:
                 self._changed(key, turn, item)
@@ -275,6 +289,11 @@ class AcpRuntime(InboxRuntime):
                 raise
             except (AcpxError, RuntimeError) as exc:
                 return session.Sent(ok=False, error=str(exc), raw={"items": turn.items})
+            if text_only:
+                trace.text = clean_transport_warning(trace.text or '')
+                trace.items = [{**item,'text':clean_transport_warning(item['text'])} if item.get('kind')=='text' else item
+                               for item in trace.items]
+                trace.items = [item for item in trace.items if item.get('kind')!='text' or item.get('text')]
             return session.Sent(ok=True, content=trace.text or "", raw={"items": trace.items})
 
         try:
@@ -316,8 +335,8 @@ class AcpRuntime(InboxRuntime):
     async def status(self, agent: Agent) -> dict[str, Any]:
         # Availability and open transport sessions are separate from an active
         # turn. Polling status must not spawn npx/adapters or enumerate histories.
-        from external.native_tool_policy import native_tools_enabled
-        if not native_tools_enabled(agent.config) and not self.is_busy(agent):
+        from external.native_tool_policy import runtime_allowed
+        if not runtime_allowed(agent.config) and not self.is_busy(agent):
             return {'state':'paused','reason':'native_tools_disabled'}
         return {"state": "running" if self.is_busy(agent) else "idle"}
 
