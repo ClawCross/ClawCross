@@ -89,7 +89,7 @@ Install external integrations explicitly, only when the feature is needed:
 
 ```bash
 bash launch/run.sh components
-bash launch/run.sh install-component acpx
+bash launch/run.sh install-component acp-codex
 bash launch/run.sh install-component nonebot --adapter telegram
 bash launch/run.sh install-component channels
 bash launch/run.sh install-component weclaw
@@ -139,7 +139,7 @@ After the first login, users can send these prompts to their AI code CLI agent:
 
 ## OpenClaw (Optional)
 
-OpenClaw is an ACP agent like Codex: ClawCross reaches it through acpx (`openclaw acp`) and never changes OpenClaw's own configuration. It needs `install-component acpx` and an `openclaw` CLI whose gateway runs; install or configure OpenClaw itself only when the user explicitly asks, with OpenClaw's own documentation. See [docs/openclaw-commands.md](./docs/openclaw-commands.md).
+OpenClaw is an ACP agent like Codex: ClawCross reaches it through its built-in ACP client (`openclaw acp`) and never changes OpenClaw's own configuration. It needs an installed `openclaw` CLI whose gateway runs; install or configure OpenClaw itself only when the user explicitly asks, with OpenClaw's own documentation. See [docs/openclaw-commands.md](./docs/openclaw-commands.md).
 
 ### Provider Switching Notes
 
@@ -151,16 +151,9 @@ OpenClaw is an ACP agent like Codex: ClawCross reaches it through acpx (`opencla
 
 ## ACP Tools Integration (Optional)
 
-Clawcross communicates with external AI coding agents via **acpx** (ACP exchange). Install `acpx` explicitly when you need ACP agents. Each tool below is an independent CLI agent that acpx can bridge — install only the ones the user wants.
+ClawCross communicates through its **built-in ACP client**, using the pinned official Python SDK. No acpx installation is needed for local or SSH Agents, native session imports or CLI forwarding. Install only the platforms requested by the user. Codex and Claude adapters are explicitly prepared with `install-component acp-codex` and `install-component acp-claude` (Node.js 22.13+); other platforms use installed native ACP programs. DeepSeek Harness additionally requires Node.js 24.9+.
 
-**Prerequisite for all:** `acpx` must be installed with `bash launch/run.sh install-component acpx` (Windows: `run.ps1 install-component acpx`). This installs it under the ClawCross runtime directory rather than globally.
-
-After installing any tool below, **restart Clawcross** so the switcher bar picks it up. Verify with:
-
-```bash
-bash launch/run.sh components  # includes acpx availability
-# or in browser: the switcher bar in ClawCross Studio shows available ACP tabs
-```
+Existing `~/.acpx` data is read only to recover native IDs and launch aliases; it is not executable infrastructure. Migration preserves Agent IDs, owner, cwd, group membership and history, and stops if the old controller still owns the session. See [docs/agent-join.md](./docs/agent-join.md).
 
 ### Codex (OpenAI)
 
@@ -538,28 +531,28 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-08T04:18:05.034727+00:00`
-- Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-bounded-execution`
-- Heuristic score: `0.685`
+- Updated at: `2026-11-08T08:31:00.414553+00:00`
+- Strategy: `repair-only`
+- Heuristic candidate: `approval-auth-1`
+- Heuristic score: `0.886`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: ACP resource and timeout verification. Signals: verification-loop, bounded-execution. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: controlled ACP migration reload verification. Signals: approval-auth. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
-- Intent mix: repair `0.4`, optimize `0.4`, innovate `0.2`
-- Failure pressure is elevated, so the frontier should bias toward hardening.
+- Intent mix: repair `0.8`, optimize `0.2`, innovate `0.0`
+- Emergency mode for repeated failures where repair guidance must dominate.
 
 ### Latest Trigger Command
 
-`ACP resource and timeout verification`
+`controlled ACP migration reload verification`
 
 ### Latest Error Excerpt
 
 ```text
-Prompt timeout tests must initialize the subprocess first so CPU contention does not consume a tiny model timeout before any prompt exists. After SDK shutdown stops stdout reading, drain both child pipes before stopping the actor loop; otherwise large output leaves a paused subprocess transport and Event loop is closed during finalization. Preserve OS leases until cleanup completes.
+Reload and 27 Agent configuration/native-ID preservation succeeded; post-reload checker selected Cathy using an assumed case-sensitive owner. Locate the owned Agent across the authenticated owner inventory rather than guessing the display name. Corrected read-only audit confirmed paused flag and original group connectivity; do not repeat the reload just to repair an audit selector.
 ```
 
 ### Governance Snapshot
@@ -571,24 +564,22 @@ Prompt timeout tests must initialize the subprocess first so CPU contention does
 
 ### Operating Adjustments
 
-1. Start from the narrowest reproducible failure before broad retries.
-2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
-3. End every fix attempt with an explicit verifier command and observed result.
+1. Check authentication, required tokens, and approval mode before retrying.
+2. Distinguish auth failures from product logic failures.
+3. Document safe fallback behavior when credentials are missing.
 
 ### Validation Loop
 
-1. Run the minimal reproducer first, then the broader regression command.
-2. Persist the command and result summary in the evolution report.
+1. Verify token presence or auth mode explicitly before the main action.
+2. Avoid repeated retries when the root cause is missing credentials.
 
 ### Recent Evidence
 
-- `2026-11-08T04:18:05.034727+00:00` `repo-skill` — Prompt timeout tests must initialize the subprocess first so CPU contention does not consume a tiny model timeout before any prompt exists. Af ...[truncated]
+- `2026-11-08T08:31:00.414553+00:00` `repo-skill` — Reload and 27 Agent configuration/native-ID preservation succeeded; post-reload checker selected Cathy using an assumed case-sensitive owner. ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-bounded-execution` score `0.685` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-2` score `0.645` — Tighten verification loops (intent `repair`)
-- `bounded-execution-1` score `0.531` — Bound long-running and flaky execution (intent `optimize`)
+- `approval-auth-1` score `0.886` — Preflight auth and approval constraints (intent `repair`)
 
 ### Local State Snapshot
 

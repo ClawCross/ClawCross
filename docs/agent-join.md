@@ -26,7 +26,7 @@ clawcross join '邀请链接' --agent '已有Agent编号' --user '账号' --json
 ## 原生工具和工作区边界
 
 工具权限采用 ACP 客户端和对应适配器的原生能力。不使用自建模型请求代理、临时证书或
-修改模型响应来替代工具权限。acpx 的拒绝权限、工具名单和客户端能力声明仍受各适配器
+修改模型响应来替代工具权限。ACP 的拒绝权限和客户端能力声明仍受各适配器
 支持程度限制；不把它们称为所有原生工具的通用禁用机制。
 
 新建转接伙伴默认只有独立伙伴目录和最小 ClawCross 工具，不继承命令所在项目、
@@ -58,24 +58,18 @@ npm install -g git+https://github.com/ClawCross/ClawCross.git
 clawcross join '完整邀请链接' --new --platform codex --prepare --autostart --json
 ```
 
-第一次执行会准备 Python（包含固定版本官方 ACP SDK），Codex / Claude 新伙伴直接
-使用官方 ACP 适配器，不依赖 acpx。`--prepare` 显式下载固定版本适配器；其他平台和
-已有原生会话保留 acpx 兼容路径。使用本机现有
-CLI 登录状态初始化伙伴（仅明确开启原生工具时）。`--prepare` 会启动**转接模式**：仅运行本机 Agent API 和
-群消息服务，不启动前端、OASIS、调度器、其他聊天渠道或公网隧道。ACP 转接需要
-Node.js **22.13+**；已安装对应 CLI 并登录的用户不需要再提供模型 API Key。
-
-也可以先单独安装连接组件：
+第一次执行会准备 Python（含固定版本官方 ACP SDK）。所有 ACP 平台、本机/SSH、已有原生会话都由内置客户端连接，运行不需要 acpx。`--prepare` 显式下载固定版本的 Codex / Claude 官方适配器；其他平台使用已经安装并登录的原生 ACP 程序。保存配置、浏览列表不会自动下载程序。
 
 ```bash
 clawcross install-component acp-codex
 clawcross install-component acp-claude
-clawcross install-component acpx  # 已有会话、SSH、其他平台的兼容方式
 ```
 
-直连配置为 `meta.acp.transport: direct`，已有 Agent 缺省仍使用 `acpx`，不会自动迁移
-或重置正在使用的会话。已连接 Agent 的启动方式及传输方式固定；需要切换时新建伙伴。
-Unix 上显式 ACP 启动命令也支持直连，使用 argv 启动，命令不会经过 shell。
+`--prepare` 启动**转接模式**：本机 Agent API 和群消息服务，不启动前端、其他渠道或公网隧道。Codex / Claude 适配器使用 Node.js **22.13+**。DeepSeek Harness 另需 Node.js **24.9+**。复用本机 CLI 登录，不需要再次提供主模型 Key。
+
+旧 Agent 的 `~/.acpx/sessions` 仅作为迁移元数据读取，按当前 Agent、工作区和会话代次恢复原生 ID；不执行 acpx，不重置群关系和记忆。旧进程仍持有会话、或已使用的会话没有可恢复 ID 时停止并提示，避免创建替代会话。原生会话列举使用 ACP `session/list`，导入历史使用 `session/load`，不会发送模型 prompt。
+
+自定义程序保存在 `meta.acp.agent_command`；命名启动器写入 `$CLAWCROSS_HOME/config/acp-launchers.json`，例如 `{"agents":{"mine":{"command":["node","/absolute/agent.js"]}}}`。旧 `~/.acpx/config.json` 的名字可只读兼容。启动使用 argv，不经过 shell；Windows 自定义启动器应填写实际可执行程序或 `node` 加脚本路径。
 
 ### 并发与恢复
 
@@ -154,7 +148,7 @@ clawcross join '邀请链接' --new --platform codex --name '我的伙伴' --pre
 该模式有独立原生会话。相同本机用户、平台、工作目录和名字重复执行时，复用同一个
 确定的 Agent ID，避免重复创建。已有 Agent 的名字或设置不会被此命令覆盖。
 
-`--prepare` 明确允许缺少时准备转接模式、安装 acpx 和所选 ACP 适配器；不自动安装 OpenClaw，
+`--prepare` 明确允许缺少时准备转接模式、安装所选官方 ACP 适配器；不自动安装 OpenClaw，
 不启用公网隧道，不要求为使用已有 CLI 登录的外部 Agent 再填主模型 Key。
 不加此参数时，缺少服务或桥接组件会返回可操作的错误。准备日志保存在本机 logs
 目录的私有文件中，避免启动时的登录链接混入 JSON 输出。

@@ -7,6 +7,7 @@
     const mobileLayout = window.matchMedia('(max-width: 768px)');
     let navigationOpen = false;
     function platformIcon(platform) {
+        if(window.PlatformIcons) return PlatformIcons.markup(platform);
         const name = String(platform || '').trim().toLowerCase();
         const key = platformAliases[name] || name;
         if (platformMarks.has(key)) return `<svg class="studio-platform-icon" data-platform="${key}" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/platform-icons.svg?v=20261107#${key}"/></svg>`;

@@ -80,22 +80,21 @@ async def test_session_tracking_and_close_keep_custom_launcher(tmp_path,monkeypa
     agent=Agent('a','alice','Custom',ACPX,config={'platform':'acp','meta':{'acp':launch}},
                 runtime={'acp_cwd':str(tmp_path)})
     name=runtime_session(agent)
-    adapter=AcpxAdapter.__new__(AcpxAdapter)
-    adapter._cwd=str(tmp_path)
-    adapter._agent_name=launch.get('agent_name','')
-    adapter._agent_command=launch.get('agent_command','')
-    adapter._run_json=AsyncMock(return_value=json.dumps([{'name':name,'acpxRecordId':'record-1','cwd':str(tmp_path)}]))
-    monkeypatch.setattr('agents.store.get_store',lambda:SimpleNamespace(list=lambda _: [agent]))
-    monkeypatch.setattr('external.acpx.get_acpx_adapter',lambda **_:adapter)
-    monkeypatch.setattr('external.acp.adapter',lambda _:adapter)
-    rows=await list_all_sessions('alice','/acpx')
-    assert rows['acpx_sessions'][0]['session_id']=='record-1'
-    assert adapter._run_json.call_args.args[0]==prefix+['sessions','list','--local']
-    spawn=AsyncMock(return_value=SimpleNamespace(returncode=0,communicate=AsyncMock(return_value=(b'',b''))))
-    monkeypatch.setattr('agents.acp_sessions.asyncio.create_subprocess_exec',spawn)
-    result=await close_acp_session('acp',name,user_id='alice',acpx_bin='/acpx')
+    from agents.store import AgentStore
+    store=AgentStore(tmp_path/'agents.db')
+    agent=store.create('alice',agent_id='custom',driver=ACPX,config=agent.config)
+    store.patch_runtime('alice',agent.agent_id,{'native_resume_id':'native-1','acp_cwd':str(tmp_path)})
+    agent=store.require('alice',agent.agent_id);name=runtime_session(agent)
+    monkeypatch.setattr('agents.store.get_store',lambda:store)
+    closer=AsyncMock()
+    monkeypatch.setattr('external.acp_direct.DirectAdapter.close_session',closer)
+    rows=await list_all_sessions('alice',None)
+    assert rows['sessions'][0]['session_id']=='native-1'
+    assert rows['sessions'][0]['transport']=='direct'
+    result=await close_acp_session('acp',name,user_id='alice')
     assert result['status']=='success'
-    assert list(spawn.call_args.args)==['/acpx','--cwd',str(tmp_path)]+prefix+['sessions','close',name]
+    closer.assert_awaited_once()
+    assert store.require('alice',agent.agent_id).runtime['acp_connection_closed']
 
 
 def test_antigravity_uses_installed_cli_without_changing_custom_launch(monkeypatch):

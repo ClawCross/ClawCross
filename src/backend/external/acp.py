@@ -1,4 +1,4 @@
-"""Codex, Claude Code, Gemini, OpenClaw and other ACP tools, through the acpx CLI.
+"""Codex, Claude Code, Gemini, OpenClaw and other ACP tools through built-in ACP.
 
 Incoming messages use the shared durable inbox and wait for the session turn
 lock. MCP results carry live inbox notices while a native turn is running.
@@ -21,29 +21,11 @@ from external.inbox import InboxRuntime
 
 
 def adapter(agent: Agent | None = None, *, store=None):
-    from external.acpx import AcpxError, get_acpx_adapter
-
-    if agent:
-        from external.native_tool_policy import require_native_execution
-        require_native_execution(agent.config)
-
-    if agent and agent.config.get('connection_id'):
-        from connections.acpx import SSHAcpxAdapter
-        try:return SSHAcpxAdapter(agent)
-        except (LookupError,RuntimeError) as exc:raise ControlError(str(exc)) from exc
-
-    if agent and ((agent.config.get('meta') or {}).get('acp') or {}).get('transport') == 'direct':
-        from external.acp_direct import DirectAdapter
-        return DirectAdapter(agent, store=store)
-
-    from ops.components import binary_path
-    if not binary_path("acpx"):
-        raise ControlError("acpx is not installed")
-    try:
-        from external.acp_launcher import launch_settings
-        return get_acpx_adapter(cwd=session.native_workspace_cwd(agent), **launch_settings(agent.config)) if agent else get_acpx_adapter()
-    except AcpxError as exc:
-        raise ControlError(str(exc)) from exc
+    if agent is None: raise ControlError('Choose an owned ACP Agent')
+    from external.native_tool_policy import require_native_execution
+    require_native_execution(agent.config)
+    from external.acp_direct import DirectAdapter
+    return DirectAdapter(agent, store=store)
 
 
 def command_options(agent: Agent, *, long: bool) -> dict[str, Any]:
@@ -87,9 +69,9 @@ class AcpRuntime(InboxRuntime):
         self._control_stopping = set()
 
     def _adapter(self, agent):
-        if (((getattr(agent, 'config', {}) or {}).get('meta') or {}).get('acp') or {}).get('transport') == 'direct':
-            return adapter(agent, store=self._store)
-        return adapter(agent)
+        from external.native_tool_policy import require_native_execution
+        require_native_execution(agent.config)
+        return adapter(agent, store=self._store)
 
     def _changed(self, key, turn, item=None):
         self._sequence += 1
@@ -240,7 +222,7 @@ class AcpRuntime(InboxRuntime):
             return AgentReply(ok=False, error=str(exc))
 
     async def _ask_turn(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
-        from external.acpx import AcpxError, acpx_options_from_agent, get_acpx_adapter
+        from external.acpx import AcpxError, acpx_options_from_agent
         from webot.runtime import effective_session_mode
 
         mode = mode or effective_session_mode(agent.owner, agent.agent_id)
@@ -312,7 +294,7 @@ class AcpRuntime(InboxRuntime):
         """Initialize/resume this owned session without prompting or negotiating identity."""
         if self.is_busy(agent):
             raise ControlError('Agent 正在运行，请在本轮结束后测试连接')
-        from external.acpx import AcpxError, acpx_options_from_agent, get_acpx_adapter
+        from external.acpx import AcpxError, acpx_options_from_agent
         async with session.turn(self._store, agent) as current:
             current=await self._resolve_remote_workspace(current)
             options = acpx_options_from_agent(current.config, default_timeout_sec=60)
@@ -327,7 +309,7 @@ class AcpRuntime(InboxRuntime):
                     **({'resume_session_id': current.runtime['native_resume_id']} if current.runtime.get('native_resume_id') else {}))
                 session.remember(self._store, current, acp_cwd=session.native_workspace_cwd(current))
                 if current.config.get('connection_id') and self._store:
-                    choices=await selected.refresh_options(current.platform,session.runtime_session(current))
+                    choices=self._store.require(current.owner,current.agent_id).runtime.get('direct_config_options',[])
                     self._store.patch_runtime(current.owner,current.agent_id,{'remote_config_options':choices})
             except (AcpxError, RuntimeError) as exc:
                 raise ControlError(str(exc)) from exc
@@ -408,7 +390,7 @@ class AcpRuntime(InboxRuntime):
         return await session.log(agent, limit)
 
     async def transport_history(self, agent: Agent, limit: int) -> list[dict[str, Any]]:
-        """Read captured acpx text locally, without loading or prompting the provider."""
+        """Read captured ACP text locally, without loading or prompting the provider."""
         from external.acpx import AcpxError
         acpx = self._adapter(agent)
         name = acpx.to_acpx_session_name(tool=agent.platform, session_key=session.runtime_session(agent))
@@ -418,7 +400,7 @@ class AcpRuntime(InboxRuntime):
             raise ControlError(str(exc)) from exc
         entries = result.get('entries')
         if not isinstance(entries, list):
-            raise ControlError('acpx did not return captured conversation entries')
+            raise ControlError('ACP did not return captured conversation entries')
         return [{'role': item['role'], 'content': item.get('textPreview', '')}
                 for item in entries[-limit:] if isinstance(item, dict) and item.get('role') in {'user', 'assistant'}]
 

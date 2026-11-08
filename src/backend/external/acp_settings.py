@@ -6,10 +6,11 @@ from external.session import runtime_session
 
 
 def native_options(agent):
-    if ((agent.config.get('meta') or {}).get('acp') or {}).get('transport') == 'direct':
-        return agent.runtime.get('direct_config_options') or []
+    if agent.runtime.get('direct_config_options'):
+        return agent.runtime['direct_config_options']
     if agent.config.get('connection_id'):
         return agent.runtime.get('remote_config_options') or []
+    if agent.runtime.get('acp_transport') == 'direct': return []
     from external.session import native_workspace_cwd
     # Reuse only an option catalog, never another session's selected values.
     candidates = []
@@ -67,7 +68,7 @@ def capability_card(agent):
     from external.acp_launcher import launch_settings
     from external.native_tool_policy import policy_card, native_tools_enabled
     return {'platform': agent.platform, 'transport': 'acpx', 'streaming_tools': True,
-            'connection_transport':acp.get('transport', 'acpx'),
+            'connection_transport':'direct',
             'launcher': launch_settings(agent.config),
             'connection_id':agent.config.get('connection_id',''),'remote_cwd':agent.config.get('remote_cwd',''),
             'mode': effective_session_mode(agent.owner, agent.agent_id),
@@ -96,8 +97,8 @@ def validate_settings(agent, value):
         value = {**value, 'agent_name': ''}
     config = getattr(agent, 'config', {}) or {}
     current = (config.get('meta') or {}).get('acp') or {}
-    if value.get('transport', current.get('transport', 'acpx')) != current.get('transport', 'acpx') and native_workspace_pinned(agent):
-        raise ValueError('已连接会话保留原传输方式；请新建 Agent 使用其他传输方式')
+    if 'transport' in value and value['transport'] != 'direct':
+        raise ValueError('ClawCross now uses its built-in ACP transport')
     proposed = {**config, 'meta': {**(config.get('meta') or {}), 'acp': {**current, **value}}}
     if launch_settings(proposed) != launch_settings(config) and native_workspace_pinned(agent):
         raise ValueError('已连接会话保留原启动方式；请新建 Agent 使用其他 ACP 程序，以保留原会话历史')

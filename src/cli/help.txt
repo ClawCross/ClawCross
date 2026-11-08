@@ -25,7 +25,7 @@ ClawCross — 与你的 Agent 在终端协作
   clawcross start --tunnel           启动并连接 Hub 公网入口
   clawcross stop / status / doctor   服务控制与诊断
   clawcross components              查看可选组件
-  clawcross install-component acpx   显式安装外部 Agent 组件
+  clawcross install-component acp-codex  显式安装官方 Codex ACP 适配器
   clawcross install-component acp-codex   安装 Codex 官方 ACP 适配器
   clawcross install-component acp-claude  安装 Claude 官方 ACP 适配器
   clawcross install-component deepseek-harness  安装官方 DSH（默认 ACP）

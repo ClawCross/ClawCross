@@ -10,6 +10,7 @@ import shutil
 import socket
 import tempfile
 from contextlib import contextmanager
+from functools import wraps
 
 import httpx
 from fastapi import FastAPI, Request, Response
@@ -19,6 +20,19 @@ from connections.store import get_connection_store, public_connection
 
 
 class SSHError(RuntimeError):pass
+
+
+def actor_method(method):
+    @wraps(method)
+    async def call(self,*args,**kwargs):
+        if self._actor is None:
+            from external.acp_direct import manager
+            self._actor = manager()
+        if asyncio.get_running_loop() is self._actor.loop:
+            return await method(self,*args,**kwargs)
+        if self._actor.closed and method.__name__ == 'close': return
+        return await self._actor.submit(lambda:method(self,*args,**kwargs))
+    return call
 
 
 class BridgeServer(uvicorn.Server):
@@ -36,6 +50,7 @@ class SSHConnections:
         self._sessions={};self._locks={};self._errors={}
         self._relay=None;self._relay_task=None;self._relay_lock=asyncio.Lock()
         self._socket_root=None
+        self._actor=None
 
     def card(self, owner, connection_id):
         connection=self.store.get(owner,connection_id);active=self._sessions.get((owner,connection_id))
@@ -62,6 +77,7 @@ class SSHConnections:
         key=hashlib.sha256((str(self.store.path)+connection['id']+str(os.getpid())).encode()).hexdigest()[:24]
         return str(root/key)
 
+    @actor_method
     async def relay(self):
         async with self._relay_lock:
             if self._relay:return self._relay_port
@@ -85,6 +101,7 @@ class SSHConnections:
                 await asyncio.sleep(.01)
             raise SSHError('MCP return channel did not start')
 
+    @actor_method
     async def connect(self, owner, connection_id):
         key=(owner,connection_id);lock=self._locks.setdefault(key,asyncio.Lock())
         async with lock:
@@ -123,6 +140,7 @@ class SSHConnections:
             active['monitor']=asyncio.create_task(monitor())
             return active
 
+    @actor_method
     async def disconnect(self, owner, connection_id):
         key=(owner,connection_id)
         async with self._locks.setdefault(key,asyncio.Lock()):
@@ -135,6 +153,7 @@ class SSHConnections:
                 await active['monitor']
             self._errors.pop(key,None)
 
+    @actor_method
     async def spawn(self, owner, connection_id, payload, **kwargs):
         active=await self.connect(owner,connection_id);connection=active['connection']
         script=base64.b64encode(Path(__file__).with_name('remote_worker.py').read_bytes()).decode()
@@ -150,9 +169,47 @@ class SSHConnections:
             await process.wait();raise
         return process
 
+    @actor_method
+    async def spawn_stdio(self, agent, servers):
+        from external.acp_profiles import launch_spec
+        from external.session import native_workspace_cwd, runtime_session
+        active = await self.connect(agent.owner,agent.config['connection_id'])
+        connection = active['connection']
+        script=base64.b64encode(Path(__file__).with_name('remote_worker.py').read_bytes()).decode()
+        executable=connection['python'] if connection['python'].startswith('~/') else '"'+connection['python']+'"'
+        remote=executable+' -u -c "import base64;exec(base64.b64decode(\''+script+'\'))"'
+        namespace=hashlib.sha256((agent.owner+'\0'+agent.agent_id+'\0'+connection['id']).encode()).hexdigest()[:32]
+        spec=launch_spec(agent.config)
+        if 'package' in spec: spec['node']=connection['node']
+        payload={'action':'acp','launcher':spec,'cwd':native_workspace_cwd(agent),
+                 'namespace':namespace,'mcp_servers':servers,'legacy_name':runtime_session(agent),
+                 'resume_session_id':agent.runtime.get('native_resume_id'),
+                 'requires_resume':bool(agent.runtime.get('negotiation_sent')),
+                 'bridge_url':f'http://127.0.0.1:{active["port"]}/external/tool-bridge',
+                 'bridge_script':base64.b64encode(Path(__file__).with_name('bridge_stdio.py').read_bytes()).decode()}
+        process=await asyncio.create_subprocess_exec(*self.command(connection),connection['host'],remote,
+            stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,
+            **({'start_new_session':True} if os.name!='nt' else {}))
+        async def drain():
+            while await process.stderr.read(8192):pass
+        process._clawcross_stderr_task=asyncio.create_task(drain())
+        try:
+            process.stdin.write(json.dumps(payload).encode()+b'\n');await process.stdin.drain()
+            ready=json.loads(await asyncio.wait_for(process.stdout.readline(),20))
+            if not ready.get('ready'):raise SSHError('Remote ACP bootstrap did not complete')
+            return process,ready
+        except BaseException as exc:
+            if process.returncode is None:process.kill()
+            await process.wait()
+            await asyncio.gather(process._clawcross_stderr_task,return_exceptions=True)
+            if isinstance(exc,asyncio.CancelledError):raise
+            raise SSHError('Remote ACP startup failed; check the installed ACP program and session metadata') from None
+
+    @actor_method
     async def probe(self, owner, connection_id):
         connection=self.store.get(owner,connection_id)
-        process=await self.spawn(owner,connection_id,{'action':'probe','acpx':connection['acpx']},
+        from external.acp_profiles import LAUNCHERS, PACKAGES
+        process=await self.spawn(owner,connection_id,{'action':'probe','launchers':LAUNCHERS,'packages':PACKAGES},
             stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
         try:out,err=await asyncio.wait_for(process.communicate(),timeout=25)
         except BaseException:
@@ -161,6 +218,7 @@ class SSHConnections:
         if process.returncode:raise SSHError(err.decode(errors='replace').strip()[-1000:] or 'Remote probe failed')
         return {**self.card(owner,connection_id),'remote':json.loads(out)}
 
+    @actor_method
     async def resolve_workspace(self, owner, connection_id, cwd):
         process=await self.spawn(owner,connection_id,{'action':'workspace','cwd':cwd},
             stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
@@ -171,6 +229,7 @@ class SSHConnections:
         if process.returncode:raise SSHError(err.decode(errors='replace')[-1000:])
         return json.loads(out)['cwd']
 
+    @actor_method
     async def close(self):
         for owner,connection_id in list(self._sessions):await self.disconnect(owner,connection_id)
         if self._relay:

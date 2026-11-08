@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import time
 import uuid
+import subprocess
 
 pending = {}
 prompts = {}
@@ -30,12 +31,25 @@ async def handle(packet):
     elif method in {'session/new', 'session/load'}:
         sid = args.get('sessionId') or uuid.uuid4().hex
         log(method, sid=sid, servers=[s['name'] for s in args.get('mcpServers', [])])
+        if '--check-mcp' in sys.argv:
+            for server in args.get('mcpServers', []):
+                env={**os.environ,**{e['name']:e['value'] for e in server['env']}}
+                wire=json.dumps({'jsonrpc':'2.0','id':1,'method':'initialize','params':{}})+'\n'
+                wire+=json.dumps({'jsonrpc':'2.0','id':2,'method':'tools/list'})+'\n'
+                result=await asyncio.to_thread(subprocess.run,[server['command'],*server['args']],
+                    input=wire,capture_output=True,text=True,env=env,timeout=15)
+                assert 'SCOPED_REMOTE' in result.stdout, 'MCP scope probe failed'
+                log('mcp', ok=True)
         result = {'configOptions':[{'type':'select', 'id':'mode', 'name':'Mode', 'currentValue':'read-only',
                   'options':[{'value':'read-only','name':'Read only'}, {'value':'agent','name':'Agent'}]}]}
         if method == 'session/new': result['sessionId'] = sid
         else:
             send({'method':'session/update', 'params':{'sessionId':sid, 'update':{'sessionUpdate':'agent_message_chunk',
                   'content':{'type':'text','text':'OLD REPLAY MUST NOT APPEAR'}}}})
+    elif method == 'session/list':
+        log('list')
+        result={'sessions':[{'sessionId':'fixture-native','cwd':str(Path.cwd()),'title':'Saved session',
+                             'updatedAt':'2026-11-08T00:00:00Z'}]}
     elif method == 'session/set_config_option':
         log('config', **args)
         result = {'configOptions':[{'type':'select', 'id':args['configId'], 'name':args['configId'],

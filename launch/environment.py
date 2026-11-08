@@ -73,11 +73,9 @@ def ensure_core() -> None:
 
 
 def component_status() -> None:
-    for name, binary in (("acpx", "acpx"), ("cloudflared", "cloudflared"), ("weclaw", "weclaw")):
+    for name, binary in (("cloudflared", "cloudflared"), ("weclaw", "weclaw")):
         suffix = ".exe" if os.name == "nt" else ""
         local = bin_dir() / f"{binary}{suffix}"
-        if name == "acpx":
-            local = bin_dir() / "node" / "node_modules" / ".bin" / ("acpx.cmd" if os.name == "nt" else "acpx")
         print(f"{name}: {shutil.which(binary) or (str(local) if local.is_file() else 'not installed')}")
     srt = bin_dir() / "node" / "node_modules" / ".bin" / ("srt.cmd" if os.name == "nt" else "srt")
     available = shutil.which("srt") or (str(srt) if srt.is_file() else "")
@@ -249,14 +247,6 @@ def _install_component(name: str, adapters: list[str]) -> None:
         command = [uv, "pip", "install", "--python", str(python)]
         _run(command + ["-r", str(CHANNEL_REQUIREMENTS)])
         return
-    if name == "acpx":
-        npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
-        if not npm:
-            raise RuntimeError("npm is required to install acpx; install Node.js first")
-        target = _node_component_target()
-        _run([npm, "install", "--ignore-scripts", "--save-exact", "--prefix", str(target), "acpx@0.19.4"])
-        print(f"acpx installed under {target}")
-        return
     if name in {'acp-codex', 'acp-claude'}:
         profiles = json.loads((PROJECT_ROOT / 'config/acp-adapters.json').read_text())
         package, version, _ = profiles[name.removeprefix('acp-')]
@@ -326,7 +316,7 @@ def main() -> int:
     sub.add_parser("ensure-core", help="Install core Python dependencies if needed")
     sub.add_parser("components", help="Report optional component availability")
     install = sub.add_parser("install", help="Explicitly install an optional component")
-    install.add_argument("component", choices=("acpx", "acp-codex", "acp-claude", "deepseek-harness", "nonebot", "channels", "weclaw", "cloudflared", "srt"))
+    install.add_argument("component", choices=("acp-codex", "acp-claude", "deepseek-harness", "nonebot", "channels", "weclaw", "cloudflared", "srt"))
     install.add_argument("--adapter", action="append", default=[], help="NoneBot adapter name")
     args = parser.parse_args()
     try:

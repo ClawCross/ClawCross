@@ -14,7 +14,7 @@ test('Studio plus keeps runtime settings while global settings expose contextual
     if(route.request().method()==='POST') installs.push(name);
     return route.fulfill({contentType:'application/json',body:JSON.stringify({name,installed:installs.includes(name),ready:installs.includes(name),missing:[],can_install:true,platform:'linux'})});
   });
-  await page.goto('/studio');
+  await page.goto('/studio?embedded=1');
   await page.evaluate(()=>{currentLang='zh-CN';currentSessionId='s1';document.getElementById('login-screen').style.display='none';document.getElementById('chat-screen').style.display='flex';});
   await expect(page.locator('#app-splash')).toBeHidden();
   await expect(page.locator('#setup-wizard-modal')).toBeHidden();
@@ -32,7 +32,7 @@ test('Studio plus keeps runtime settings while global settings expose contextual
   await page.route('**/proxy_settings_full',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({settings:{}})}));
   await page.evaluate(()=>openSettings());
   await page.locator('[data-settings-tab="integrations"]').click();
-  await expect(page.locator('#settings-external-agents [data-component="acpx"] button')).toBeVisible();
+  await expect(page.locator('#settings-external-agents [data-component="acp-codex"] button')).toBeVisible();
   await page.locator('[data-settings-tab="channels"]').click();
   for(const name of ['weclaw','nonebot','channels']) await expect(page.locator(`#settings-body [data-component="${name}"] button`)).toBeVisible();
   await page.locator('[data-settings-tab="public"]').click();
@@ -49,7 +49,7 @@ test('Studio plus keeps runtime settings while global settings expose contextual
 });
 
 test('completed backend status clears the compaction spinner even when local polling was stale',async({page})=>{
-  await page.goto('/studio');
+  await page.goto('/studio?embedded=1');
   await page.evaluate(()=>{
     currentLang='zh-CN';currentSessionId='s1';
     sessionCompactBusy=true;sessionCompactStatus='正在后台整理早期对话…';

@@ -120,7 +120,7 @@ class NativeSessionTests(unittest.IsolatedAsyncioTestCase):
         adapter = AsyncMock()
         adapter.prompt_with_trace.return_value = AcpxPromptTrace('answer', [], '')
         history = AsyncMock()
-        with patch('external.acpx.get_acpx_adapter', return_value=adapter) as factory, \
+        with patch('external.acp.adapter', return_value=adapter) as factory, \
              patch.object(runtime, '_native_session', return_value=(None, None, {})), \
              patch('external.history.get_store', return_value=history):
             with self.assertRaises(ControlError):
@@ -129,7 +129,7 @@ class NativeSessionTests(unittest.IsolatedAsyncioTestCase):
             config = {**agent.config, 'meta':{'acp':{**agent.config['meta']['acp'], 'native_tools':True}}}
             agent = self.store.update(agent.owner, agent.agent_id, config=config)
             await runtime.test_connection(agent)
-            factory.assert_called_with(cwd=str(self.root), agent_name='', agent_command='')
+            factory.assert_called_with(agent, store=self.store)
             self.assertEqual(adapter.ensure_session.call_args.kwargs['resume_session_id'], 'native-one')
             adapter.prompt_with_trace.assert_not_awaited()
             reply = await runtime.ask(agent, AgentMessage(text='new question'), context={}, mode='auto',

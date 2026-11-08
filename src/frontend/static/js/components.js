@@ -49,7 +49,7 @@ function initComponentControls(root = document) {
 
 
 const componentSettingsGroups = {
-    agents: {title:'连接其它 Agent', items:[['acp-codex','Codex 官方 ACP 适配器，复用本机登录。'],['acp-claude','Claude 官方 ACP 适配器，复用本机登录。'],['acpx','其他平台、SSH 与已有会话的兼容组件。对应程序和账号需另行准备。']]},
+    agents: {title:'连接其它 Agent', items:[['acp-codex','Codex 官方 ACP 适配器，复用本机登录。'],['acp-claude','Claude 官方 ACP 适配器，复用本机登录。']]},
     channels: {title:'连接聊天平台', items:[['weclaw','连接微信，需要下载 WeClaw 程序。'],['nonebot','连接 NoneBot 支持的平台；适配器和账号在渠道设置中配置。'],['channels','QQ 与 Telegram 的 Python 连接依赖。']]},
     tunnel: {title:'公网访问', items:[['cloudflared','下载 Cloudflare Tunnel 程序。安装后在公网访问设置中主动开启通道。']]},
 };

@@ -1384,8 +1384,10 @@ def team_creator_feishu_collect():
 
 @app.route("/studio")
 def studio():
-    """ClawCross Studio 页面"""
-    return render_template("index.html")
+    """One chat workspace; retain the Studio renderer for embedded Agent turns."""
+    if request.args.get("embedded") == "1" or not session.get("user_id"):
+        return render_template("index.html")
+    return render_template("group_chat_mobile.html")
 
 
 @app.route("/mobile/group_chat")
@@ -2766,10 +2768,9 @@ def _list_acpx_tools() -> list[str]:
 @app.route("/proxy_acpx_status", methods=["GET"])
 def proxy_acpx_status():
     """Return availability, including explicitly installed local components."""
-    from ops.components import binary_path
-
-    available = bool(binary_path("acpx"))
-    return jsonify({"available": available, "tools": _list_acpx_tools() if available else []})
+    from importlib.util import find_spec
+    available = find_spec('acp') is not None
+    return jsonify({"available":available,'tools':_list_acpx_tools(),'transport':'direct','requires_acpx':False})
 
 
 # ------------------------------------------------------------------

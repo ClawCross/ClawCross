@@ -19,7 +19,7 @@ directly and retain the normal group reply callback.
 
 ACP settings expose per-Agent ClawCross mode, the native adapter's advertised
 options, and workspace settings. Before the first prompt, the selected workspace
-sets acpx's native cwd. After conversation/resume, that cwd stays pinned, including
+sets the ACP server's native cwd. After conversation/resume, that cwd stays pinned, including
 reset, to preserve native history; changes to the folder collection still apply to
 ClawCross file/command tools and appear in the next dynamic block.
 
@@ -42,7 +42,7 @@ Persistence
     -> `data/user_files/{user_id}/` (profiles, policies, runtime artifacts, memory dirs, logs)
 Side systems
     -> `src/backend/oasis/` (Town Mode, workflows, swarm engine)
-    -> `src/backend/external/acpx.py` (ACP exchange with external AI agents via acpx CLI)
+    -> `src/backend/external/acp_direct.py` (built-in ACP SDK client, local and SSH)
     -> WeBot dream pipeline (`webot_memory.py`) as the current browser-native autoDream layer
 ```
 
@@ -183,7 +183,7 @@ Node.js/npm、Linux bwrap/socat/rg 等缺失依赖会在同一处提示；Debian
 Windows 使用 SRT 0.0.78+ 的原生后端，组件页面提供独立的 Windows 沙盒初始化按钮，首次创建专用账号与 WFP 网络规则需要主机管理员确认，启动不自动执行。文件/网络策略与审批设置继续共用；命令在原生隔离内使用 Job Object 限制 CPU、内存、进程数和运行时间，限制设置失败则不执行。完整 Windows 隔离尚未在本 Linux 主机实测；Windows CI 验证 Job Object 和接口契约，完整 SRT 测试需真机明确开启。详见 [命令隔离后端](command-isolation-plan.md)。
 `apply-seccomp` 写入 `setgroups`、`uid_map` 或 `gid_map` 失败属于隔离初始化故障，不能通过普通路径/域名提权解决，也不能据此认定沙盒已验证安全。管理员需检查 AppArmor 的 `bwrap//&unpriv_bwrap` 策略及嵌套 user namespace 支持；不得自动关闭 seccomp、开放所有 Unix socket 或切换到宿主执行。
 管理员明确批准并安装 root 所有的 `/usr/local/libexec/clawcross/bwrap` 后，ClawCross 可通过 SRT 的 `bwrapPath` 使用专用 AppArmor 配置；二进制及其所有上级目录必须由 root 持有且不可由普通用户修改。程序不会自行安装该配置或修改全局 sysctl。
-新建 Agent 可以选择 ACP 连接方式；表单内提供 acpx 显式安装按钮。运行编号可留空自动生成，中文显示名不需要手填编号。
+新建 Agent 可以选择 ACP 连接方式；表单内提供官方适配器显式安装按钮。运行编号可留空自动生成，中文显示名不需要手填编号。
 
 Studio 的快速新建仍先保留为草稿；切换平台、查看设置不登记 Agent，也不发送对话。模型配置可直接应用到草稿；工作区提供明确的“创建并配置工作区”，点击后登记 Agent 并编辑目录，不必先发消息。外部 Agent 的草稿同样可先保存启动方式并配置工作区，不会因此初始化原生会话。
 通讯录新建页从首次打开就列出全部 ACP 平台和自定义入口，平台切换保留本次表单中的启动命令；异步加载完成不会把已切回的内置伙伴改回外部平台。外部 Agent 使用“创建并配置”：登记后进入设置，先配置工具和工作区，再测试连接读取实际模型、原生模式和思考强度。已有 Agent 直接打开连接设置时仍自动检测。所有这些操作都无需发送首条对话，也不会安装外部组件。
@@ -191,23 +191,21 @@ Studio 的快速新建仍先保留为草稿；切换平台、查看设置不登�
 Studio、通讯录与群成员详情共用“Agent 设置”目录。详情只展示概览；名称与人设、工具范围、模型与思考、工作区、模式与沙盒、上下文分别在各自页面编辑，并提供返回设置目录的按钮。思考强度只在模型页面编辑，ClawCross 运行模式只在审核页面编辑；外部程序的原生模式仍属于原生连接选项。新建页默认填入“我的伙伴”，直接展示能力模板；外部程序、人设全文、工具范围和团队归属折叠到高级设置。消息页的第一个伙伴入口也使用同一取名流程，确认前不创建 Agent。
 系统设置先展示分类目录，手机端在分类页面用“返回设置”回到目录；各分类沿用原表单，切换页面保留未保存的字段。底部提示待保存的修改数，重启服务位于高级设置的服务维护中。
 
-ACP 运行状态轮询仅检查本机任务锁，不启动外部适配器；会话追踪使用 `sessions list --local`，只显示登录用户已注册 Agent 的会话。查询和关闭接口需要认证，关闭操作验证会话所有权。外部 Agent 的 `model` 设置通过 acpx `--model` 传递，只影响该 Agent；留空时使用外部程序默认配置。初始化使用 Agent 的超时设置，保留 acpx 默认适配器下载行为。压缩后的用量估算按摘要版本与 API 用量基准复用，避免页面轮询反复读取并分词整个历史。
+ACP 状态轮询与会话追踪只读 AgentStore，不运行外部客户端。所有平台和旧 Agent 均使用内置 ACP 客户端；模型与模式通过 `session/set_config_option` 或适配器声明的模式接口应用。没有隐式适配器下载或 prompt 重试。
 
 ### 外部 Agent 设置与工具通道
 
-Studio 和手机端的新建 Agent、外部 Agent 设置提供 CodeBuddy（`codebuddy --acp`）、ZCode（第三方桥接 `zcode-acp-server`）及“自定义 ACP”。自定义方式可填写 `acpx --agent` 后面的完整启动命令，或填写 `~/.acpx/config.json` 中已配置的 Agent 名称，不要求 acpx 内置该平台。配置保存在当前 Agent 的 `meta.acp.agent_command` / `agent_name`，两者择一；本机及 SSH 调用共用此配置。程序需自行安装并登录，保存配置不安装或启动程序；测试连接或发消息才启动。Windows 建议在 acpx 中配置名称及结构化 argv，再通过名称引用，避免路径引号歧义。
+Codex / Claude 使用固定版本官方适配器；其他平台的原生 argv 见 `config/acp-launchers.json`。自定义启动命令或命名启动器保存在 Agent 的 `meta.acp`；用户命名配置位于 `$CLAWCROSS_HOME/config/acp-launchers.json`。原 `~/.acpx` 目录仅用于读取旧编号与别名，不是运行依赖。
 
-启动方式参与 acpx 会话标识。已有连接固定原启动方式，以免误接其他程序或丢失历史；需要更换程序时新建 Agent。取消、关闭、会话追踪及读取 acpx 记录均使用该 Agent 的启动配置。模型、思考强度和原生模式仍由实际连接的 ACP 程序声明，不假定各平台支持相同设置。参见 [acpx 自定义 Agent](https://github.com/openclaw/acpx/blob/main/docs/custom-agents.md)、[CodeBuddy ACP](https://www.codebuddy.ai/docs/cli/acp)、[ZCode ACP 桥接](https://github.com/william0wang/zcode-acp)。
-
-新建本机 Codex / Claude 使用 ClawCross ACP 直连客户端，基于官方 Python SDK；原有 Agent、SSH 和其他平台保留 acpx 兼容路径。直连复用原 Agent 的身份、历史、持久收件箱及群回复，不另建隐藏 session。`GET /v1/agents/{id}/capabilities` 从该 Agent 的运行记录或本地 acpx 记录读取实际配置选项，不启动适配器。Studio 加号的运行设置、Agent 详情及手机设置支持原生模型、模式、思考强度和连接时限。Codex 的 `reasoning_effort` 与 Claude 的 `effort` 分别使用适配器返回的值；通过 `PATCH /v1/agents/{id}/acp-settings` 独立保存，下一轮只应用变化的设置。直连使用 ACP `session/set_config_option`；acpx 0.19 持久会话使用 `set`。
+旧连接按 Agent、会话代次、工作区恢复原生 ID，仍被旧进程持有时拒绝接管；恢复失败保留原记录。原生目录与历史通过 ACP 的 list/load 读取，未知能力明确提示。`GET /v1/agents/{id}/capabilities` 读取缓存的真实选项，不启动模型。参数仍由各适配器声明，不假定所有平台相同。
 
 同一 Agent 的 turn/control 锁跨线程、事件循环共享，键包括数据库、用户和 Agent。直连子进程由单独 actor loop 管理，限制并发进程及排队数量，OS 文件锁拒绝第二后台进程接管同一 Agent。原生 ID 在模型调用前保存；取消、超时、断线回收连接，后续显式请求恢复相同 ID，无自动 prompt 重试。连接器变更只重连原会话。每个 Agent 最多 64 个请求，全局最多 256 个；直连进程总计 16 个、每用户 4 个，默认空闲 300 秒回收。服务退出先取消排队和活动操作，再回收适配器。安装与恢复细节见 [转接模式](agent-join.md)。
 
-ClawCross MCP 工具默认启用，可按 Agent 关闭。启用时每个 Agent 使用独立的凭证及 MCP 配置，连接器只暴露 `tool_search` 和 `tool_call`；工具搜索返回准确参数。服务端验证当前用户、Agent、活动调用、工具名单、每轮模式，并通过 WeBot 的工具执行节点执行命令规则和审核。身份参数不能由外部 Agent 覆盖。acpx 权限策略仅将带 ClawCross 完整命名空间的两个 MCP 包装器委托给后端审核，不对原生 shell 自动放行；否则 Claude 的只读批准会拒绝通用 MCP 包装器。原生 CLI 工具继续使用自身的沙盒与审批；ClawCross 的自动审核不接管原生 shell。群聊通过 MCP 发送时使用相同的身份与群成员校验；未启用时提供已安装 Python 的 CLI 命令，避免 `uv run` 因缓存写入触发额外审核。
+ClawCross MCP 工具默认启用，可按 Agent 关闭。启用时每个 Agent 使用独立的凭证及 MCP 配置，连接器只暴露 `tool_search` 和 `tool_call`；工具搜索返回准确参数。服务端验证当前用户、Agent、活动调用、工具名单、每轮模式，并通过 WeBot 的工具执行节点执行命令规则和审核。身份参数不能由外部 Agent 覆盖。ACP 权限策略仅将带 ClawCross 完整命名空间的两个 MCP 包装器委托给后端审核，不对原生 shell 自动放行；否则 Claude 的只读批准会拒绝通用 MCP 包装器。原生 CLI 工具继续使用自身的沙盒与审批；ClawCross 的自动审核不接管原生 shell。群聊通过 MCP 发送时使用相同的身份与群成员校验；未启用时提供已安装 Python 的 CLI 命令，避免 `uv run` 因缓存写入触发额外审核。
 
 ACP 工具事件在调用期间通过 gateway SSE 转发；手机端通过有用户认证的 `/v1/agents/{id}/events?after=...` 读取当前群的最近活动，保留最多 256 个事件。失败工具显示失败。工具完成但没有普通文本属于合法结束，JSON-RPC 请求、通知、用量和原始提示词不会回退为正文；旧审计记录仅在展示时过滤协议日志，不修改原始记录。
 
-acpx 0.19 的 MCP 配置固定在队列连接生命周期内。更换连接器时，仅在收到 `QUEUE_MCP_CONFIG_CONFLICT` 后调用该安装版本的 lease 校验与传输清理函数，保留未关闭的 acpx 记录和原生 session ID，再连接原会话；不执行 `sessions close`。此兼容层依赖 acpx 导出的 `terminateQueueOwnerForSession`，未来版本缺少该函数时明确报错并保留原会话，不隐式重置。
+MCP 连接器变更时，内置客户端只关闭当前传输并载入同一原生 ID；不重置原生会话。SSH 使用受管理 OpenSSH、字节流和只允许两个 ClawCross MCP 包装器的回连；断线/取消停止远端进程组。
 组件安装只接受登录用户的同源操作和固定白名单，不在启动或打开表单时自动下载。
 
 ### Context usage after compaction
@@ -220,7 +218,7 @@ API 实测用量绑定到该次调用使用的压缩视图。摘要提交后，�
 `当前 input - 上次 input - 上次 output` 归因；动态块变化、多种消息混合、推理输出等不能单独归因时，
 回退到本地分词分摊。差分分项仍是推断：输出转为输入的序列化成本可能不同，多条新增消息只有整体增量可知。
 
-Studio 加号二级菜单仅保留当前对话运行选项：沙盒与审核、上下文与压缩、模式、工具、人设、工作流、对话面板与附件。全局设置 → 外部 Agent 提供 acpx 安装；机器人集成中提供 WeClaw / NoneBot / QQ / Telegram 安装；公网访问设置中提供 cloudflared 安装。群聊加入操作位于消息中心。安装不自动开启渠道、Agent 或公网通道。手动摘要提交后，用量投影失败不影响任务完成；终态清除前端残留的压缩忙状态。
+Studio 加号二级菜单仅保留当前对话运行选项：沙盒与审核、上下文与压缩、模式、工具、人设、工作流、对话面板与附件。全局设置 → 外部 Agent 提供官方 ACP 适配器安装；机器人集成中提供 WeClaw / NoneBot / QQ / Telegram 安装；公网访问设置中提供 cloudflared 安装。群聊加入操作位于消息中心。安装不自动开启渠道、Agent 或公网通道。手动摘要提交后，用量投影失败不影响任务完成；终态清除前端残留的压缩忙状态。
 
 
 ### 内外 Agent 的提示词与动态状态
@@ -267,4 +265,8 @@ Dynamic UI remains embedded when clicked or dragged. Only its explicit dock cont
 
 When no sandbox choice has been saved, an installed SRT or available Linux Landlock backend selects automatic isolation. An explicit saved `off` remains effective. Standard mode can review new network targets; strict mode stays within its initial allowed destinations. Without an explicit reviewer model, approval review uses the current Agent’s model/API profile before platform defaults.
 
-Antigravity uses the installed official CLI through `agy acp` by default. Explicit custom launch settings take precedence. Without that CLI, the acpx Antigravity shortcut retains its native standalone-runtime behavior.
+Antigravity uses the installed official CLI through `agy acp` by default. Explicit custom launch settings take precedence. Without that CLI, install the native program or configure an explicit ACP launcher.
+
+### Unified conversation workspace
+
+`/studio`（登录后）和 `/mobile/group_chat` 使用同一个对话目录：我的 Agent 与群聊共用搜索和滚动区域。Agent 会话复用嵌入式 Studio 渲染器（`/studio?embedded=1`），保留普通 Agent API、工具历史、动态 UI 与流式输出；群聊复用原群组件及群 API。导航不会发送 prompt 或新建隐藏 Agent。Agent 中心是通讯录的卡片视图，团队/工作流编辑位于创造页。手机对话隐藏底部导航并提供返回，嵌入区响应 visualViewport。

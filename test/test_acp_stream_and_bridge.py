@@ -199,7 +199,7 @@ class TurnFollowTests(unittest.IsolatedAsyncioTestCase):
             async def ops_cancel(self, **kwargs):
                 pass
 
-        for target, value in (('external.acp.adapter', lambda agent=None: Adapter()),
+        for target, value in (('external.acp.adapter', lambda agent=None, **_: Adapter()),
                               ('external.session.prepare_turn', lambda *a, **k: session.PreparedTurn('hi', None, {}, {})),
                               ('external.session.remember_turn', lambda *a, **k: None)):
             patcher = patch(target, value)

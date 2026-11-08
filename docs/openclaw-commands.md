@@ -1,14 +1,14 @@
 # OpenClaw in ClawCross
 
 OpenClaw is an ACP agent, driven the same way as Codex or Claude Code: through
-acpx, which runs `openclaw acp`. ClawCross never writes OpenClaw's
+the built-in ACP client, which runs `openclaw acp`. ClawCross never writes OpenClaw's
 configuration — it does not start the gateway, create or delete OpenClaw agents,
 edit their skills, tools, channels or workspace files, or push LLM settings into
 OpenClaw. Manage OpenClaw itself with OpenClaw's own CLI and UI.
 
 ## Requirements
 
-- acpx: `bash launch/run.sh install-component acpx` (Windows: `run.ps1 install-component acpx`)
+- The official Python ACP SDK is included with core dependencies; no acpx component is needed.
 - the `openclaw` CLI on `PATH`, with its gateway running and authenticated as
   OpenClaw's documentation describes (`openclaw acp` connects to it)
 

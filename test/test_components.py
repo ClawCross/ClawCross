@@ -65,9 +65,9 @@ def test_installer_uses_fixed_command_without_shell(monkeypatch):
         assert 'shell' not in kwargs
         return type('Result', (), {'returncode': 0})()
     monkeypatch.setattr(components.subprocess, 'run', run)
-    components._install('acpx')
-    assert commands[0][-2:] == ['install', 'acpx']
-    assert components.component_status('acpx')['state'] == 'complete'
+    components._install('acp-codex')
+    assert commands[0][-2:] == ['install', 'acp-codex']
+    assert components.component_status('acp-codex')['state'] == 'complete'
     components._jobs.clear()
 
 

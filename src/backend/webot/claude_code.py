@@ -15,7 +15,6 @@ import re
 import shutil
 import subprocess
 import time
-import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -124,7 +123,6 @@ def run_command(cmd: list[str], *, timeout: int = 30) -> CommandResult:
 
 def detect_claude_code() -> dict:
     claude_path = shutil.which("claude") or ""
-    acpx_path = shutil.which("acpx") or ""
     errors: list[str] = []
 
     claude_version = ""
@@ -137,25 +135,22 @@ def detect_claude_code() -> dict:
     else:
         errors.append("claude executable not found on PATH")
 
-    acpx_claude_supported = False
-    acpx_help = ""
-    if acpx_path:
-        result = run_command([acpx_path, "--help"], timeout=8)
-        acpx_help = strip_ansi((result.stdout or result.stderr).strip())
-        acpx_claude_supported = result.returncode == 0 and "claude" in acpx_help.lower()
-        if result.returncode != 0:
-            errors.append((result.stderr or result.stdout or "acpx --help failed").strip())
-    else:
-        errors.append("acpx executable not found on PATH")
-
-    available = bool(claude_path and claude_version and acpx_path and acpx_claude_supported)
+    from external.acp_profiles import command
+    try:
+        command({'platform':'claude'})
+        adapter_available = True
+    except RuntimeError:
+        adapter_available = False
+        errors.append('Run clawcross install-component acp-claude to prepare the official ACP adapter')
+    available = bool(claude_path and claude_version and adapter_available)
     return {
         "available": available,
         "status": "available" if available else "unavailable",
         "claude_path": claude_path,
         "claude_version": claude_version,
-        "acpx_path": acpx_path,
-        "acpx_claude_supported": acpx_claude_supported,
+        "transport": "direct",
+        "adapter_available": adapter_available,
+        "requires_acpx": False,
         "errors": errors,
         "checked_at": _utc_now(),
     }
@@ -171,78 +166,23 @@ def detect_claude_code_cached(*, ttl_seconds: int = 60) -> dict:
     return status
 
 
-def probe_claude_acp(
-    *,
-    prompt: str = "Reply only CLAUDE_ACP_OK",
-    session_name: str = "",
-    timeout: int = 90,
+async def probe_claude_acp(
+    *, owner: str, prompt: str = "Reply only CLAUDE_ACP_OK",
+    session_name: str = "", timeout: int = 90,
 ) -> dict:
-    status = detect_claude_code_cached(ttl_seconds=10)
-    if not status.get("acpx_path") or not status.get("acpx_claude_supported"):
-        return {
-            "ok": False,
-            "status": "unavailable",
-            "error": "acpx claude provider is unavailable",
-            "probe_at": _utc_now(),
-            "claude_code": status,
-        }
-
-    acpx_path = str(status["acpx_path"])
-    safe_timeout = max(10, min(int(timeout or 90), 600))
-    acp_session = (session_name or "").strip() or f"clawcross-claude-probe-{uuid.uuid4().hex[:8]}"
-    ensure = run_command(
-        [
-            acpx_path,
-            "--format",
-            "json",
-            "--timeout",
-            str(safe_timeout),
-            "claude",
-            "sessions",
-            "ensure",
-            "--name",
-            acp_session,
-        ],
-        timeout=safe_timeout,
-    )
-    if ensure.returncode != 0:
-        return {
-            "ok": False,
-            "status": "failed",
-            "session_name": acp_session,
-            "error": (ensure.stderr or ensure.stdout).strip()[-2000:],
-            "probe_at": _utc_now(),
-            "claude_code": status,
-        }
-
-    asked = (prompt or "Reply only CLAUDE_ACP_OK").strip()
-    response = run_command(
-        [
-            acpx_path,
-            "--format",
-            "json",
-            "--timeout",
-            str(safe_timeout),
-            "claude",
-            "prompt",
-            "-s",
-            acp_session,
-            asked,
-        ],
-        timeout=safe_timeout,
-    )
-    combined = strip_ansi((response.stdout or "") + ("\n" + response.stderr if response.stderr else ""))
-    ok = response.returncode == 0 and ("CLAUDE_ACP_OK" in combined or bool(combined.strip()))
-    return {
-        "ok": ok,
-        "status": "success" if ok else "failed",
-        "session_name": acp_session,
-        "stdout_tail": (response.stdout or "")[-4000:],
-        "stderr_tail": (response.stderr or "")[-2000:],
-        "returncode": response.returncode,
-        "probe_at": _utc_now(),
-        "claude_code": status,
-    }
+    """Use a registered, owned Agent; never create a hidden probe session."""
+    from agents.store import get_store
+    from agents.gateway import get_gateway
+    from agents.messages import AgentMessage
+    agent = get_store().get(owner, session_name)
+    if agent is None or agent.platform != 'claude':
+        return {'ok':False,'status':'unavailable','error':'Select an owned Claude Agent ID',
+                'session_name':session_name,'probe_at':_utc_now()}
+    reply = await get_gateway().ask(agent, AgentMessage(text=prompt, sender='u:'+owner),
+                                    timeout=max(10,min(int(timeout or 90),600)))
+    return {'ok':reply.ok,'status':'success' if reply.ok else 'failed',
+            'session_name':agent.agent_id,'stdout_tail':reply.content[-4000:],
+            'stderr_tail':'','error':reply.error,'probe_at':_utc_now()}
 
 
 def run_claude_cli_prompt(

@@ -8,14 +8,14 @@ test('saved SSH devices register ordinary Agents and disconnect without deleting
   await page.route('**/v1/connections**',route=>{
     const req=route.request(),pathname=new URL(req.url()).pathname;calls.push({path:pathname,method:req.method()});
     if(req.method()==='POST'&&pathname==='/v1/connections')rows.push({id:'ssh_device',...req.postDataJSON(),state:'disconnected'});
-    if(pathname.endsWith('/connect')){rows[0].state='connected';return route.fulfill({json:{...rows[0],remote:{acpx_available:true}}});}
+    if(pathname.endsWith('/connect')){rows[0].state='connected';return route.fulfill({json:{...rows[0],remote:{acp_available:true}}});}
     if(pathname.endsWith('/disconnect'))rows[0].state='paused';
     return route.fulfill({json:req.method()==='GET'?{data:rows}:rows[0]||{}});
   });
   await page.route('**/v1/agents',route=>{
     const body=route.request().postDataJSON();agents.push(body);return route.fulfill({json:{agent_id:'remote-agent',...body}});
   });
-  await page.goto('/studio');
+  await page.goto('/studio?embedded=1');
   await page.addStyleTag({path:path.resolve('src/frontend/static/css/connections.css')});
   await page.addScriptTag({path:path.resolve('src/frontend/static/js/connections.js')});
   await page.evaluate(()=>{void DeviceConnections.open();});

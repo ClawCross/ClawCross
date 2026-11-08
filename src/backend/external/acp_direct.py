@@ -66,6 +66,8 @@ class Peer(Client):
         self.text = []
         self.output_size = 0
         self.overflow = None
+        self.replay = None
+        self.replay_bytes = 0
         self.policy = {}
         self.last_used = time.monotonic()
         self.active = False
@@ -81,6 +83,10 @@ class Peer(Client):
         if session_id != self.sid:
             return
         packet = dump(update)
+        if self.replay is not None:
+            self.replay_bytes += len(json.dumps(packet).encode())
+            if self.replay_bytes <= 64*1024*1024: self.replay.append(packet)
+            return
         if packet.get('sessionUpdate') == 'config_option_update':
             self.options = packet.get('configOptions', [])
             self.persist()
@@ -135,32 +141,49 @@ class Peer(Client):
     async def complete_elicitation(self, **kwargs): pass
 
     def persist(self):
+        if self.adapter.store is None: return
         self.adapter.store.patch_runtime(self.adapter.agent.owner, self.adapter.agent.agent_id,
             {'native_resume_id':self.sid, 'acp_cwd':self.adapter.cwd,
-             'direct_config_options':self.options, 'acp_transport':'direct'})
+             'direct_config_options':self.options, 'acp_transport':'direct','acp_connection_closed':False})
 
-    async def start(self, servers, resume):
-        from external.acp_profiles import command
-        argv = command(self.adapter.agent.config)
+    async def open(self, servers):
         private = {'INTERNAL_TOKEN', 'LLM_API_KEY', 'CLAWCROSS_BRIDGE_TOKEN', 'HUB_TOKEN',
                    'HUB_DEVICE_TOKEN', 'TELEGRAM_BOT_TOKEN', 'QQ_APP_SECRET'}
         env = {key:value for key,value in os.environ.items() if key not in private}
-        self.process = await asyncio.create_subprocess_exec(*argv, cwd=self.adapter.cwd, env=env,
-            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            **({'start_new_session':True} if os.name != 'nt' else {}))
+        if self.adapter.agent.config.get('connection_id'):
+            from connections.ssh import get_connections
+            self.process, remote = await get_connections().spawn_stdio(self.adapter.agent, [dump(s) for s in servers])
+            self.adapter.cwd = remote['cwd']
+            if self.fingerprint:
+                self.fingerprint = (self.fingerprint[0], self.adapter.cwd, *self.fingerprint[2:])
+            self.remote_resume = remote.get('native_resume_id')
+            servers = [McpServerStdio.model_validate(s) for s in remote['mcpServers']]
+        else:
+            from external.acp_profiles import command
+            self.process = await asyncio.create_subprocess_exec(*command(self.adapter.agent.config), cwd=self.adapter.cwd, env=env,
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                **({'start_new_session':True} if os.name != 'nt' else {}))
         async def drain():
             # Native stderr can contain credentials. Drain without logging it.
             while await self.process.stderr.read(8192):
                 pass
-        self.stderr_task = asyncio.create_task(drain())
+        self.stderr_task = getattr(self.process,'_clawcross_stderr_task',None) or asyncio.create_task(drain())
         self.connection = connect_to_agent(self, self.process.stdin, self.process.stdout)
         initialized = await self.connection.initialize(protocol_version=PROTOCOL_VERSION,
             client_capabilities=ClientCapabilities(), client_info=Implementation(name='clawcross', version='0.0.29'))
         self.capabilities = initialized.agent_capabilities
+        return servers
+
+    async def start(self, servers, resume):
+        servers = await self.open(servers)
+        resume = resume or getattr(self,'remote_resume',None)
         if resume:
             if not self.capabilities.load_session:
                 raise AcpxError('Adapter cannot resume this Agent; its history was preserved')
             result = await self.connection.load_session(cwd=self.adapter.cwd, session_id=resume, mcp_servers=servers)
+            # SDK 0.12 serializes dispatch but load_session doesn't join update
+            # handlers. Finish replay before a live prompt can become active.
+            await self.connection._session_updates.wait(resume)
             self.sid = resume
         else:
             result = await self.connection.new_session(cwd=self.adapter.cwd, mcp_servers=servers)
@@ -219,6 +242,7 @@ class Manager:
         self.locks = weakref.WeakValueDictionary()
         self.queued = {}
         self.operations = set()
+        self.inspections = asyncio.Semaphore(2)
         self.closed = False
         self.thread.start()
 
@@ -329,6 +353,9 @@ class Manager:
             for operation in operations: operation.cancel()
             await asyncio.gather(*operations, return_exceptions=True)
             await asyncio.gather(*(self.retire(key) for key in list(self.peers)), return_exceptions=True)
+            from connections.ssh import _manager as ssh_manager
+            if ssh_manager and getattr(ssh_manager,'_actor',None) is self:
+                await ssh_manager.close()
             current = asyncio.current_task()
             tasks = [t for t in asyncio.all_tasks() if t is not current]
             for task in tasks: task.cancel()
@@ -384,6 +411,8 @@ class DirectAdapter:
                     raise AcpxError('Native session must be registered to this Agent before resuming')
                 if options.get('reset_session'):
                     raise AcpxError('Use the Agent reset control to create a new conversation')
+                from external.acp_migration import migrate
+                current = migrate(self.store,current)
                 from external.native_tool_policy import require_native_execution
                 from external.acp_launcher import launch_settings
                 require_native_execution(current.config)
@@ -509,3 +538,9 @@ class DirectAdapter:
     async def read_session(self, *, tail, **_):
         entries = await session.log(self.store.require(self.agent.owner, self.agent.agent_id), tail)
         return {'entries':[{'role':item.get('role'), 'textPreview':item.get('content', '')} for item in entries]}
+
+    async def load_native_history(self, *, tool, session_id, cwd):
+        from external.acp_catalog import inspect_native
+        await self.close_session()
+        return await inspect_native(self.agent.owner, self.agent.config, cwd=cwd, session_id=session_id,
+                                    runtime=self.manager,agent=self.agent)

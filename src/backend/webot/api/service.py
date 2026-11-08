@@ -866,7 +866,8 @@ class WeBotService:
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
         if os.getenv('CLAWCROSS_LEGACY_CLAUDE_CODE','').lower() not in {'1','true','yes','on'}:
             raise HTTPException(410, '旧 Claude 控制入口已停用；请登记 Claude Agent 并使用通用 Agent API。')
-        result = probe_claude_acp(
+        result = await probe_claude_acp(
+            owner=req.user_id,
             prompt=req.prompt,
             session_name=req.session_name,
             timeout=req.timeout_seconds,
@@ -895,7 +896,8 @@ class WeBotService:
         state = get_claude_keepalive_state(req.user_id, req.session_id)
         prompt = req.prompt or state.prompt or "ping"
         if req.use_acp:
-            result = probe_claude_acp(
+            result = await probe_claude_acp(
+                owner=req.user_id,
                 prompt=prompt,
                 session_name=req.session_name,
                 timeout=req.timeout_seconds or state.timeout_seconds,

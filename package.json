@@ -37,6 +37,7 @@
     "config/channels.json",
     "config/requirements.txt",
     "config/acp-adapters.json",
+    "config/acp-launchers.json",
     "config/requirements-channels.txt",
     "data/prompts/**",
     "data/team_presets/**",

@@ -23,7 +23,7 @@ Clawcross turns a single chatbot into a **programmable multi-expert system**. Yo
 | **WeBot** | A Claude-Code-style delegated runtime with role-based subagents, plan/todo/verification, and approval-aware tool policies |
 | **GraphRAG** | A living knowledge graph built from each discussion, stored locally in SQLite (optionally mirrored to Zep) |
 | **Team Presets** | 15 ready-to-use expert teams — strategists, content creators, tech titans, and more — installable in one click |
-| **ACP (acpx)** | Agent Client Protocol for communicating with external AI agents (OpenClaw, Codex, Claude, Gemini, Aider) |
+| **ACP** | Agent Client Protocol for communicating with external AI agents (OpenClaw, Codex, Claude, Gemini, Aider) |
 | **OpenClaw** | An agent runtime whose agents join Teams, group chats and workflows like any other agent |
 
 ## Product Video

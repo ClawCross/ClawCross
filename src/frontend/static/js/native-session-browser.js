@@ -14,7 +14,7 @@
         overlay.innerHTML=`<section class="external-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="native-session-title">
           <header><h2 id="native-session-title">${text('登记已有外部会话','Register existing external session')}</h2><button type="button" data-close aria-label="${text('关闭','Close')}">×</button></header>
           <p>${text('读取已安装 ACP 平台的会话目录。登记后尝试加载原生历史并保存到 ClawCross；不会发送新消息。历史是否可读取取决于适配器能力。','Browse installed ACP platforms. Registration loads and saves native history when the adapter supports it, without sending a new message.')}</p>
-          <div data-native-acpx><p>${text('接入外部 Agent 需要 acpx。尚未安装时，可以在这里下载；外部平台自身的程序和登录仍需准备。','Connecting an external Agent requires acpx. Install it here if needed; the platform program and account must also be prepared.')}</p>${typeof global.componentControlMarkup === 'function' ? global.componentControlMarkup('acpx') : ''}</div>
+          <div data-native-acpx><p>${text('通过内置 ACP 客户端读取，先安装对应平台的程序并登录。','Uses the built-in ACP client. Install and sign in to the platform first.')}</p><div data-native-component></div></div>
           <div class="native-session-toolbar"><select aria-label="${text('平台','Platform')}">${['codex','claude','openclaw','gemini','cursor','copilot','droid','iflow','kilocode','kimi','kiro','opencode','pi','qoder','qwen','trae','aider'].map(p=>`<option value="${p}">${p === 'claude' ? 'Claude Code' : p}</option>`).join('')}</select><button type="button" data-load>${text('读取会话列表','Load session list')}</button></div>
           <div data-sessions></div><footer><span role="status" data-status></span><button type="button" data-more hidden>${text('更多会话','More sessions')}</button></footer></section>`;
         const close=()=>overlay.remove();overlay.querySelector('[data-close]').onclick=close;
@@ -32,7 +32,11 @@
                 }
             }
         }).catch(()=>{});
-        select.onchange=()=>{generation++;cursor='';overlay.querySelector('[data-sessions]').replaceChildren();overlay.querySelector('[data-more]').hidden=true;};
+        select.onchange=()=>{generation++;cursor='';overlay.querySelector('[data-sessions]').replaceChildren();overlay.querySelector('[data-more]').hidden=true;
+            const component=global.AcpLaunchSettings?.component(select.value),host=overlay.querySelector('[data-native-component]');
+            host.innerHTML=component&&global.componentControlMarkup?global.componentControlMarkup(component):'';
+            global.initComponentControls?.(host);
+        };
         async function load(more=false) {
             const own=++generation;const platform=select.value;
             const status=overlay.querySelector('[data-status]');status.textContent=text('正在读取…','Loading…');
@@ -82,6 +86,7 @@
         }
         overlay.querySelector('[data-load]').onclick=()=>void load();overlay.querySelector('[data-more]').onclick=()=>void load(true);
         document.body.appendChild(overlay);
+        select.onchange();
         if (typeof global.initComponentControls === 'function') global.initComponentControls(overlay.querySelector('[data-native-acpx]'));
         select.focus();
     }

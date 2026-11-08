@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <link rel="stylesheet" href="/static/css/avatars.css?v=20261107-avatars">
 <script src="/static/js/avatars.js?v=20261107-avatars"></script>
+<script src="/static/js/platform-icons.js?v=20261108-workspace"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Agent 消息中心</title>
+<title>ClawCross · Chats</title>
 <script src="/static/js/agent-profile.js?v=20261107-avatars"></script>
 <script src="/static/js/human-profile.js?v=20261107-avatars"></script>
 <script src="/static/js/user-portrait.js?v=20261019-images"></script>
@@ -43,15 +44,15 @@
 <script src="{{ url_for('static', filename='js/snapshot_zip_progress.js') }}?v=20261005-team-import"></script>
 <link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261004-fold-approval">
 <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
-<script src="/static/js/components.js?v=20261108-acp-direct"></script>
+<script src="/static/js/components.js?v=20261108-acp-native"></script>
 <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
 <script src="/static/js/runtime-presentation.js?v=20261008-inbox"></script>
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
 <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
-<script src="/static/js/connections.js?v=20261011"></script>
+<script src="/static/js/connections.js?v=20261108-acp-native"></script>
 <script src="/static/js/mobile-rooms.js?v=20261017-preserve-focus"></script>
-<script src="/static/js/local-accounts.js?v=20261108"></script><script src="/static/js/acp-launch-settings.js?v=20261108-acp-direct"></script>
-<script src="/static/js/external-agent-settings.js?v=20261108-acp-direct"></script>
+<script src="/static/js/local-accounts.js?v=20261108"></script><script src="/static/js/acp-launch-settings.js?v=20261108-acp-native"></script>
+<script src="/static/js/external-agent-settings.js?v=20261108-acp-native"></script>
 <link rel="stylesheet" href="/static/css/agent-settings.css?v=20261104-hierarchy">
 <script src="/static/js/agent-settings.js?v=20261107-avatars"></script>
 <script src="/static/js/model-profiles.js?v=20261104-hierarchy"></script>
@@ -61,7 +62,7 @@
 <script src="/static/js/settings-navigation.js?v=20261107-refinements"></script>
 
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
-<script src="/static/js/native-session-browser.js?v=20261017-custom-acp"></script>
+<script src="/static/js/native-session-browser.js?v=20261108-acp-native"></script>
 <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
 
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
@@ -4149,7 +4150,7 @@
 <!-- ═══════════════ Tab: 对话 (Chats) ═══════════════ -->
 <div id="tab-chats" class="tab-page active">
   <div class="header">
-    <div class="mobile-studio-header-slot"><a class="mobile-studio-header-link" href="/studio" title="切换到 Studio" aria-label="切换到 Studio"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg?v=20261018-switch#switch-layout"/></svg><span>Studio</span></a></div>
+
     <div class="header-title" data-i18n="header_agent_msg">Agent消息</div>
     <div style="display:flex;gap:4px;position:relative;margin-left:auto;">
       <button type="button" class="header-btn" onclick="toggleCreateMenu(event)" data-i18n-title="tip_new" title="新建"><svg class="ui-icon"><use href="/static/icons.svg#plus"/></svg></button>
@@ -4182,6 +4183,8 @@
     </div>
   </div>
   <div class="chat-scroll-area" id="chat-scroll-area">
+    <section id="workspace-agent-section" aria-label="我的 Agent"><h2 class="workspace-section-label" data-workspace-text="agents"></h2><div id="workspace-agent-list"></div></section>
+    <h2 id="workspace-group-heading" class="workspace-section-label" data-workspace-text="groups"></h2>
     <div class="group-list-area" id="group-list-container"></div>
   </div>
 </div>
@@ -4472,6 +4475,7 @@
       <select id="contacts-team-select" onchange="loadContactsForTeam()"><option value="">用户空间</option></select>
       <button type="button" class="gn-team-info" id="contacts-team-info" hidden onclick="GroupNetworkUI.teamInfo(document.getElementById('contacts-team-select').value)"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#id-card"/></svg><span data-i18n="contacts_team_info">团队介绍</span></button>
     </div>
+    <div class="workspace-contact-views" role="group" aria-label="联系人视图"><button type="button" data-contact-view="list" aria-pressed="true" onclick="ConversationWorkspace.contactsView('list')"><svg class="ui-icon"><use href="/static/icons.svg#list"/></svg><span data-workspace-text="directory"></span></button><button type="button" data-contact-view="cards" aria-pressed="false" onclick="ConversationWorkspace.contactsView('cards')"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg><span data-workspace-text="center"></span></button></div>
     <div class="contacts-library-heading"><span data-i18n="contacts_directory">联系人与人设</span><button type="button" onclick="DeviceConnections.open()"><svg class="ui-icon"><use href="/static/icons.svg#monitor"/></svg><span data-i18n="contacts_devices">设备与 SSH</span></button></div>
     <div id="contacts-list"></div>
   </div>
@@ -4501,6 +4505,8 @@
       <button type="button" class="create-primary" onclick="openTeamHubSite()"><span data-i18n="create_start">打开 ClawCross Hub</span><svg class="ui-icon"><use href="/static/icons.svg#chevron-right"/></svg></button>
     </section>
     <div class="create-shortcuts">
+      <button type="button" class="create-shortcut" onclick="ConversationWorkspace.studioView('group')"><svg class="ui-icon"><use href="/static/icons.svg#users"/></svg><strong data-workspace-text="teams"></strong></button>
+      <button type="button" class="create-shortcut" onclick="ConversationWorkspace.studioView('orchestrate')"><svg class="ui-icon"><use href="/static/icons.svg#workflow"/></svg><strong data-workspace-text="workflows"></strong></button>
       <a class="create-shortcut" href="/studio?compose=team"><svg class="ui-icon"><use href="/static/icons.svg#users"/></svg><strong data-i18n="create_team">组建协作团队</strong><span data-i18n="create_team_desc">在对话里安排成员与分工</span></a>
       <a class="create-shortcut" href="/studio?compose=app"><svg class="ui-icon"><use href="/static/icons.svg#window"/></svg><strong data-i18n="create_app">做一个小程序</strong><span data-i18n="create_app_desc">创造能和朋友分享的体验</span></a>
     </div>
@@ -4574,10 +4580,7 @@
     </div>
     <span class="tab-label" data-i18n="tab_profile">我</span>
   </div>
-  <a class="tab-item mobile-studio-link" href="/studio" title="切换到 Studio" aria-label="切换到 Studio">
-    <div class="tab-icon"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg?v=20261018-switch#switch-layout"/></svg></div>
-    <span class="tab-label">Studio</span>
-  </a>
+
 </div>
 
 </div><!-- end app-container -->
@@ -6837,6 +6840,7 @@ function updateCurrentGroupSnapshotFromMessages(gid, msgs) {
 
 // ── Tab switching ──
 function switchTab(tab) {
+  window.ConversationWorkspace?.hide(false);
   currentTab = tab;
   document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
@@ -7451,6 +7455,7 @@ function togglePinChat() {
 function filterGroupList() {
   chatSearchKeyword = (document.getElementById('chat-search-input').value || '').trim().toLowerCase();
   renderGroupList(groups);
+  window.ConversationWorkspace?.renderAgents();
 }
 
 async function refreshGroups(options = {}) {
@@ -7475,6 +7480,7 @@ async function refreshGroups(options = {}) {
       announcement.textContent = activeGroup.announcement ? '群公告 · ' + activeGroup.announcement : '';
     }
     renderGroupList(groups);
+    window.ConversationWorkspace?.refresh();
     prefetchTopGroupDetails(nextGroups);
   } catch (e) {
     if (!silent) {
@@ -8935,6 +8941,7 @@ async function loadChatHistory(groupId, sequence, detailTask) {
 }
 
 async function openChat(groupId, name) {
+  window.ConversationWorkspace?.hide(false);
   closeAppFullscreen();
   GroupMessageMenu.close();
   clearGroupReply();
@@ -12519,6 +12526,7 @@ async function _mobilePersonaTagOptionsHtml(team = '') {
 // A private chat with one agent: the existing one, or a new one.
 async function startPrivateChat(agentId) {
   closeAgentDetail();
+  if (window.ConversationWorkspace) return ConversationWorkspace.openAgentId(agentId);
   if (!window.__currentUser) { toast(t('not_logged_in')); return false; }
   try {
     const detail = await api('POST', '/proxy_groups', { kind: 'direct', agents: [agentId] });
@@ -13913,7 +13921,7 @@ function renderAgentGroupsHtml(entries, idPrefix, renderRow) {
   return platforms.map(platform => {
     const items = byPlatform[platform];
     const uid = idPrefix + 'agents-' + platform.replace(/[^a-zA-Z0-9]/g, '_');
-    return `<div class="contacts-cat-group"><div class="contacts-cat-header contacts-ext-sub expanded" onclick="(function(h){var l=document.getElementById('${uid}');if(!l)return;h.classList.toggle('expanded');l.classList.toggle('expanded');})(this)"><span class="cat-icon"><svg class="ui-icon"><use href="/static/icons.svg#${platform === 'webot' ? 'bot' : 'plug'}"/></svg></span><span class="cat-name">${esc(agentPlatformLabel(platform))}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></div><div id="${uid}" class="contacts-cat-list expanded">${items.map(renderRow).join('')}</div></div>`;
+    return `<div class="contacts-cat-group"><div class="contacts-cat-header contacts-ext-sub expanded" onclick="(function(h){var l=document.getElementById('${uid}');if(!l)return;h.classList.toggle('expanded');l.classList.toggle('expanded');})(this)"><span class="cat-icon">${PlatformIcons.markup(platform)}</span><span class="cat-name">${esc(agentPlatformLabel(platform))}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></div><div id="${uid}" class="contacts-cat-list expanded">${items.map(renderRow).join('')}</div></div>`;
   }).join('');
 }
 
@@ -15512,7 +15520,7 @@ async function openSessionsSubpage() {
     let html = '';
 
     // ── ACPx Sessions ──
-    html += '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">ACPx Sessions (' + acpxSessions.length + ')</div>';
+    html += '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">ACP Sessions (' + acpxSessions.length + ')</div>';
     if (acpxSessions.length === 0) {
       html += '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">\u6682\u65e0</div>';
     } else {
@@ -15669,6 +15677,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (requestedCard) await openChat(requestedCard.group_id, requestedCard.title || requestedCard.name);
       startGroupsPolling();
       await prefetchContactsBootstrap();
+      await window.ConversationWorkspace?.ready();
     } catch (e) {
       console.warn('mobile boot data load:', e);
     }
@@ -15748,5 +15757,7 @@ window.addEventListener('group-network-changed', async event => {
 <link rel="stylesheet" href="/static/css/studio-refinements.css?v=20261107-iphone-viewport">
 <link rel="stylesheet" href="/static/css/message-center.css?v=20261107-single-avatar">
 <script src="/static/js/group-presence.js?v=20261107-avatars"></script>
+<link rel="stylesheet" href="/static/css/conversation-workspace.css?v=20261108-workspace">
+<script src="/static/js/conversation-workspace.js?v=20261108-workspace"></script>
 </body>
 </html>

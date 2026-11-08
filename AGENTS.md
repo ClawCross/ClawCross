@@ -29,7 +29,7 @@ metadata:
     - "channel_whitelist"
   integrations:
     - "openclaw"
-    - "acpx"
+    - "acp"
     - "tinyfish"
     - "telegram"
     - "qq"
@@ -95,7 +95,7 @@ If the task is narrow, inspect only the indexed files for that area instead of s
 
 The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user for `LLM_API_KEY` or `LLM_BASE_URL` during installation. An empty `LLM_MODEL` allows the web UI to start; configure it in the UI before sending LLM requests. Set `CLAWCROSS_REQUIRE_LLM_MODEL=1` for strict startup validation.
 
-1. Run **`start`** (or `start-foreground`). First run **does not** require a separate `setup`: `start` prepares Python 3.11, a virtual environment, and core Python dependencies when needed. Optional integrations such as `acpx`, NoneBot, WeClaw, cloudflared, and SRT require an explicit `install-component` command. You do **not** need `configure --init` before `start` — `start` creates `config/.env` from the template if missing. The `start` command:
+1. Run **`start`** (or `start-foreground`). First run **does not** require a separate `setup`: `start` prepares Python 3.11, a virtual environment, and core Python dependencies when needed. Optional integrations such as official ACP adapters, NoneBot, WeClaw, cloudflared, and SRT require an explicit `install-component` command. You do **not** need `configure --init` before `start` — `start` creates `config/.env` from the template if missing. The `start` command:
    - Creates a default `.env` if missing
    - Warns if `LLM_MODEL` is empty; strict mode with `CLAWCROSS_REQUIRE_LLM_MODEL=1` stops before launching services
    - Imports OpenClaw LLM config (read-only) only with `--with-openclaw` and only when ClawCross has no real API key
@@ -126,7 +126,7 @@ Preserve the model's cacheable prefix. Generate `tool_search.desc` from each Age
    - Gemini: `TTS_MODEL=gemini-2.5-flash-preview-tts`, `TTS_VOICE=charon`
 8. Never auto-retry a workflow because it looks stuck. Check `topics show` first, report the current status or error, and retry only after user confirmation.
 9. Never let a sub-agent start a child workflow unless explicitly instructed.
-10. ClawCross never writes OpenClaw's configuration. OpenClaw agents are ACP agents (platform `openclaw`) driven through acpx, like Codex.
+10. ClawCross never writes OpenClaw's configuration. OpenClaw agents are ACP agents (platform `openclaw`) driven through the built-in ACP client, like Codex.
 
 ## Reference Docs
 

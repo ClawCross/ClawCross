@@ -70,6 +70,7 @@ async def test_fifo_single_start_and_real_event_callbacks(setup):
 async def test_different_agents_and_owners_run_in_parallel(setup):
     create, _, _ = setup
     adapters = [create('alice','one'), create('alice','two'), create('bob','one')]
+    await asyncio.gather(*(a.ensure_session(**options(a)) for a in adapters))
     await asyncio.gather(*(a.prompt_with_trace(prompt_text=a.agent.owner+a.agent.agent_id, **options(a)) for a in adapters))
     rows = [wire(a) for a in adapters]
     assert max(next(r['time'] for r in rows_ if r['event']=='begin') for rows_ in rows) < min(

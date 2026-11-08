@@ -424,7 +424,7 @@ const i18n = {
         orch_agents_empty: '暂无 Agent，点击 ➕ 新建',
         orch_add_agent_title: '新建 Agent',
         orch_agent_platform: '平台',
-        acpx_required_for_external: '外部 Agent 需要 acpx；安装后可切换到 Codex、Claude 等平台。',
+        acpx_required_for_external: 'ACP 客户端尚未就绪，请检查 Python 环境。',
         orch_agent_runtime_name: '运行时名称（该平台上的会话名）',
         orch_agent_name_required: '请输入名称',
         orch_agent_runtime_required: '请输入运行时名称',
@@ -817,7 +817,7 @@ const i18n = {
         oc_tab_claude: 'Claude',
         oc_tab_gemini: 'Gemini',
         oc_select_acp_hint: '请先选择一个 ACP 工具标签',
-        oc_acp_unavailable: '未检测到 acpx（请安装并加入 PATH）',
+        oc_acp_unavailable: 'ACP 客户端尚未就绪',
         oc_acp_via: '经 acpx（ACP）连接本地 CLI；上下文由该会话内的 CLI 保持。',
         oc_acp_session_pick_label: '已有会话',
         oc_acp_session_pick_none: '— 选择已有会话（不选则新建）—',
@@ -1219,7 +1219,7 @@ const i18n = {
         orch_agents_empty: 'No agents yet — click ➕ to create one',
         orch_add_agent_title: 'New Agent',
         orch_agent_platform: 'Platform',
-        acpx_required_for_external: 'External Agents require acpx. Install it to use Codex, Claude and other platforms.',
+        acpx_required_for_external: 'The ACP client is unavailable. Check the Python environment.',
         orch_agent_runtime_name: 'Runtime name (the session name on that platform)',
         orch_agent_name_required: 'Name is required',
         orch_agent_runtime_required: 'Runtime name is required',
@@ -1620,7 +1620,7 @@ const i18n = {
         oc_tab_claude: 'Claude',
         oc_tab_gemini: 'Gemini',
         oc_select_acp_hint: 'Pick an ACP tool tab first',
-        oc_acp_unavailable: 'acpx not found (install and add to PATH)',
+        oc_acp_unavailable: 'ACP client unavailable',
         oc_acp_via: 'Via acpx (ACP); the local CLI keeps context for this chat session.',
         oc_acp_session_pick_label: 'Existing session',
         oc_acp_session_pick_none: '— Pick existing (or leave empty for new) —',
@@ -7217,12 +7217,19 @@ async function _applyTabParam() {
 
 /** After auth on /studio, honor ?tab= for Team / Chat / Workflow; else default Chat. */
 async function applyStudioInitialTabAfterAuth() {
+    if(new URLSearchParams(location.search).get('embedded') !== '1') {
+        const next=new URL('/mobile/group_chat',location.origin);
+        for(const name of ['compose','group','tab']) {const value=new URLSearchParams(location.search).get(name);if(value)next.searchParams.set(name,value);}
+        location.replace(next.pathname+next.search);return;
+    }
     const _tabParam = new URLSearchParams(window.location.search).get('tab');
     await _applyTabParam();
     if (!(_tabParam === 'group' || _tabParam === 'chat' || _tabParam === 'orchestrate')) {
         await switchPage('chat');
     }
     ConversationStart.consumeIntent();
+    window.__workspaceStudioReady = true;
+    window.dispatchEvent(new Event('clawcross:studio-ready'));
 }
 
 // Session check

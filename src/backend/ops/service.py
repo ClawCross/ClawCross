@@ -172,10 +172,8 @@ class OpsService:
 
     async def list_all_sessions(self, user_id: str) -> dict:
         from agents.acp_sessions import list_all_sessions
-        from ops.components import binary_path
-        return await list_all_sessions(user_id, binary_path("acpx"))
+        return await list_all_sessions(user_id)
 
     async def close_acp_session(self, platform: str, session_name: str, cwd: str = "", *, user_id: str) -> dict:
         from agents.acp_sessions import close_acp_session
-        from ops.components import binary_path
-        return await close_acp_session(platform, session_name, cwd, user_id=user_id, acpx_bin=binary_path("acpx"))
+        return await close_acp_session(platform, session_name, cwd, user_id=user_id)

@@ -8,6 +8,7 @@ try:import pwd
 except ImportError:pwd=None
 import shutil
 import socket
+import shlex
 import subprocess
 import sys
 import time
@@ -22,7 +23,6 @@ from fastapi.testclient import TestClient
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src/backend'))
 from connections.store import ConnectionStore
 from connections.ssh import SSHConnections
-from connections.acpx import SSHAcpxAdapter
 from connections.routes import create_connections_router
 from agents.store import AgentStore, ACPX, WEBOT
 from agents.gateway import AgentGateway
@@ -91,35 +91,24 @@ SetEnv CLAWCROSS_HOME={tmp_path}/remote-runtime
 
 @pytest.mark.asyncio
 async def test_real_ssh_adapter_prompt_files_streaming_and_disconnect(tmp_path,ssh_endpoint,monkeypatch):
-    cli=tmp_path/'acpx-fixture';cli.write_text('''#!/usr/bin/env python3
-import json,sys,subprocess,os
-from pathlib import Path
-args=sys.argv[1:]
-if '--help' in args:print('  codex    Codex Agent\\n  claude   Claude Agent');sys.exit(0)
-if 'prompt' in args:
- content=json.loads(Path(args[args.index('--file')+1]).read_text());text=content[0]['text']
- if '--mcp-config' in args:
-  servers=json.loads(Path(args[args.index('--mcp-config')+1]).read_text())['mcpServers']
-  if servers:
-   server=servers[0];env={**os.environ,**{item['name']:item['value'] for item in server['env']}}
-   init=json.dumps({'jsonrpc':'2.0','id':1,'method':'initialize','params':{}})+'\\n'
-   query=json.dumps({'jsonrpc':'2.0','id':2,'method':'tools/list'})+'\\n'
-   result=subprocess.run([server['command'],*server['args']],input=init+query,capture_output=True,text=True,env=env,timeout=15)
-   if 'SCOPED_REMOTE' not in result.stdout:raise RuntimeError(result.stderr+result.stdout)
-   text+='|MCP_OK'
- print(json.dumps({'jsonrpc':'2.0','method':'session/update','params':{'update':{'sessionUpdate':'agent_message_chunk','content':{'type':'text','text':'remote:'+text}}}}),flush=True)
- print(json.dumps({'jsonrpc':'2.0','id':1,'result':{'stopReason':'end_turn'}}),flush=True)
-else:print(json.dumps({'acpx':{'config_options':[{'id':'model','currentValue':'fixture','options':[{'value':'fixture','name':'Fixture'}]}]}}))
-''');cli.chmod(0o700)
+    from external.acp_direct import Manager, DirectAdapter
+    from external import session, history
+    from external.acpx import AcpxError
+    server=Path(__file__).parent/'fixtures/acp_agent.py'
     store=ConnectionStore(tmp_path/'connections.db');manager=SSHConnections(store)
-    connection=store.save('alice',{**ssh_endpoint,'acpx':str(cli)})
+    actor=Manager();manager._actor=actor
+    connection=store.save('alice',ssh_endpoint)
     agents=AgentStore(tmp_path/'agents.db');cwd=tmp_path/'remote-workspace';cwd.mkdir()
-    agent=agents.create('alice',driver=ACPX,config={'platform':'claude','connection_id':connection['id'],'remote_cwd':str(cwd)})
+    def create(aid,cwd):
+        return agents.create('alice',agent_id=aid,driver=ACPX,config={'platform':'acp',
+            'connection_id':connection['id'],'remote_cwd':str(cwd),
+            'meta':{'acp':{'agent_command':shlex.join([sys.executable,str(server),'--check-mcp'])}}})
+    agent=create('first',cwd)
     from external import tool_bridge
     class BridgeHandler(BaseHTTPRequestHandler):
         def do_POST(self):
             token=self.headers.get('authorization','').removeprefix('Bearer ')
-            valid=tool_bridge._tokens.get(token)==('alice',agent.agent_id)
+            valid=tool_bridge._tokens.get(token) in {('alice','first'),('alice','second'),('alice','default')}
             self.send_response(200 if valid else 403);self.send_header('Content-Type','application/json');self.end_headers()
             self.wfile.write(json.dumps({'description':'SCOPED_REMOTE'} if valid else {'detail':'Invalid scope'}).encode())
         def log_message(self,*args):pass
@@ -127,37 +116,61 @@ else:print(json.dumps({'acpx':{'config_options':[{'id':'model','currentValue':'f
     thread=threading.Thread(target=backend.serve_forever,daemon=True);thread.start()
     monkeypatch.setenv('PORT_AGENT',str(backend.server_port))
     monkeypatch.setattr('connections.store._store',store);monkeypatch.setattr('connections.ssh._manager',manager)
+    monkeypatch.setattr('external.acp_direct.manager',lambda:actor)
+    monkeypatch.setattr('external.acp_direct.STATE_DIR',tmp_path)
+    monkeypatch.setattr('external.tool_bridge.STATE_DIR',tmp_path)
     monkeypatch.setattr('external.tool_bridge.get_store',lambda:agents)
-    monkeypatch.setattr('external.session.identity_sections',lambda _:{'base_rules':'INITIAL_RULES'})
+    monkeypatch.setattr(history,'_STORE',history.ExternalAgentHistoryStore(tmp_path/'history'))
+    monkeypatch.setattr(session,'identity_sections',lambda _:{'base_rules':'INITIAL_RULES'})
+    monkeypatch.setattr(session,'build_dynamic_context',lambda *a,**k:{'identity_base_rules':k['identity']['base_rules']})
+    monkeypatch.setattr('external.acpx.get_acpx_adapter',lambda **_:(_ for _ in ()).throw(AssertionError('acpx forbidden')))
+    def wire(directory):
+        return [json.loads(line) for line in (directory/'wire.jsonl').read_text().splitlines()]
     try:
-        probe=await manager.probe('alice',connection['id']);assert probe['state']=='connected';assert probe['remote']['platforms']==['claude','codex']
-        adapter=SSHAcpxAdapter(agent,manager);assert adapter._cwd==str(cwd)
-        prompt=tmp_path/'prompt.json';prompt.write_text(json.dumps([{'type':'text','text':'hello'}]))
-        events=[]
-        raw=await adapter._run_json_command([str(cli),'--cwd',str(cwd),'claude','prompt','--file',str(prompt)],timeout_sec=10,allow_nonzero=False,on_event=events.append)
-        assert 'remote:hello' in raw and any(event.get('text')=='remote:hello' for event in events)
-        assert not list((tmp_path/'remote-runtime').glob('connections/*/request-*'))
-        assert await adapter.refresh_options('claude','session')
-        await adapter.ops_cancel(tool='claude',session_key='session',timeout_sec=10)
-        await manager.disconnect('alice',connection['id']);assert manager.card('alice',connection['id'])['state']=='disconnected'
-        await manager.probe('alice',connection['id']);assert manager.card('alice',connection['id'])['state']=='connected'
+        probe=await manager.probe('alice',connection['id'])
+        assert probe['state']=='connected' and probe['remote']['requires_acpx'] is False
+        # Separate event loops use the same SSH master and actor, with no loop-bound pipe errors.
+        await asyncio.gather(*(asyncio.to_thread(lambda:asyncio.run(manager.probe('alice',connection['id']))) for _ in range(3)))
         gateway=AgentGateway(store=agents)
+        events=[]
         reply=await gateway.ask(agent,AgentMessage(text='Gateway first',sender='u:alice'))
-        assert reply.ok and 'Gateway first' in reply.content and 'MCP_OK' in reply.content and 'INITIAL_RULES' in reply.content
-        current=agents.require('alice',agent.agent_id)
-        reply=await gateway.ask(current,AgentMessage(text='Gateway incremental',sender='u:alice'))
-        assert reply.ok and 'INITIAL_RULES' not in reply.content
-        assert (await gateway.history(current))[ -1]['role']=='assistant'
-        await gateway.control(current,'reset')
-        reset=agents.require('alice',agent.agent_id);assert not reset.runtime.get('negotiation_sent')
-        reply=await gateway.ask(reset,AgentMessage(text='After reset',sender='u:alice'))
-        assert reply.ok and 'INITIAL_RULES' in reply.content
-        await gateway.destroy(agents.require('alice',agent.agent_id))
-        agent=agents.create('alice',driver=ACPX,config={'platform':'claude','connection_id':connection['id']})
-        reply=await gateway.ask(agent,AgentMessage(text='Default remote workspace',sender='u:alice'))
+        assert reply.ok and 'Gateway first' in reply.content and 'INITIAL_RULES' in reply.content
+        sid=agents.require('alice',agent.agent_id).runtime['native_resume_id']
+        othercwd=tmp_path/'second';othercwd.mkdir();other=create('second',othercwd)
+        replies=await asyncio.gather(gateway.ask(agents.require('alice','first'),AgentMessage(text='incremental')),
+                                     gateway.ask(other,AgentMessage(text='parallel')))
+        assert all(r.ok for r in replies) and 'INITIAL_RULES' not in replies[0].content
+        firstrows=wire(cwd);secondrows=wire(othercwd)
+        assert sum(r['event']=='initialize' for r in firstrows)==1
+        assert any(r['event']=='mcp' for r in firstrows+secondrows)
+        direct=DirectAdapter(agents.require('alice','first'),agents,actor)
+        def opts():return {'tool':'acp','session_key':session.runtime_session(agents.require('alice','first')),'timeout_sec':30}
+        replies=await asyncio.gather(*(direct.prompt_with_trace(prompt_text=str(i),**opts()) for i in range(8)))
+        assert [r.text for r in replies]==list(map(str,range(8)))
+        rows=wire(cwd)
+        assert [r['event'] for r in rows if r['event'] in {'begin','end'}]==['begin','end']*10
+        # Cancel a real remote process, then load the same native session on an explicit next request.
+        running=asyncio.create_task(direct.prompt_with_trace(prompt_text='slow',**opts()))
+        async with asyncio.timeout(10):
+            while not any(r.get('text')=='slow' for r in wire(cwd)):await asyncio.sleep(.02)
+        remote_pid=wire(cwd)[-1]['pid'];running.cancel()
+        with pytest.raises(asyncio.CancelledError):await running
+        async with asyncio.timeout(8):
+            while Path('/proc/'+str(remote_pid)).exists():await asyncio.sleep(.05)
+        assert (await direct.prompt_with_trace(prompt_text='resumed',**opts())).text=='resumed'
+        assert agents.require('alice','first').runtime['native_resume_id']==sid
+        assert sum(r['event']=='session/new' for r in wire(cwd))==1
+        assert sum(r['event']=='session/load' for r in wire(cwd))>=1
+        await gateway.control(agents.require('alice','first'),'reset')
+        assert not agents.require('alice','first').runtime.get('negotiation_sent')
+        assert (await gateway.ask(agents.require('alice','first'),AgentMessage(text='After reset'))).ok
+        await gateway.destroy(agents.require('alice','first'));await gateway.destroy(agents.require('alice','second'))
+        agent=create('default','')
+        reply=await gateway.ask(agent,AgentMessage(text='Default remote workspace'))
         assert reply.ok
         default=agents.require('alice',agent.agent_id)
         assert Path(default.runtime['acp_cwd']).is_relative_to(tmp_path/'remote-runtime/workspaces')
         await gateway.destroy(default)
+        await manager.disconnect('alice',connection['id']);assert manager.card('alice',connection['id'])['state']=='disconnected'
     finally:
-        await manager.close();backend.shutdown();backend.server_close();thread.join(timeout=2)
+        await actor.shutdown();backend.shutdown();backend.server_close();thread.join(timeout=3)

@@ -66,7 +66,7 @@ class PassiveStatusTests(unittest.IsolatedAsyncioTestCase):
                  patch('external.acpx.get_acpx_adapter', return_value=adapter):
                 result = await service.list_all_sessions('alice')
                 self.assertEqual([s['agent_id'] for s in result['acpx_sessions']], [alice.agent_id])
-                adapter.list_sessions.assert_awaited_once_with(tool='codex')
+                adapter.list_sessions.assert_not_called()
                 with self.assertRaises(HTTPException) as rejected:
                     await service.close_acp_session('codex', session.runtime_session(bob), user_id='alice')
                 self.assertEqual(rejected.exception.status_code, 404)

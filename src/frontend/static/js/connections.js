@@ -22,7 +22,7 @@ window.DeviceConnections = (() => {
         const item=document.createElement('article');item.className='device-connection-row';
         item.innerHTML=`<strong>${escape(row.name)}</strong><small>${escape(row.username?row.username+'@':'')}${escape(row.host)} · ${row.state==='connected'?'已连接':row.state==='paused'?'已暂停':'未连接'} · ${row.agent_count||0} 个 Agent</small><div class="device-connection-actions"></div>`;
         for(const [label,action] of [
-          ['连接并检测',async()=>{const result=await request('/'+row.id+'/connect','POST');await refresh();status.textContent=result.remote.acpx_available?'连接成功，远端 acpx 已就绪。':'SSH 已连接，远端未找到 acpx。请在设备上安装或填写已有可执行文件路径。';}],
+          ['连接并检测',async()=>{const result=await request('/'+row.id+'/connect','POST');await refresh();status.textContent=result.remote.acp_available?'连接成功，可直接运行远端 ACP 程序。':'SSH 已连接，请检查远端 Python 和 ACP 程序。';}],
           ['新增远端 Agent',()=>agentForm(row)],['编辑',()=>editor(row)],
           ['断开',async()=>{await request('/'+row.id+'/disconnect','POST');await refresh();status.textContent='已断开；Agent 和历史保留。';}],
           ['删除连接',async()=>{if(!confirm('删除此设备连接？已有 Agent 的连接不能直接删除。'))return;await request('/'+row.id,'DELETE');await refresh();status.textContent='已删除连接。';}]
@@ -33,7 +33,7 @@ window.DeviceConnections = (() => {
     function editor(row={}){
       const form=document.createElement('form');form.className='device-connection-form';
       form.innerHTML=[['name','设备名称',row.name||''],['host','IP、域名或 SSH 配置别名',row.host||''],['username','SSH 用户名（使用配置别名时可留空）',row.username||''],['port','SSH 端口',row.port||22]].map(([name,label,value])=>`<label>${label}<input name="${name}" value="${escape(value)}" ${name==='host'?'required':''} ${name==='port'?'type="number" min="1" max="65535"':''}></label>`).join('')+
-        `<details><summary>密钥与远端环境</summary><label>本机私钥文件路径<input name="identity_file" placeholder="${row.has_identity_file?'已配置；留空保留':'留空使用 SSH Agent 或 SSH 配置'}"></label><label>已知主机文件路径<input name="known_hosts_file" placeholder="${row.has_known_hosts_file?'已配置；留空保留':'留空使用 OpenSSH 的 known_hosts'}"></label><label>主机密钥<select name="host_key_policy"><option value="yes">仅连接已信任的主机</option><option value="accept-new">允许首次登记，拒绝密钥变化</option></select></label>${['python','acpx','node'].map(name=>`<label>远端 ${name}<input name="${name}" value="${escape(row[name]||(name==='python'?'python3':name))}"></label>`).join('')}</details><div><button type="submit">保存连接</button><button type="button" data-cancel>取消</button></div>`;
+        `<details><summary>密钥与远端环境</summary><label>本机私钥文件路径<input name="identity_file" placeholder="${row.has_identity_file?'已配置；留空保留':'留空使用 SSH Agent 或 SSH 配置'}"></label><label>已知主机文件路径<input name="known_hosts_file" placeholder="${row.has_known_hosts_file?'已配置；留空保留':'留空使用 OpenSSH 的 known_hosts'}"></label><label>主机密钥<select name="host_key_policy"><option value="yes">仅连接已信任的主机</option><option value="accept-new">允许首次登记，拒绝密钥变化</option></select></label>${['python','node'].map(name=>`<label>远端 ${name}<input name="${name}" value="${escape(row[name]||(name==='python'?'python3':name))}"></label>`).join('')}</details><div><button type="submit">保存连接</button><button type="button" data-cancel>取消</button></div>`;
       form.elements.host_key_policy.value=row.host_key_policy||'yes';
       form.onsubmit=event=>{event.preventDefault();run(async()=>{
         const body=Object.fromEntries(new FormData(form));body.port=Number(body.port);

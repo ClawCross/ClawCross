@@ -152,23 +152,23 @@ DEFAULT_USER = _resolve_default_user()
 
 KNOWN_PLATFORMS = {
     "internal": "ClawCross internal agent",
-    "openclaw": "OpenClaw agent via acpx",
-    "codex": "ACP Codex CLI via acpx",
-    "claude": "ACP Claude Code via acpx",
-    "gemini": "ACP Gemini CLI via acpx",
-    "aider": "ACP Aider via acpx",
-    "cursor": "ACP Cursor CLI via acpx",
-    "copilot": "ACP Copilot CLI via acpx",
-    "droid": "ACP Droid CLI via acpx",
-    "iflow": "ACP iFlow CLI via acpx",
-    "kilocode": "ACP Kilo Code CLI via acpx",
-    "kimi": "ACP Kimi CLI via acpx",
-    "kiro": "ACP Kiro CLI via acpx",
-    "opencode": "ACP OpenCode CLI via acpx",
-    "pi": "ACP Pi CLI via acpx",
-    "qoder": "ACP Qoder CLI via acpx",
-    "qwen": "ACP Qwen CLI via acpx",
-    "trae": "ACP Trae CLI via acpx",
+    "openclaw": "OpenClaw agent via built-in ACP",
+    "codex": "ACP Codex CLI via built-in ACP",
+    "claude": "ACP Claude Code via built-in ACP",
+    "gemini": "ACP Gemini CLI via built-in ACP",
+    "aider": "ACP Aider via built-in ACP",
+    "cursor": "ACP Cursor CLI via built-in ACP",
+    "copilot": "ACP Copilot CLI via built-in ACP",
+    "droid": "ACP Droid CLI via built-in ACP",
+    "iflow": "ACP iFlow CLI via built-in ACP",
+    "kilocode": "ACP Kilo Code CLI via built-in ACP",
+    "kimi": "ACP Kimi CLI via built-in ACP",
+    "kiro": "ACP Kiro CLI via built-in ACP",
+    "opencode": "ACP OpenCode CLI via built-in ACP",
+    "pi": "ACP Pi CLI via built-in ACP",
+    "qoder": "ACP Qoder CLI via built-in ACP",
+    "qwen": "ACP Qwen CLI via built-in ACP",
+    "trae": "ACP Trae CLI via built-in ACP",
     "acp": "Generic ACP connector",
     "http": "Generic HTTP connector",
     "temp": "Temporary connector",
@@ -489,7 +489,8 @@ def _platform_status_line(name: str) -> str:
         return "planned"
     tool = _acpx_tool(name)
     if tool in ACP_PLATFORMS:
-        return "acpx ok" if shutil.which("acpx") else "acpx missing"
+        from importlib.util import find_spec
+        return "ACP ready" if find_spec('acp') else "ACP SDK missing"
     if name in {"internal"}:
         return "ready"
     if name in {"acp", "http", "temp"}:
@@ -2396,7 +2397,7 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ]),
     ("Platform & session", [
         ("/platform", "action picker (list / use). aliases: /platforms /use"),
-        ("/platform list", "list all agent platforms (internal + acpx tools)"),
+        ("/platform list", "list all agent platforms (internal + ACP tools)"),
         ("/platform use [<name>]", "switch platform (no name -> picker)"),
         ("/resume", "interactive picker (resumes & replays last 10 messages)"),
         ("/resume <name>", "switch to / create session by name (no replay)"),

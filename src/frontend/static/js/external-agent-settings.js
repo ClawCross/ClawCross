@@ -218,7 +218,7 @@
     };
     document.body.appendChild(overlay);
     AcpLaunchSettings.mount('external-acp-launch',card.platform,card.launcher || {},Boolean(card.native_workspace?.pinned));
-    const component = card.connection_id ? 'acpx' : AcpLaunchSettings.component(card.platform,card.launcher || {},card.connection_transport);
+    const component = card.connection_id ? null : AcpLaunchSettings.component(card.platform,card.launcher || {},card.connection_transport);
     if (component) {
       overlay.querySelector('#external-acp-component').innerHTML = componentControlMarkup(component);
       initComponentControls(overlay.querySelector('#external-acp-component'));

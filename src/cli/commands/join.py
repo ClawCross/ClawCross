@@ -58,9 +58,11 @@ def _lifecycle(*args):
         raise JoinError(f'准备未完成，请查看本机日志：{log.name}')
 
 
-def _bridge(platform, prepare, *, direct=False):
+def _bridge(platform, prepare, *, direct=True):
     if platform in {'webot', 'internal', 'http', 'llm'}:
         return
+    if platform not in {'codex','claude','deepseek-harness'}:
+        return  # Native ACP programs need their own installation, not acpx.
     node = shutil.which('node')
     if not node:
         raise JoinError('ACP 转接需要 Node.js 22.13 或更新版本，请先安装 Node.js。')
@@ -70,10 +72,10 @@ def _bridge(platform, prepare, *, direct=False):
     except ValueError:
         current = (0, 0)
     if version.returncode or current < (22, 13):
-        raise JoinError('ACP 转接需要 Node.js 22.13 或更新版本；本次没有安装不兼容的 acpx。')
+        raise JoinError('ACP 适配器需要 Node.js 22.13 或更新版本。')
     if platform == 'deepseek-harness' and current < (24, 9):
         raise JoinError('DeepSeek Harness 需要 Node.js 24.9+；本次没有安装不兼容的 DSH。')
-    if direct and platform in {'codex', 'claude'}:
+    if platform in {'codex', 'claude'}:
         from src.backend.external.acp_profiles import PACKAGES
         package, _, _ = PACKAGES[platform]
         if not (BIN_DIR/'node/node_modules'/package/'dist/index.js').is_file():
@@ -81,11 +83,6 @@ def _bridge(platform, prepare, *, direct=False):
                 raise JoinError(f'缺少 ACP 适配器。请加 --prepare，或执行 clawcross install-component acp-{platform}。')
             _lifecycle('install-component', f'acp-{platform}')
         return
-    binary = BIN_DIR/'node/node_modules/.bin'/('acpx.cmd' if os.name == 'nt' else 'acpx')
-    if not direct and not (shutil.which('acpx') or binary.is_file()):
-        if not prepare:
-            raise JoinError('缺少 acpx。请加 --prepare，或先执行 clawcross install-component acpx。')
-        _lifecycle('install-component', 'acpx')
     if platform == 'deepseek-harness':
         dsh = BIN_DIR/'node/node_modules/.bin'/('dsh.cmd' if os.name == 'nt' else 'dsh')
         if not (shutil.which('dsh') or dsh.is_file()):
@@ -244,7 +241,7 @@ def main(argv=None, *, default_user=None):
     parser.add_argument('--name', help='新建或首次登记时的名字')
     parser.add_argument('--member-name', help='你在群中的昵称，默认本机用户')
     parser.add_argument('-u', '--user', help='本机用户身份')
-    parser.add_argument('--prepare', action='store_true', help='准备转接模式、acpx 和所选适配器；不需要前端或主模型 Key')
+    parser.add_argument('--prepare', action='store_true', help='准备转接模式和所选 ACP 适配器；不需要 acpx、前端或主模型 Key')
     parser.add_argument('--autostart', action='store_true', help='入群后启用当前用户的系统自启动')
     parser.add_argument('--allow-native-tools', action='store_true', help='仅用于新建 Agent：明确允许外部 CLI 原生工具（不受 ClawCross 沙盒控制）')
     parser.add_argument('--wait-seconds', type=int, default=15, choices=range(1, 61), metavar='1-60', help='等待后台接收连接就绪，默认 15 秒')

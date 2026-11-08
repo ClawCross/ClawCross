@@ -1,4 +1,4 @@
-"""One SSH request, with JSON on stdin and native acpx events on stdout. No installation."""
+"""Managed remote ACP byte stream with a JSON bootstrap. No installation."""
 import base64
 import json
 import os
@@ -8,10 +8,116 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import hashlib
+import shlex
+import signal
+import threading
+
+
+def stdio_agent(payload,env,runtime_root):
+    spec=payload['launcher']
+    if spec.get('alias'):
+        value=None
+        for source in (runtime_root/'config/acp-launchers.json',Path.home()/'.acpx/config.json'):
+            try:
+                value=json.loads(source.read_text()).get('agents',{}).get(spec['alias'])
+                if isinstance(value,dict):value=value.get('command')
+                if value:break
+            except (OSError,ValueError):pass
+        if not value:raise ValueError('Remote ACP launcher alias is missing')
+        command=value if isinstance(value,list) else shlex.split(value)
+    elif spec.get('argv'):command=spec['argv']
+    else:
+        script=runtime_root/'bin/node/node_modules'/spec['package']/'dist/index.js'
+        command=[spec['node'],str(script)] if script.is_file() else [spec['binary']]
+    if not command or any(not isinstance(value,str) or '\0' in value for value in command):
+        raise ValueError('Invalid remote ACP command')
+    command[0]=shutil.which(os.path.expanduser(command[0]),path=env['PATH']) or os.path.expanduser(command[0])
+    namespace=payload['namespace']
+    if not re.fullmatch(r'[a-f0-9]{32}',namespace):raise ValueError('Invalid connection namespace')
+    bridge_dir=runtime_root/'connections'/namespace
+    bridge_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
+    servers=payload.get('mcp_servers',[])
+    for server in servers:
+        if server.get('name')!='ClawCross':raise ValueError('Only scoped ClawCross MCP is supported')
+        fields={item['name']:item['value'] for item in server['env']}
+        if not fields.get('CLAWCROSS_BRIDGE_TOKEN'):raise ValueError('Missing MCP credential')
+        config_path=bridge_dir/'bridge.json'
+        with tempfile.NamedTemporaryFile(mode='w',dir=bridge_dir,delete=False) as stream:
+            temporary=Path(stream.name)
+            json.dump({'url':payload['bridge_url'],'token':fields['CLAWCROSS_BRIDGE_TOKEN']},stream)
+        os.replace(temporary,config_path)
+        server.update(command=sys.executable,args=['-u','-c',"import base64;exec(base64.b64decode('"+payload['bridge_script']+"'))"],
+                      env=[{'name':'CLAWCROSS_BRIDGE_CONFIG','value':str(config_path)}])
+    native=payload.get('resume_session_id')
+    if not native:
+        records=[]
+        for path in (Path.home()/'.acpx/sessions').glob('*.json'):
+            try:
+                if path.stat().st_size>16*1024*1024:continue
+                row=json.loads(path.read_text())
+                if row.get('name')==payload.get('legacy_name') and Path(row.get('cwd','')).resolve()==Path(payload['cwd']).resolve():
+                    records.append((path.stat().st_mtime,row))
+            except (OSError,ValueError):pass
+        if records:
+            row=max(records,key=lambda item:item[0])[1]
+            native=row.get('acp_session_id') or row.get('agent_session_id')
+            rid=row.get('acpx_record_id')
+            if rid:
+                lock=Path.home()/'.acpx/queues'/(hashlib.sha256(str(rid).encode()).hexdigest()[:24]+'.lock')
+                try:
+                    owner=json.loads(lock.read_text());pid=owner.get('pid')
+                    if type(pid)is int and pid>1:
+                        try:os.kill(pid,0)
+                        except ProcessLookupError:pass
+                        else:raise ValueError('Old ACP queue still owns this session')
+                except FileNotFoundError:pass
+        if payload.get('requires_resume') and not native:
+            raise ValueError('Previous native session metadata is unavailable; conversation preserved')
+    print(json.dumps({'ready':True,'cwd':payload['cwd'],'mcpServers':servers,'native_resume_id':native}),flush=True)
+    # Supervise the native process group. SSH EOF must stop its children even
+    # if the ACP program ignores EOF; stdout remains a direct bounded SSH pipe.
+    child=subprocess.Popen(command,stdin=subprocess.PIPE,env=env,cwd=payload['cwd'],
+                           **({'start_new_session':True} if os.name!='nt' else {}))
+    stopped=threading.Event()
+    def stop():
+        if stopped.is_set():return
+        stopped.set()
+        try:
+            if os.name!='nt':os.killpg(child.pid,signal.SIGTERM)
+            elif child.poll() is None:child.terminate()
+        except ProcessLookupError:pass
+        try:child.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                if os.name!='nt':os.killpg(child.pid,signal.SIGKILL)
+                else:child.kill()
+            except ProcessLookupError:pass
+            child.wait()
+    def pump():
+        try:
+            while block:=os.read(0,8192):
+                child.stdin.write(block);child.stdin.flush()
+        except (OSError,BrokenPipeError):pass
+        finally:
+            try:child.stdin.close()
+            except OSError:pass
+            stop()
+    for sig in (signal.SIGTERM,signal.SIGINT,*([signal.SIGHUP] if hasattr(signal,'SIGHUP') else [])):
+        signal.signal(sig,lambda *_:threading.Thread(target=stop,daemon=True).start())
+    threading.Thread(target=pump,daemon=True).start()
+    try:return child.wait()
+    finally:stop()
 
 
 def main():
-    payload=json.loads(sys.stdin.readline(8*1024*1024))
+    # Do not buffer bytes belonging to the subsequent ACP stream.
+    line=bytearray()
+    while len(line)<8*1024*1024:
+        byte=os.read(0,1)
+        if not byte or byte==b'\n':break
+        line.extend(byte)
+    payload=json.loads(line)
     env={**os.environ,'PATH':os.pathsep.join([str(Path.home()/'.local/bin'),str(Path.home()/'.clawcross/bin/node/node_modules/.bin'),os.environ.get('PATH','')])}
     runtime_root=Path(os.environ.get('CLAWCROSS_HOME') or Path.home()/'.clawcross')
     if payload.get('offline'):env['npm_config_offline']='true'
@@ -29,63 +135,15 @@ def main():
     if payload['action']=='workspace':
         print(json.dumps({'cwd':payload['cwd']}),flush=True);return 0
     if payload['action']=='probe':
-        executable=os.path.expanduser(payload['acpx'])
-        binary=shutil.which(executable,path=env['PATH'])
-        result={'python':sys.version.split()[0],'acpx_available':bool(binary),'platforms':[]}
-        if binary:
-            help_text=subprocess.run([binary,'--help'],capture_output=True,text=True,env=env,timeout=15).stdout
-            result['platforms']=sorted(set(re.findall(r'^\s*([a-z][a-z0-9_-]+)\s+\[options\].*Use\s+\1\s+agent\s*$',help_text,re.M|re.I) or
-                re.findall(r'^\s{2}([a-z][a-z0-9_-]+)\s{2,}',help_text,re.M))-
-                {'sessions','config','permissions','help','cancel','status','exec','set-mode','set-config','version'})
+        launchers=payload.get('launchers',{})
+        packages=payload.get('packages',{})
+        installed=[name for name,argv in launchers.items() if shutil.which(argv[0],path=env['PATH'])]
+        installed.extend(name for name,package in packages.items() if
+            (runtime_root/'bin/node/node_modules'/package[0]/'dist/index.js').is_file() or shutil.which(package[2],path=env['PATH']))
+        result={'python':sys.version.split()[0],'acp_available':True,'requires_acpx':False,'platforms':sorted(set(installed))}
         print(json.dumps(result),flush=True);return 0
-    if payload['action']=='reconnect':
-        cwd=str(Path(os.path.expanduser(payload['cwd'])).resolve());record_id=None
-        for file in (Path.home()/'.acpx/sessions').glob('*.json'):
-            if file.stat().st_size>16*1024*1024:continue
-            try:record=json.loads(file.read_text())
-            except (OSError,ValueError):continue
-            if record.get('name')==payload['name'] and record.get('cwd')==cwd and not record.get('closed'):
-                record_id=record.get('acpx_record_id');break
-        binary=shutil.which(os.path.expanduser(payload['acpx']),path=env['PATH'])
-        modules=list(Path(binary).resolve().parent.glob('ipc-*.js')) if binary else []
-        if not record_id:return 0
-        if len(modules)!=1:raise ValueError('Remote acpx cannot reconnect MCP safely; existing conversation preserved')
-        script='const ipc=await import(process.argv[1]);const fn=Object.values(ipc).find(v=>typeof v==="function"&&v.name==="terminateQueueOwnerForSession");if(!fn)throw Error("Reconnect unavailable");await fn(process.argv[2]);'
-        return subprocess.run([payload['node'],'--input-type=module','-e',script,modules[0].as_uri(),str(record_id)],env=env).returncode
-    if payload['action']!='run':raise ValueError('Unknown remote operation')
-    cwd=os.path.expanduser(payload['cwd'])
-    if cwd.startswith(str(Path.home()/'.clawcross/workspaces')+os.sep):Path(cwd).mkdir(parents=True,exist_ok=True)
-    if not Path(cwd).is_dir():raise ValueError('Remote workspace does not exist: '+cwd)
-    command=[str(value) for value in payload['command']]
-    command[0]=os.path.expanduser(command[0])
-    namespace=payload['namespace']
-    if not re.fullmatch(r'[a-f0-9]{32}',namespace):raise ValueError('Invalid connection namespace')
-    bridge_dir=runtime_root/'connections'/namespace
-    bridge_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
-    with tempfile.TemporaryDirectory(prefix='request-',dir=bridge_dir) as temporary:
-        for index,item in enumerate(payload.get('files',[])):
-            content=base64.b64decode(item['content']);file=Path(temporary)/str(index)
-            if item.get('connector'):
-                connector=json.loads(content)
-                for server in connector.get('mcpServers',[]):
-                    if server.get('name')!='ClawCross':raise ValueError('Remote MCP connector must use the scoped ClawCross bridge')
-                    config_path=bridge_dir/'bridge.json'
-                    env_fields=server['env']
-                    if isinstance(env_fields,list):env_fields={item['name']:item['value'] for item in env_fields}
-                    config_path.write_text(json.dumps({'url':payload['bridge_url'],'token':env_fields['CLAWCROSS_BRIDGE_TOKEN']}))
-                    if os.name!='nt':config_path.chmod(0o600)
-                    server['command']=sys.executable
-                    server['args']=['-u','-c',"import base64;exec(base64.b64decode('"+payload['bridge_script']+"'))"]
-                    server['env']=[{'name':'CLAWCROSS_BRIDGE_CONFIG','value':str(config_path)}]
-                file=bridge_dir/'mcp.json'
-                content=json.dumps(connector).encode()
-            file.write_bytes(content)
-            if os.name!='nt':file.chmod(0o600)
-            command=[str(file) if value==item['path'] else value for value in command]
-        for index,value in enumerate(command):
-            if index and command[index-1]=='--cwd':command[index]=cwd
-        child=subprocess.Popen(command,stdin=subprocess.DEVNULL,env=env,cwd=cwd)
-        return child.wait()
+    if payload['action']=='acp':return stdio_agent(payload,env,runtime_root)
+    raise ValueError('Unknown remote operation')
 
 
 if __name__=='__main__':

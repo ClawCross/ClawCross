@@ -1,6 +1,38 @@
 # ClawCross 交接（2026-11-08）
 
-## 本轮完成：ACP 直连与并发管理（2026-11-08）
+## 当前完成：移除 acpx 运行依赖与统一对话（2026-11-08）
+
+此节为当前状态；下方旧轮次记录只用于追溯，不能据此恢复旧传输或放开权限。
+
+### 内置 ACP
+
+- 所有运行入口统一 `DirectAdapter`，包括旧 Agent、原生会话导入、命名/自定义启动器、其他平台与 SSH。旧驱动名 `acpx`、部分 API 字段/URL 保留为数据兼容，不表示会执行 acpx。`external/acpx.py` 的旧类和 `connections/acpx.py` 只保留历史兼容代码，当前运行选择器不再调用它们；远端旧 run/reconnect 动作已移除。
+- Python 官方 SDK 固定 0.12.1。Codex ACP 2.5.0、Claude ACP 0.101.0 已显式安装；其他原生程序 argv 见 `config/acp-launchers.json`，不会打开表单就下载。DSH 尚未安装或进行真实模型验证，其 Node.js 24.9+ 要求保持。OpenClaw 未安装/配置。
+- 本机私有 npm 前缀已卸载 acpx（及 41 个依赖包）；`which('acpx')` 为 false，`~/.clawcross/bin/node/node_modules/acpx` 不存在。安装器和全局组件页不再提供 acpx 安装。`~/.acpx` 数据保留，只读恢复别名与原生编号。
+- 27 个 Agent、4 个账号全部空闲、queued inbox 为 0 时完成 10 个 ACP Agent 元数据迁移；27 个 Agent 的配置哈希和预期原生 ID 均保留。迁移前运行元数据备份在私有 `$CLAWCROSS_HOME/acp-migration-before-20261108.json`（0600），不得提交或输出原文。
+- 旧原生编号匹配当前 owner/Agent、会话代次和 cwd。旧进程仍持有队列或旧会话无原生 ID 时拒绝启动，不重建替代会话。SSH 的远端守护程序保留 stdin，直接传 ACP 字节并在 EOF/取消时回收原生进程组。SSH 所有跨循环操作回到 ACP actor loop。
+- 原有 FIFO、每 Agent 64 请求/全局 256 请求、16 进程/每用户 4 进程、OS 租约、退出先停止排队、无 prompt 自动重试均保留。原生目录读取并发额外限 2；list/load 不发 prompt，load 等待 SDK 重放任务结束。
+- Avalon `ag_join_b7004516d38a03da15c2d1aa` 保留同一个原生会话与 `read-only` 配置，卸载 acpx 后正常 Agent API test-connection 成功。原群 `rg_cf9828b0f1ef3f8bbb621699` 仍 connected。Cathy 的暂停 Agent 仍 `native_tools:false`，未启用。没有向公共群投递测试消息。
+- 独立临时数据库/工作区的真实 Codex：`ACP_OK` 成功、工具调用 0，关闭后 `ACP_RESUME_OK` 成功且原生 ID 相同。Claude/其他平台未做真实模型对话；不能宣称所有原生平台都已实测。
+- 不新增原生工具拦截/模型代理/证书，不改变用户已有沙盒与审核策略。`native_tools:false` 仍阻止整个原生进程；不宣称 ACP 客户端能关闭所有原生内置工具。
+
+### 统一对话界面
+
+- 登录后的 `/studio` 和 `/mobile/group_chat` 使用一个 shell，共用“我的 Agent / 群聊”目录与搜索。Agent 复用 `/studio?embedded=1` 的真实 Studio renderer（包括工具历史、SSE、动态 UI 和普通 Agent API）；群聊复用原组件和原群 API。
+- 删除 Studio/Message 往返按钮。平台标记通过共享 `platform-icons.js` 使用本地 MIT Lobe sprite；自定义平台使用简洁线框终端图标。Agent 有自定义头像时优先展示头像。
+- Agent 中心改为通讯录的卡片视图；团队/工作流入口位于创造。手机会话占完整宽度、隐藏底部导航、有返回；容器跟随 visualViewport。没有模型请求或隐藏 Agent 创建发生在导航中。
+- 同源 iframe 用于复用当前两个体量较大的 renderer，不重新实现群聊；后续可逐步抽成共同组件。选择通过受控命令对象传递，不 eval、不接受任意 URL。打开其他群会隐藏 Agent 视图，后台任务沿普通网关继续运行。
+
+### 验证与发布
+
+- 完整 ACP 相关回归：149 passed、8 subtests；移除安装入口/远端旧动作后的窄验证 13 passed；无 acpx、直连/迁移/原生历史/SSH 专项 52 passed。
+- 浏览器最终合并回归：6 passed（设置/组件/SSH、统一目录桌面/手机、真实嵌入式 Studio 工具历史），且未发模型消息。截图 `/tmp/clawcross-workspace-desktop.png` 为隔离测试数据，不是生产聊天。
+- 受控加载后原群连接正常，公网 `/studio`、`/mobile/group_chat` 均 200。无登录的 `/studio` 仍显示登录页；登录后统一界面。最终小变更已再次在 27 Agent 全空闲时受控加载，配置/原生 ID 全保留，原群 connected。
+- npm 本地包 `dist/clawcross-0.0.29.tgz`：843 个运行文件、约 14.9 MB；打包验证禁止数据库、凭证、私有交接和演化报告。未发布 npm registry。
+- 本机组件 audit 仍有 3 high（sandbox-runtime、node-forge、zod）；acpx 已不存在，剩余项属于现有沙盒依赖树，未盲目升级运行组件。不要声称部署无已知漏洞。
+- Hub 仓库、自启动登记未改；ClawCross 本轮提交以 git log 为准。
+
+## 历史：上一轮部分直连实现（已被上方全量直连取代）
 
 - 用户授权实现自己的 ACP 客户端并重点验证并发。采用固定 `agent-client-protocol==0.12.1` 官方 Python SDK，新增 `external/acp_direct.py` / `acp_profiles.py` / `async_lock.py`；原 Agent、持久收件箱、历史、正常群回复组件继续共用，没有隐藏 Agent 或群聊旁路。
 - 新建本机 Codex / Claude 默认 `meta.acp.transport:direct`，固定官方适配器版本见 `config/acp-adapters.json`。Unix 的显式 ACP 命令也可直连；命令使用 argv，不经过 shell。已有 Agent 缺省继续 acpx，SSH 和命名配置使用兼容路径，兼容 acpx 安装固定为 0.19.4。没有迁移或重置 Avalon。

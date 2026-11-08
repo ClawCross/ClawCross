@@ -43,7 +43,10 @@ def _foreign_native_ids(platform: str, owner: str, store=None) -> set[str]:
     result = set()
     from agents.store import get_store
     from external.session import runtime_session
-    owned_names = {runtime_session(agent) for agent in (store or get_store()).list(owner) if agent.platform == platform}
+    selected = store or get_store()
+    owned_names = {runtime_session(agent) for agent in selected.list(owner) if agent.platform == platform}
+    for row in selected._run("SELECT json_extract(runtime_json,'$.native_resume_id') FROM agents WHERE owner!=? AND json_extract(config_json,'$.platform')=?",(owner,platform)):
+        if row[0]: result.add(str(row[0]))
     for path in (Path.home() / '.acpx' / 'sessions').glob('*.json'):
         try:
             if path.stat().st_size > 16 * 1024 * 1024:
@@ -62,11 +65,14 @@ async def catalog(owner: str, platform: str, *, cursor: str = '', adapter=None, 
     if driver_for_platform(platform) != ACPX:
         raise ValueError('Choose an ACP platform available in the platform list')
     if adapter is None:
-        from external.acpx import get_acpx_adapter
-        adapter = get_acpx_adapter()
+        from external.acp_catalog import NativeCatalog
+        adapter = NativeCatalog(owner)
     result = await adapter.list_native_sessions(tool=platform, cursor=cursor, **({'allow_install':True} if allow_install else {}))
     hidden = _foreign_native_ids(platform, owner, store)
     rows = []
+    from agents.store import get_store
+    own_native = {agent.runtime.get('native_resume_id'):agent.agent_id for agent in (store or get_store()).list(owner)
+                  if agent.platform == platform and agent.runtime.get('native_resume_id')}
     with database() as db:
         db.execute('DELETE FROM tickets WHERE expires<?', (time.time(),))
         for row in result['sessions']:
@@ -80,8 +86,9 @@ async def catalog(owner: str, platform: str, *, cursor: str = '', adapter=None, 
                 continue
             ticket = secrets.token_urlsafe(24)
             db.execute('INSERT INTO tickets VALUES (?,?,?,?,?,?,?)', (ticket, owner, platform, row['session_id'], str(cwd.resolve()), row['title'], time.time()+600))
-            rows.append({**row, 'ticket': ticket, 'registered_agent_id': claim['agent_id'] if claim else ''})
-    return {'sessions': rows, 'next_cursor': result.get('next_cursor'), 'platform': platform}
+            rows.append({**row, 'ticket': ticket, 'registered_agent_id': claim['agent_id'] if claim else own_native.get(row['session_id'],'')})
+    return {'sessions': rows, 'next_cursor': result.get('next_cursor'), 'platform': platform,
+            **({'detail':result['detail']} if result.get('detail') else {})}
 
 
 def register(owner: str, ticket: str, name: str, store):
@@ -91,6 +98,9 @@ def register(owner: str, ticket: str, name: str, store):
         row = db.execute('SELECT * FROM tickets WHERE ticket=? AND owner=? AND expires>?', (ticket, owner, time.time())).fetchone()
         if row is None:
             raise ValueError('Session selection expired; refresh the native list')
+        existing = next((agent for agent in store.list(owner) if agent.platform == row['platform']
+                         and agent.runtime.get('native_resume_id') == row['native_id']),None)
+        if existing: return existing
         claim = db.execute('SELECT * FROM claims WHERE platform=? AND native_id=?', (row['platform'], row['native_id'])).fetchone()
         if claim:
             if claim['owner'] != owner:
@@ -102,7 +112,7 @@ def register(owner: str, ticket: str, name: str, store):
         if not Path(row['cwd']).is_dir():
             raise ValueError('The original session workspace no longer exists')
         agent = store.create(owner, driver=ACPX, name=name.strip()[:160] or row['title'] or row['platform'],
-                             config={'platform':row['platform'], 'meta':{'acp':{'clawcross_tools':True,'native_tools':False}},
+                             config={'platform':row['platform'], 'meta':{'acp':{'transport':'direct','clawcross_tools':True,'native_tools':False}},
                                      'workspaces':{'companion':True,'user_shared':False,'cli':False,'teams':False,'paths':[row['cwd']]}})
         try:
             from webot.workspace import set_cli_workspace
@@ -143,7 +153,7 @@ async def import_history(agent, store, *, adapter=None, history_store=None) -> d
         try:
             if adapter is None:
                 from external.acp import adapter as choose_adapter
-                adapter = choose_adapter(current)
+                adapter = choose_adapter(current,store=store)
             result = await adapter.load_native_history(tool=current.platform, session_id=native_id,
                                                        cwd=current.runtime['acp_cwd'])
         except Exception:

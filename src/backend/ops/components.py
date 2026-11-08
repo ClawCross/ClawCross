@@ -9,7 +9,7 @@ from importlib.metadata import PackageNotFoundError, distribution
 import threading
 from common.runtime_paths import BIN_DIR, PROJECT_ROOT
 
-COMPONENTS = {"deepseek-harness": "DeepSeek Harness", "srt": "Anthropic Sandbox Runtime", "acpx": "ACP agent bridge", "srt-system": "Sandbox system dependencies", "weclaw": "WeClaw", "cloudflared": "Cloudflare Tunnel", "nonebot": "NoneBot", "channels": "QQ and Telegram connectors"}
+COMPONENTS = {"deepseek-harness": "DeepSeek Harness", "srt": "Anthropic Sandbox Runtime", "srt-system": "Sandbox system dependencies", "weclaw": "WeClaw", "cloudflared": "Cloudflare Tunnel", "nonebot": "NoneBot", "channels": "QQ and Telegram connectors"}
 COMPONENTS.update({'acp-codex':'Codex ACP adapter', 'acp-claude':'Claude ACP adapter'})
 _lock = threading.Lock()
 _jobs = {}

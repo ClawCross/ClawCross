@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261108070220631638",
+  "candidate_id": "verification-loop-2",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-08T07:02:20.631592+00:00"
+  },
+  "commands": [
+    {
+      "command": "pytest test/test_acp_transport_history.py",
+      "ok": false,
+      "stdout": "",
+      "stderr": "147 passed, 2 failed: legacy captured-history test doubles lacked Agent.config. Add an explicit empty config so native-process policy remains enforced at the runtime boundary."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-08T07:02:20.631668+00:00",
+  "asset_id": "sha256:93a850b9515be0cc237dfaba5f2bacc8ebd3b7ceecbb6db51a643052a6b73874"
+}
