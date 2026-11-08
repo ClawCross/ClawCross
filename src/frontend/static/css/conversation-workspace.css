@@ -8,14 +8,14 @@
 .workspace-agent-row:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
 .workspace-agent-avatar{position:relative;width:49px;height:49px;flex:0 0 49px;border-radius:16px;background:var(--ui-surface-2);display:grid;place-items:center}
 .workspace-agent-avatar>.platform-mark{width:27px;height:27px}.workspace-agent-avatar .cc-avatar{width:100%;height:100%;border-radius:inherit}
-.workspace-agent-copy{display:flex;flex-direction:column;gap:7px;min-width:0;flex:1}.workspace-agent-name{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.workspace-agent-badge{border-radius:6px;padding:2px 6px;font-size:10px;color:var(--primary);background:var(--ui-accent-tint);font-weight:600;flex-shrink:0}
+.workspace-agent-copy{display:flex;flex-direction:column;gap:7px;min-width:0;flex:1}.workspace-agent-name{display:block;min-width:0;font-size:14px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .workspace-agent-copy small{font-size:12px;color:var(--text-secondary);line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #workspace-conversation{display:flex;flex-direction:column;position:absolute;inset:0;z-index:210;background:var(--ui-surface);min-width:0;min-height:0;isolation:isolate}
 #workspace-conversation[hidden],.workspace-frame-status[hidden],#workspace-conversation>button[hidden]{display:none}
 .workspace-conversation-header{height:56px;min-height:56px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);padding:0 18px;background:var(--ui-surface)}
 .workspace-conversation-header h2{flex:1;font-size:15px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .workspace-conversation-header button{border:0;background:transparent;display:grid;place-items:center;cursor:pointer;color:var(--text-secondary);width:36px;height:36px;border-radius:10px}.workspace-conversation-header button:hover{background:var(--bg-hover)}
+.workspace-conversation-header button[hidden]{display:none!important}
 #workspace-studio-frame{border:0;width:100%;height:0;flex:1;min-height:0;background:var(--ui-surface)}
 .workspace-frame-status{position:absolute;inset:57px 0 0;display:grid;place-items:center;color:var(--text-secondary);font-size:14px;background:var(--ui-surface);pointer-events:none}
 #workspace-conversation>button{position:absolute;top:58%;left:50%;transform:translateX(-50%);border:1px solid var(--border);padding:10px 16px;border-radius:10px;background:var(--ui-surface);color:var(--primary);cursor:pointer}
@@ -85,5 +85,13 @@
  .workspace-studio-sidebar-open #workspace-conversation{left:var(--desktop-rail-w)}
  .workspace-editor-open #workspace-conversation{left:var(--desktop-rail-w)}
  .workspace-editor-open .workspace-back{display:grid!important}
- .workspace-editor-open #workspace-studio-sidebar-toggle{display:none}
 }
+
+/* One Agent management entry; the embedded rail does not repeat its title. */
+#workspace-open-agent-sidebar{padding:5px 8px;font-size:11px;font-weight:500;white-space:nowrap}
+.workspace-conversation-header button{flex-shrink:0}
+.workspace-studio-sidebar-open .workspace-conversation-header{gap:10px}
+
+.workspace-back-label{display:none}
+.workspace-studio-sidebar-open .workspace-back{display:flex!important;align-items:center;gap:5px;width:auto;padding-inline:8px;font-size:12px}
+.workspace-studio-sidebar-open .workspace-back-label{display:inline}

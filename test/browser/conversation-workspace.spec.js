@@ -87,16 +87,24 @@ test('the real embedded Studio renderer shows saved tool steps without sending a
   await expect(page.locator('.workspace-back')).toBeInViewport();
  }
  await page.setViewportSize({width:1400,height:900});
- await page.locator('#workspace-studio-sidebar-toggle').click();
+ await page.locator('#workspace-open-agent-sidebar').click();
  await expect(studio.locator('.studio-conversation-switcher')).toBeVisible();
+ await expect(studio.locator('.studio-conversation-switcher>summary')).toBeHidden();
+ await expect(page.locator('#workspace-studio-sidebar-toggle')).toHaveCount(0);
  await expect(studio.locator('#studio-new-conversation')).toBeVisible();
+ await expect(page.locator('#workspace-agent-settings')).toBeHidden();
+ const firstAction=await studio.locator('#studio-new-conversation').boundingBox();
+ const rail=await studio.locator('.studio-conversation-switcher').boundingBox();
+ expect(firstAction.y-rail.y).toBeLessThan(24);
  await expect(studio.locator('#studio-team-agent-tree-list')).toHaveAttribute('data-loaded','1');
  await expect(studio.locator('#studio-team-agent-tree-list .studio-team-node')).toHaveCount(1);
+ await page.screenshot({path:'/tmp/clawcross-sidebar-clean.png'});
  const loadedRequests=catalogRequests;
  await page.locator('#workspace-studio-frame').evaluate(iframe=>{iframe.contentWindow.renderStudioConversations();iframe.contentWindow.renderStudioConversations();});
  expect(catalogRequests).toBe(loadedRequests);
  expect((await page.locator('#workspace-conversation').boundingBox()).x).toBe(68);
- await page.locator('#workspace-studio-sidebar-toggle').click();
+ await page.locator('.workspace-back').click();
+ await page.locator('[data-agent-id="codex-one"]').click();
  await expect(studio.locator('.studio-conversation-switcher')).toBeHidden();
  expect(prompts).toEqual([]);expect(errors).toEqual([]);
  await page.screenshot({path:'/tmp/clawcross-workspace-desktop.png'});
@@ -105,7 +113,7 @@ test('the real embedded Studio renderer shows saved tool steps without sending a
  await expect(studio.locator('#page-orchestrate')).toBeVisible();
  const editor=await page.locator('#workspace-conversation').boundingBox(),canvas=await studio.locator('.orch-canvas-wrapper').boundingBox();
  expect(editor.x).toBe(68);expect(canvas.width).toBeGreaterThan(editor.width/2);expect(canvas.height).toBeGreaterThan(350);
- await expect(page.locator('#workspace-studio-sidebar-toggle')).toBeHidden();
+ await expect(page.locator('#workspace-studio-sidebar-toggle')).toHaveCount(0);
  await page.screenshot({path:'/tmp/clawcross-workflow-wide.png'});
  expect(errors).toEqual([]);
 });
@@ -224,4 +232,33 @@ test.describe('automatic interface language',()=>{
   await page.locator('#workspace-rail-language').click();await page.locator('[data-language-auto]').click();
   await expect(page.locator('html')).toHaveAttribute('lang','ja-JP');
  });
+});
+
+
+test('sidebar actions have one management entry and long Agent names remain inside the list',async({page})=>{
+ const longName='一个负责复杂任务与跨设备协作的长期智能伙伴名字';
+ const {errors}=await fixtures(page,{agents:[{...agents[0],name:longName}]});
+ await page.setViewportSize({width:1400,height:900});await page.goto('/mobile/group_chat');
+ const entry=page.locator('#workspace-open-agent-sidebar');
+ await expect(entry).toHaveText('管理 Agent');
+ await expect(page.locator('.workspace-agent-badge')).toHaveCount(0);
+ const name=page.locator('.workspace-agent-name');
+ await expect(name).toHaveAttribute('title',longName);
+ await expect(name).toHaveCSS('text-overflow','ellipsis');
+ for(const width of [390,1400]){
+  await page.setViewportSize({width,height:844});
+  const row=await page.locator('.workspace-agent-row').boundingBox(),label=await name.boundingBox();
+  expect(label.x+label.width).toBeLessThanOrEqual(row.x+row.width);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ }
+ await page.screenshot({path:'/tmp/clawcross-sidebar-list-clean.png'});
+ await page.locator('#group-list-container .group-item').click();
+ await expect(page.locator('#list-toggle-btn use')).toHaveAttribute('href',/chevron-left$/);
+ const toggle=await page.locator('#list-toggle-btn').boundingBox(),avatar=await page.locator('#chat-room-avatar').boundingBox();
+ expect(toggle.x).toBeLessThan(avatar.x);
+ await page.locator('#list-toggle-btn').click();
+ await expect(page.locator('#list-toggle-btn')).toHaveAttribute('aria-expanded','false');
+ await expect(page.locator('#list-toggle-btn use')).toHaveAttribute('href',/chevron-right$/);
+ await page.locator('#list-toggle-btn').click();
+ expect(errors).toEqual([]);
 });

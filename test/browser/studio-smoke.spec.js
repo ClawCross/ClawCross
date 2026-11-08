@@ -148,6 +148,7 @@ test('UI tool opens a resizable center workspace and keeps the conversation and 
   await page.locator('#studio-more-menu > summary').click();await page.locator('#conversation-ui-panel-menu > summary').click();
   await page.getByRole('button',{name:'我的工作台 已最小化 · 恢复'}).click();
   await expect(panel).toHaveClass(/is-docked/);await expect(counter).toHaveText('1');
+  await toggleEmbeddedSidebar(page);
   await page.setViewportSize({width:390,height:844});
   await expect(page.locator('#studio-ui-divider')).toHaveAttribute('aria-orientation','horizontal');
   const mobileCenter=await page.locator('#studio-ui-workspace').boundingBox(),mobileChat=await page.locator('#studio-chat-workspace').boundingBox();
@@ -228,8 +229,8 @@ test('recent conversations show Agent names with virtual user space and update a
   await expect(row.locator('span')).toHaveText('研究员 Alice');
   await expect(row.locator('small')).toContainText('整理报告');
   await expect(page.locator('.studio-conversation-item[data-session-id="native-named"]')).toHaveCount(0);
-  await row.locator('.studio-agent-actions > summary').click();
-  await row.getByRole('button',{name:'Agent 设置',exact:true}).click();
+  await row.locator('..').locator('.studio-agent-actions > summary').click();
+  await row.locator('..').getByRole('button',{name:'Agent 设置',exact:true}).click();
   await page.locator('[data-category=profile]').click();
   await page.locator('#agent-settings-home input[name=name]').fill('新版研究员');
   await page.locator('#agent-settings-home [data-save]').click();
@@ -1317,8 +1318,8 @@ for (const platform of ['webot', 'codex']) {
     const row = page.locator('.studio-conversation-item[data-session-id="delete-me"]');
     await expect(row).toBeVisible();
     await row.click();
-    await row.locator('.studio-agent-actions > summary').click();
-    await row.getByRole('button',{name:'删除 Agent',exact:true}).click();
+    await row.locator('..').locator('.studio-agent-actions > summary').click();
+    await row.locator('..').getByRole('button',{name:'删除 Agent',exact:true}).click();
     await expect(row).toHaveCount(0);
     await expect(page.locator('option[value="delete-me"]')).toHaveCount(0);
     const state = await page.evaluate(() => ({

@@ -5,6 +5,9 @@
   const style=document.createElement('style');style.textContent=`
     .studio-embedded .studio-activity-bar,.studio-embedded .studio-mobile-menu-toggle,.studio-embedded:not(.studio-agents-visible) .studio-conversation-switcher,.studio-embedded #oasis-panel,.studio-embedded .header,.studio-embedded .top-inline-banner{display:none!important}
     .studio-embedded.studio-agents-visible .studio-conversation-switcher[open]{display:flex!important;flex-basis:310px;width:310px}
+    .studio-embedded .studio-conversation-switcher>summary{display:none!important}
+    .studio-embedded .studio-conversation-switcher[open] .studio-session-rail-body{top:0!important}
+    .studio-embedded .studio-conversation-switcher[open]::details-content{height:100%}
     .studio-embedded #chat-screen{padding:0!important;grid-template-columns:minmax(0,1fr)!important;gap:0!important}
     .studio-embedded .chat-main{width:100%!important;margin:0!important;min-width:0!important}
     .studio-embedded #page-chat{padding:0!important}

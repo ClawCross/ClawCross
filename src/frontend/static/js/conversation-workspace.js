@@ -1,6 +1,6 @@
 /* One navigation shell, existing Studio turns and the existing group chat. */
 (() => {
-  const labels={agents:['我的 Agent','My agents'],groups:['群聊','Group chats'],directory:['联系人','Directory'],center:['Agent 中心','Agent center'],teams:['团队','Teams'],workflows:['工作流','Workflows'],back:['返回对话列表','Back to chats'],settings:['Agent 设置','Agent settings'],loading:['正在打开对话…','Opening conversation…'],retry:['重新打开','Try again'],failed:['对话暂时无法打开','Conversation could not be opened'],all:['全部','All'],more:['展开全部','Show all'],less:['收起','Show less'],empty:['没有匹配的 Agent','No matching agents'],preferences:['设置','Settings'],language:['语言','Language'],account:['我的账号','My account']};
+  const labels={agents:['我的 Agent','My agents'],manage:['管理 Agent','Manage agents'],groups:['群聊','Group chats'],directory:['联系人','Directory'],center:['Agent 中心','Agent center'],teams:['团队','Teams'],workflows:['工作流','Workflows'],back:['返回聊天','Back to chats'],settings:['Agent 设置','Agent settings'],loading:['正在打开对话…','Opening conversation…'],retry:['重新打开','Try again'],failed:['对话暂时无法打开','Conversation could not be opened'],all:['全部','All'],more:['展开全部','Show all'],less:['收起','Show less'],empty:['没有匹配的 Agent','No matching agents'],preferences:['设置','Settings'],language:['语言','Language'],account:['我的账号','My account']};
   const text=key=>window.ClawCrossLocale?.text(...labels[key]) || labels[key][document.documentElement.lang.startsWith('zh')?0:1];
   const icon=name=>`<svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg?v=20261108-directory2#${name}"/></svg>`;
   let agents=[],selected='',frame,host,title,status,retry,revision=0,lastFetch=0,pending,previousFocus;
@@ -13,9 +13,8 @@
     document.getElementById('contacts-list')?.setAttribute('data-center-title',text('center'));
     const heading=document.querySelector('#workspace-agent-collapse [data-workspace-text]');
     if(heading&&chatView==='all')heading.textContent=window.ClawCrossLocale?.lookup('studio_history',ClawCrossLocale.current())||text('agents');
-    for(const id of ['workspace-open-agent-sidebar','workspace-studio-sidebar-toggle']){
-      const button=document.getElementById(id);if(button){button.title=text('agents');button.setAttribute('aria-label',text('agents'));}
-    }
+    const manage=document.getElementById('workspace-open-agent-sidebar');
+    if(manage){manage.textContent=text('manage');manage.title=text('manage');manage.setAttribute('aria-label',text('manage'));}
     for(const [key,id]of Object.entries({preferences:'workspace-rail-settings',language:'workspace-rail-language',account:'workspace-rail-account'})){
       const button=document.getElementById(id);if(button){button.title=text(key);button.setAttribute('aria-label',text(key));}
     }
@@ -52,11 +51,10 @@
     if(host)return;
     host=document.createElement('section');host.id='workspace-conversation';host.hidden=true;host.setAttribute('aria-label',text('agents'));
     const header=document.createElement('header');header.className='workspace-conversation-header';
-    const back=document.createElement('button');back.type='button';back.className='workspace-back';back.innerHTML=icon('chevron-left');back.setAttribute('aria-label',text('back'));back.onclick=()=>hide(true);
+    const back=document.createElement('button');back.type='button';back.className='workspace-back';back.innerHTML=icon('chevron-left')+'<span class="workspace-back-label" data-workspace-text="back">'+text('back')+'</span>';back.setAttribute('aria-label',text('back'));back.onclick=()=>hide(true);
     title=document.createElement('h2');
     const settings=document.createElement('button');settings.type='button';settings.innerHTML=icon('sliders');settings.setAttribute('aria-label',text('settings'));settings.onclick=()=>{if(selected)AgentSettings.open(selected);};settings.id='workspace-agent-settings';
-    const sidebar=document.createElement('button');sidebar.type='button';sidebar.id='workspace-studio-sidebar-toggle';sidebar.innerHTML=icon('panel-left');sidebar.setAttribute('aria-label',text('agents'));sidebar.setAttribute('aria-expanded','false');sidebar.onclick=()=>void toggleStudioSidebar();
-    header.append(back,sidebar,title,settings);
+    header.append(back,title,settings);
     frame=document.createElement('iframe');frame.title='Agent conversation';frame.id='workspace-studio-frame';frame.src='/studio?embedded=1';frame.setAttribute('allow','clipboard-write; microphone');
     status=document.createElement('div');status.className='workspace-frame-status';status.setAttribute('role','status');
     retry=document.createElement('button');retry.type='button';retry.textContent=text('retry');retry.hidden=true;retry.onclick=()=>{frame.src='/studio?embedded=1';if(pending)void open(pending);};
@@ -65,6 +63,7 @@
   function hide(restore=true){
     ++revision;
     if(host)host.hidden=true;
+    studioSidebarOpen=false;frame?.contentWindow?.WorkspaceStudio?.sidebar?.(false);
     document.body.classList.remove('workspace-agent-open','workspace-studio-sidebar-open','workspace-editor-open');
     if(restore)previousFocus?.focus({preventScroll:true});
   }
@@ -88,7 +87,7 @@
       const dot=document.createElement('span');dot.className='agent-activity-dot';dot.dataset.workspaceDot='';dot.hidden=true;portrait.append(dot);
       const body=document.createElement('span');body.className='workspace-agent-copy';
       const heading=document.createElement('span');heading.className='workspace-agent-name';heading.textContent=a.name;
-      const badge=document.createElement('span');badge.className='workspace-agent-badge';badge.textContent='Agent';heading.append(badge);
+      heading.title=a.name;
       const meta=document.createElement('small');meta.textContent=[agentPlatformLabel(a.platform),a.location?.kind==='ssh'?'SSH':document.documentElement.lang.startsWith('zh')?'本机':'Local'].filter(Boolean).join(' · ');
       body.append(heading,meta);row.append(portrait,body);row.onclick=()=>open({view:'agent',agent:a});list.append(row);
     }
@@ -123,7 +122,6 @@
     if(selected){recentAgents[selected]=Date.now()/1000;localStorage.setItem(storageKey('recent_agents'),JSON.stringify(recentAgents));}
     title.textContent=command.agent?.name||text(command.view==='group'?'teams':command.view==='orchestrate'?'workflows':'agents');
     document.getElementById('workspace-agent-settings').hidden=!selected;
-    document.getElementById('workspace-studio-sidebar-toggle').hidden=['group','orchestrate'].includes(command.view);
     host.hidden=false;status.textContent=text('loading');status.hidden=false;retry.hidden=true;
     document.body.classList.add('workspace-agent-open');renderAgents();syncViewport();
     document.body.classList.toggle('workspace-editor-open',['group','orchestrate'].includes(command.view));
@@ -154,11 +152,6 @@
     if(typeof studio.sidebar!=='function')return;
     await studio.sidebar(studioSidebarOpen);
     document.body.classList.toggle('workspace-studio-sidebar-open',studioSidebarOpen);
-    document.getElementById('workspace-studio-sidebar-toggle')?.setAttribute('aria-expanded',String(studioSidebarOpen));
-  }
-  async function toggleStudioSidebar(){
-    studioSidebarOpen=!studioSidebarOpen;
-    try{await applyStudioSidebar(await waitForStudio());}catch{studioSidebarOpen=false;}
   }
   function myAgents(){return open({view:'chat',sidebar:true});}
   function studioView(view,compose){return open({view,compose});}
@@ -178,7 +171,7 @@
     }
     const agentHeading=document.querySelector('#workspace-agent-section .workspace-section-label');
     if(agentHeading&&!document.getElementById('workspace-open-agent-sidebar')){
-      const button=document.createElement('button');button.type='button';button.id='workspace-open-agent-sidebar';button.innerHTML=icon('panel-left');button.onclick=()=>void myAgents();agentHeading.append(button);
+      const button=document.createElement('button');button.type='button';button.id='workspace-open-agent-sidebar';button.textContent=text('manage');button.onclick=()=>void myAgents();agentHeading.append(button);
     }
     installFooter();
     try{recentAgents=JSON.parse(localStorage.getItem(storageKey('recent_agents'))||'{}');}catch{recentAgents={};}
@@ -211,7 +204,6 @@
     if(event.data?.type==='clawcross:studio-sidebar'){
       studioSidebarOpen=!!event.data.open;
       document.body.classList.toggle('workspace-studio-sidebar-open',studioSidebarOpen&&host&&!host.hidden);
-      document.getElementById('workspace-studio-sidebar-toggle')?.setAttribute('aria-expanded',String(studioSidebarOpen));
     }
     if(event.data?.type==='clawcross:studio-selection'){
       const agent=agents.find(a=>a.agent_id===event.data.agentId);if(!agent)return;

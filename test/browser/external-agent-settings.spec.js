@@ -191,8 +191,8 @@ test('an ACP draft can explicitly create its workspace settings without connecti
   expect(created).toBe(0);
   await page.getByText('工作区',{exact:true}).click();
   await page.getByRole('button',{name:'创建并配置工作区',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__workspaceAgent)).toBe('draft-workspace');
   expect(created).toBe(1);expect(probes).toBe(0);
-  expect(await page.evaluate(()=>window.__workspaceAgent)).toBe('draft-workspace');
   await expect(page.locator('#external-agent-settings')).toHaveCount(0);
 });
 

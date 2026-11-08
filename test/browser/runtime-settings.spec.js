@@ -249,8 +249,12 @@ test('sandbox install is explicit and does not enable the sandbox', async ({ pag
 
 test('desktop new agent can select an external runtime and persists that platform', async ({page}) => {
   const created = [];
+  await page.route('**/proxy_check_session',route=>route.fulfill({json:{valid:true,user_id:'runtime-test'}}));
+  await page.route('**/api/setup_status',route=>route.fulfill({json:{llm_configured:true}}));
+  await page.route('**/proxy_acpx_status',route=>route.fulfill({json:{available:true,tools:['codex']}}));
+  await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
   await page.route('**/proxy_visual/experts*',route => route.fulfill({contentType:'application/json',body:'[]'}));
-  await page.route('**/proxy_components/acp-codex',route => route.fulfill({contentType:'application/json',body:JSON.stringify({name:'acpx',installed:false,ready:false,missing:[],can_install:true,state:'',platform:'linux'})}));
+  await page.route('**/proxy_components/acp-codex',route => route.fulfill({contentType:'application/json',body:JSON.stringify({name:'acp-codex',installed:false,ready:false,missing:[],can_install:true,state:'',platform:'linux'})}));
   await page.route(/\/v1\/agents(?:\?.*)?$/, route => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON(); created.push(body);
