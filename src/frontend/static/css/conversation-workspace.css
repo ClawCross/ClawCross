@@ -44,3 +44,46 @@
  #tab-chats>.header{padding-top:env(safe-area-inset-top,0px);height:calc(70px + env(safe-area-inset-top,0px))}
 }
 @media(prefers-reduced-motion:reduce){.workspace-agent-row{transition:none}}
+/* A bounded recent list keeps groups reachable with one scrollbar. */
+.workspace-list-filters{display:flex;gap:4px;flex-shrink:0;margin:0 16px 6px;padding:4px;border-radius:12px;background:var(--ui-surface-2)}
+.workspace-list-filters button{display:flex;align-items:center;justify-content:center;gap:5px;flex:1;min-height:31px;padding:5px;border:0;border-radius:8px;background:transparent;color:var(--text-secondary);font:inherit;font-size:12px;cursor:pointer}
+.workspace-list-filters button[aria-pressed=true]{background:var(--ui-surface);color:var(--text);box-shadow:var(--ui-shadow-1)}.workspace-list-filters small{font-size:10px;opacity:.65}
+.workspace-section-label button{display:flex;align-items:center;gap:6px;border:0;padding:2px 0;background:transparent;color:inherit;font:inherit;cursor:pointer}.workspace-section-label button .ui-icon{width:13px;height:13px;transition:transform .15s}.workspace-section-label button[aria-expanded=false] .ui-icon{transform:rotate(-90deg)}
+#workspace-open-agent-sidebar{margin-inline-start:auto;padding:5px;border-radius:6px}#workspace-open-agent-sidebar:hover{color:var(--primary);background:var(--ui-accent-tint)}#workspace-open-agent-sidebar .ui-icon{width:16px;height:16px}
+.workspace-cards .workspace-persona-library{display:none}
+#tab-contacts .contacts-ext-sub{width:100%;text-align:start;font:inherit;cursor:pointer}
+.workspace-contact-controls{min-width:0;max-width:100%}.workspace-contact-views button{min-width:0}.workspace-contact-views button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#workspace-agent-section[hidden],#workspace-agent-list[hidden],#workspace-agents-more[hidden],#workspace-group-heading[hidden],#group-list-container[hidden]{display:none}
+#workspace-agent-list .workspace-agent-row{min-height:68px;padding-block:9px}.workspace-agents-more{border:0;background:transparent;color:var(--primary);font:inherit;font-size:12px;padding:8px 12px;margin-inline-start:15px;cursor:pointer}.workspace-agent-empty{padding:15px 12px;font-size:12px;color:var(--text-secondary)}
+#workspace-rail-footer{display:contents}.workspace-rail-tool,.workspace-rail-brand{display:none}
+@media(min-width:1024px) and (hover:hover) and (pointer:fine){
+ #workspace-rail-footer{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;margin-top:auto;padding-bottom:4px}
+ .workspace-rail-tool,.workspace-rail-brand{display:grid;place-items:center;flex-shrink:0;width:38px;height:38px;border:0;border-radius:12px;background:transparent;color:var(--text-secondary);cursor:pointer}.workspace-rail-tool:hover,.workspace-rail-brand:hover{background:var(--ui-hover)}.workspace-rail-tool .ui-icon{width:21px;height:21px}
+ .workspace-rail-brand{margin-bottom:9px}.workspace-rail-brand img{width:27px;height:27px}
+ #workspace-rail-account{flex:0 0 40px;margin-top:4px}#workspace-rail-account .tab-icon{width:35px;height:35px;border-radius:13px;overflow:hidden;background:var(--ui-accent-tint);color:var(--primary);font-size:14px;font-weight:600}#workspace-rail-account .cc-avatar{width:100%;height:100%;border-radius:inherit}#workspace-rail-account .tab-label{font-size:10px}
+ /* In card view the controls stay in the directory column, and the gallery
+    occupies the otherwise unused conversation column. Each column scrolls
+    independently; the gallery never contains a second scrolling list. */
+ #tab-contacts.workspace-cards{width:auto;right:0;z-index:220;overflow:hidden}
+ #tab-contacts.workspace-cards>.header{width:var(--desktop-list-w);flex-shrink:0;box-sizing:border-box;min-height:76px}
+ #tab-contacts.workspace-cards .contacts-area{position:static;overflow:hidden;padding:0;min-height:0}
+ #tab-contacts.workspace-cards .workspace-contact-controls{width:var(--desktop-list-w);padding:12px 16px;box-sizing:border-box}
+ #tab-contacts.workspace-cards .contacts-area{width:var(--desktop-list-w);max-width:var(--desktop-list-w)}
+ #tab-contacts.workspace-cards .contacts-library-heading{flex-wrap:wrap;gap:4px}
+ #tab-contacts.workspace-cards #contacts-list{position:absolute;inset:0 0 0 var(--desktop-list-w);overflow-y:auto;padding:30px clamp(20px,3vw,46px) 40px;background:var(--ui-canvas);border-inline-start:1px solid var(--border);scrollbar-gutter:stable}
+ #tab-contacts.workspace-cards #contacts-list::before{content:attr(data-center-title);display:block;font-size:24px;font-weight:700;letter-spacing:-.5px;margin-bottom:26px;color:var(--text)}
+ #tab-contacts.workspace-cards .contacts-cat-group{border:0;background:transparent;overflow:visible;margin-bottom:25px}
+ #tab-contacts.workspace-cards .contacts-cat-header{margin:0 0 12px;padding:12px 14px;background:var(--ui-surface);border:1px solid var(--border);min-height:58px;border-radius:13px}
+ #tab-contacts.workspace-cards .contacts-cat-list.expanded{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));padding:0;gap:14px}
+ #tab-contacts.workspace-cards .contact-agent{width:auto;min-height:177px;gap:14px;align-items:center;text-align:center;padding:22px 14px;border:1px solid var(--border);border-radius:18px;background:var(--ui-surface)}
+ #tab-contacts.workspace-cards .contact-agent:hover{border-color:var(--ui-accent-ring);box-shadow:var(--ui-shadow-2)}
+ #tab-contacts.workspace-cards .contact-agent+.contact-agent::before{display:none}
+ #tab-contacts.workspace-cards .contact-avatar{width:64px;height:64px;flex:0 0 64px;border-radius:20px;font-size:24px}
+ #tab-contacts.workspace-cards .contact-main{flex:initial;width:100%;align-items:center}
+ #tab-contacts.workspace-cards .contact-meta-line{justify-content:center;margin-top:6px}
+ #tab-contacts.workspace-cards .contact-name{text-align:center;font-size:14px;line-height:1.4}
+ .workspace-studio-sidebar-open #workspace-conversation{left:var(--desktop-rail-w)}
+ .workspace-editor-open #workspace-conversation{left:var(--desktop-rail-w)}
+ .workspace-editor-open .workspace-back{display:grid!important}
+ .workspace-editor-open #workspace-studio-sidebar-toggle{display:none}
+}

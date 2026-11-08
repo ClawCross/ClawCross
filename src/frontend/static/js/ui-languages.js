@@ -29,12 +29,12 @@
     function text(zh,en){const index=phrases.get(zh) ?? phrases.get(String(en).toLowerCase());const code=current();return index!==undefined?(rows[code]?.[index] || labels[index]):(code.startsWith('zh')?zh:en);}
     function lookup(key,code){if(key==='studio_conversations'||key==='studio_history')return (railLabels[canonical(code)] || railLabels.en)[key==='studio_conversations'?0:1];const index=aliases[key];return index===undefined?undefined:(rows[canonical(code)]?.[index] || labels[index]);}
     function name(code){if(code==='zh-CN')return '简体中文';if(code==='zh-TW')return '繁體中文';if(code==='en')return 'English';try{return new Intl.DisplayNames([code],{type:'language'}).of(code);}catch{return code;}}
-    function set(code){
+    function set(code,{automatic=false,persist=true}={}){
         code=canonical(code);if(!codes.includes(code))return;
-        localStorage.setItem('clawcross_ui_locale',code);localStorage.setItem('lang',code);localStorage.setItem('clawcross_lang',code==='zh-CN'?'zh':code);
+        if(persist){localStorage.setItem('clawcross_language_mode',automatic?'auto':'manual');localStorage.setItem('clawcross_ui_locale',code);localStorage.setItem('lang',code);localStorage.setItem('clawcross_lang',code==='zh-CN'?'zh':code);}
         document.documentElement.lang=code==='en'?'en-US':code;document.documentElement.dir=code==='ar'?'rtl':'ltr';
         if(typeof currentLang!=='undefined'){currentLang=code;applyTranslations();window.StudioSidebar?.updatePlatform();renderStudioConversations();}
-        else if(typeof setLang==='function'){setLang(code==='zh-CN'?'zh':code);}
+        else if(typeof setLang==='function'){setLang(code==='zh-CN'?'zh':code,{persist:false});}
         document.dispatchEvent(new Event('clawcross:language'));document.getElementById('clawcross-language-dialog')?.close();
     }
     function picker(){return `<button type="button" class="language-preference-button" onclick="ClawCrossLocale.open()"><svg class="ui-icon"><use href="/static/icons.svg#languages"/></svg><span>${name(current())}</span><span>›</span></button>`;}
@@ -43,6 +43,7 @@
         const head=document.createElement('header'),title=document.createElement('h2'),close=document.createElement('button');title.textContent=text('语言','Language');close.type='button';close.textContent='×';close.setAttribute('aria-label',text('关闭','Close'));close.onclick=()=>dialog.close();head.append(title,close);
         const search=document.createElement('input');search.type='search';search.placeholder=text('搜索','Search');search.setAttribute('aria-label',search.placeholder);
         const list=document.createElement('div');list.className='language-picker-list';
+        if(window.InterfacePreferences){const auto=document.createElement('button');auto.type='button';auto.dataset.languageAuto='';auto.textContent=text('跟随浏览器','Use browser language')+' · '+name(InterfacePreferences.detectedLanguage());auto.setAttribute('aria-pressed',String(InterfacePreferences.automaticLanguage()));auto.onclick=()=>InterfacePreferences.useAutomaticLanguage();list.append(auto);}
         const buttons=codes.map(code=>{const button=document.createElement('button');button.type='button';button.textContent=name(code);button.lang=code;button.dir='auto';button.setAttribute('aria-pressed',String(code===current()));button.onclick=()=>set(code);list.append(button);return button;});
         search.oninput=()=>buttons.forEach(button=>button.hidden=!(button.textContent+' '+button.lang).toLowerCase().includes(search.value.toLowerCase()));
         dialog.append(head,search,list);document.body.append(dialog);dialog.showModal();search.focus();dialog.onclick=event=>{if(event.target===dialog)dialog.close();};

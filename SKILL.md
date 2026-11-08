@@ -531,14 +531,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-08T08:31:00.414553+00:00`
+- Updated at: `2026-11-08T09:03:50.154940+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `approval-auth-1`
+- Heuristic candidate: `verification-loop-4`
 - Heuristic score: `0.886`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: controlled ACP migration reload verification. Signals: approval-auth. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: npx playwright test test/browser/conversation-workspace.spec.js --config playwright.config.mjs --workers=1 -g 'real embedded Studio renderer'. Signals: verification-loop. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -547,12 +547,12 @@ Command exited with code 1. Command: controlled ACP migration reload verificatio
 
 ### Latest Trigger Command
 
-`controlled ACP migration reload verification`
+`npx playwright test test/browser/conversation-workspace.spec.js --config playwright.config.mjs --workers=1 -g 'real embedded Studio renderer'`
 
 ### Latest Error Excerpt
 
 ```text
-Reload and 27 Agent configuration/native-ID preservation succeeded; post-reload checker selected Cathy using an assumed case-sensitive owner. Locate the owned Agent across the authenticated owner inventory rather than guessing the display name. Corrected read-only audit confirmed paused flag and original group connectivity; do not repeat the reload just to repair an audit selector.
+Workflow layout regression assertion expected a canvas wider than 650px at the default 1280px viewport. Actual editor width is 1212px after the navigation rail; the 637px canvas already exceeds half the editor. Assert the actual requirement (canvas receives over half the editor and height over 350px) instead of a threshold derived from a larger viewport; keep testing the real renderer and do not execute the workflow.
 ```
 
 ### Governance Snapshot
@@ -564,22 +564,22 @@ Reload and 27 Agent configuration/native-ID preservation succeeded; post-reload 
 
 ### Operating Adjustments
 
-1. Check authentication, required tokens, and approval mode before retrying.
-2. Distinguish auth failures from product logic failures.
-3. Document safe fallback behavior when credentials are missing.
+1. State the exact failure mode before editing anything.
+2. Choose the narrowest reproducer first, then a broader regression command.
+3. Record pass/fail status immediately after each attempted fix.
 
 ### Validation Loop
 
-1. Verify token presence or auth mode explicitly before the main action.
-2. Avoid repeated retries when the root cause is missing credentials.
+1. Rerun the minimal reproducer before any broad test suite.
+2. When a fix passes, note the exact verifier command in the skill.
 
 ### Recent Evidence
 
-- `2026-11-08T08:31:00.414553+00:00` `repo-skill` — Reload and 27 Agent configuration/native-ID preservation succeeded; post-reload checker selected Cathy using an assumed case-sensitive owner. ...[truncated]
+- `2026-11-08T09:03:50.154940+00:00` `repo-skill` — Workflow layout regression assertion expected a canvas wider than 650px at the default 1280px viewport. Actual editor width is 1212px after th ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `approval-auth-1` score `0.886` — Preflight auth and approval constraints (intent `repair`)
+- `verification-loop-4` score `0.886` — Tighten verification loops (intent `repair`)
 
 ### Local State Snapshot
 

@@ -1647,7 +1647,7 @@ const i18n = {
 };
 
 // 当前语言
-let currentLang = localStorage.getItem('clawcross_ui_locale') || localStorage.getItem('lang') || 'zh-CN';
+let currentLang = window.InterfacePreferences?.language() || localStorage.getItem('clawcross_ui_locale') || localStorage.getItem('lang') || 'en';
 // 确保语言值有效
 if (!i18n[currentLang] && !window.ClawCrossLocale?.has(currentLang)) { currentLang = 'zh-CN'; localStorage.setItem('lang', 'zh-CN'); }
 
@@ -2496,6 +2496,12 @@ function initSession() {
     }
     currentSessionId = saved;
     updateSessionDisplay();
+    if(new URLSearchParams(location.search).get('embedded')==='1'){
+        // The parent selects the actual Agent. Loading an unrelated saved
+        // conversation here serializes two history requests before first paint.
+        renderWeBotWelcomeMessage();
+        return Promise.resolve();
+    }
     return loadSessionList()
         .then(() => switchToSession(currentSessionId, true, { quiet: true }))
         .catch(() => {});
@@ -4944,6 +4950,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
     setStreamingUI(false);
     setSystemBusyUI(false);
     currentSessionId = sessionId;
+    document.dispatchEvent(new CustomEvent('clawcross:agent-selected',{detail:{agentId:sessionId}}));
     if (window.ExternalAgentSettings) ExternalAgentSettings.syncMenu();
     updateBackendCompactionStatus(null);
     ConversationUiPanels.beginSession(sessionId);
@@ -4979,16 +4986,19 @@ async function switchToSession(sessionId, force = false, options = {}) {
         const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(sessionId)}/history?limit=1000`)
             .catch(e => { if (e.status === 404) return {messages: []}; throw e; });
         if (stale()) return;
-        const status = await fetchSessionStatus(sessionId);
-        if (stale()) return;
+        // History is useful immediately; context/mode indicators can arrive
+        // afterwards without keeping the whole conversation behind a loader.
+        void fetchSessionStatus(sessionId).then(status=>{
+            if(stale())return;
+            if(RUN_MODE_VALID.includes(status.mode))setRunMode(status.mode);
+            showSessionContextUsage(status.context);
+        }).catch(()=>{});
         chatBox.innerHTML = '';
-        if (RUN_MODE_VALID.includes(status.mode)) setRunMode(status.mode);
-        showSessionContextUsage(status.context);
 
         if (!data.messages || data.messages.length === 0) {
             renderWeBotWelcomeMessage();
             restoreActiveChatRunForCurrentContext();
-            await syncCurrentChatRunUI();
+            void syncCurrentChatRunUI();
             return;
         }
 
@@ -5060,7 +5070,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
 
     if (_ocChatMode === 'internal') {
         restoreActiveChatRunForCurrentContext();
-        await syncCurrentChatRunUI();
+        void syncCurrentChatRunUI();
         if (stale()) return;
         ocInternalRepaintSessionPick();
         scrollChatToBottom(chatBox, { force: true });
@@ -5129,12 +5139,12 @@ function renderStudioConversations() {
     }
     const create = document.getElementById('studio-new-conversation');
     if (create) create.title = t('studio_new_conversation');
-    renderStudioTeamTree();
+    if(new URLSearchParams(location.search).get('embedded')!=='1'||document.documentElement.classList.contains('studio-agents-visible'))renderStudioTeamTree();
 }
 
 async function renderStudioTeamTree(force = false) {
     const host = document.getElementById('studio-team-agent-tree-list');
-    if (!host || host.dataset.loading === '1' || (host.dataset.loaded === '1' && !force)) return;
+    if (!host || host.dataset.loading === '1' || (host.dataset.loaded === '1' && Date.now()-Number(host.dataset.loadedAt||0)<30000 && !force)) return;
     host.dataset.loading = '1';
     try {
         const [response, agentResponse] = await Promise.all([agentApi('GET', '/v1/teams'), agentApi('GET', '/v1/agents')]);
@@ -5194,9 +5204,11 @@ async function renderStudioTeamTree(force = false) {
         const defaultMembers = virtualDefault?.members || allAgents.filter(agent => !assigned.has(agent.agent_id)).map(agent => ({agent}));
         addTeam(currentLang === 'zh-CN' ? '用户空间' : 'User space', defaultMembers, true);
         for (const team of teams) if (team !== virtualDefault) addTeam(team.team, team.members || []);
+        host.dataset.loaded = '1';
+        host.dataset.loadedAt = String(Date.now());
     } catch (error) {
         host.textContent = error.message || String(error);
-        host.dataset.loaded = '1';
+        host.dataset.loaded = '0';
     } finally { host.dataset.loading = '0'; }
 }
 
@@ -15083,6 +15095,8 @@ function acpUpdateSessionInputsDisabledState() {
 function acpNotifySessionContextChanged() {
     if (_ocChatMode !== 'acp' || !_acpTool) return;
     const newKey = acpComputeTranscriptKey();
+    const agentId=acpResolveSessionName();
+    if(agentId)document.dispatchEvent(new CustomEvent('clawcross:agent-selected',{detail:{agentId}}));
     if (window.ExternalAgentSettings) ExternalAgentSettings.syncMenu();
     if (newKey === _acpLastTranscriptKey) return;
     _acpLastTranscriptKey = newKey;
@@ -15094,6 +15108,7 @@ function acpNotifySessionContextChanged() {
 function acpOnSessionPickChange() {
     if (!_acpTool) return;
     const v = acpGetSessionPickValue();
+    if(v)document.dispatchEvent(new CustomEvent('clawcross:agent-selected',{detail:{agentId:v}}));
     if (v) localStorage.setItem('clawcross_acp_session_pick_' + _acpTool, v);
     else localStorage.removeItem('clawcross_acp_session_pick_' + _acpTool);
     acpSetSessionStatus('');
@@ -15327,7 +15342,7 @@ function studioHistoryHtml(messages) {
 /**
  * Switch between WeBot (internal) and an ACP tool (codex / claude / openclaw / … via acpx).
  */
-async function ocSwitchTo(mode, acpTool) {
+async function ocSwitchTo(mode, acpTool, options = {}) {
     const nextAcp = (mode === 'acp' && acpTool) ? String(acpTool).toLowerCase() : null;
     if (nextAcp && !_acpToolsCache.includes(nextAcp)) {
         return;
@@ -15358,7 +15373,13 @@ async function ocSwitchTo(mode, acpTool) {
 
     if (mode === 'acp') {
         acpSyncSessionInputFromStorage();
-        if (modeChanged || acpToolChanged) {
+        if(options.agent){
+            const select=document.getElementById('oc-acp-session-pick');
+            let option=[...select.options].find(item=>item.value===options.agent.agent_id);
+            if(!option){option=document.createElement('option');option.value=options.agent.agent_id;select.append(option);}
+            option.textContent=options.agent.name;option.dataset.agentName=options.agent.name;option.dataset.conversationTitle=options.agent.settings?.title||'';select.value=option.value;
+            document.dispatchEvent(new CustomEvent('clawcross:agent-selected',{detail:{agentId:option.value}}));
+        }else if (modeChanged || acpToolChanged) {
             await acpLoadSessionsList();
         }
         await acpPaintTranscript();
@@ -15367,10 +15388,10 @@ async function ocSwitchTo(mode, acpTool) {
     }
 
     restoreActiveChatRunForCurrentContext();
-    await syncCurrentChatRunUI();
+    void syncCurrentChatRunUI();
 
     ocSyncSessionSubrowsVisibility();
-    if (window.ExternalAgentSettings) await ExternalAgentSettings.syncMenu();
+    if (window.ExternalAgentSettings) void ExternalAgentSettings.syncMenu();
     if (_ocChatMode === 'internal') {
         ocInternalRepaintSessionPick();
     }

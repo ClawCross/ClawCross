@@ -127,3 +127,25 @@
 .runtime-context-details pre {white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;margin:10px 0 0;font:12px/1.6 var(--ui-font);}
 .runtime-user-input {white-space:pre-wrap;overflow-wrap:anywhere;}
 .stream-tool-indicator {max-width:100%;min-width:0;}
+
+/* Shared appearance tokens, including the embedded Studio document. */
+:root[data-theme="dark"]{
+ --ui-canvas:#14161c;--ui-surface:#1c1f27;--ui-surface-2:#252932;--ui-surface-3:#111319;
+ --ui-hover:rgba(255,255,255,.055);--ui-press:rgba(255,255,255,.1);
+ --ui-hairline:rgba(255,255,255,.09);--ui-hairline-strong:rgba(255,255,255,.16);
+ --ui-text:#edf0f7;--ui-text-2:#a5adbe;--ui-text-3:#778196;
+ --ui-accent:#6da9ff;--ui-accent-hover:#8abbff;--ui-accent-press:#5496f6;--ui-accent-tint:rgba(109,169,255,.13);--ui-accent-ring:rgba(109,169,255,.38);
+ --ui-bubble-self:#263d62;--ui-material:rgba(28,31,39,.92);--ui-shadow-1:0 1px 3px #0003;--ui-shadow-2:0 5px 18px #0003;--ui-shadow-pop:0 18px 50px #0007;
+ --bg:#14161c;--bg-card:#1c1f27;--bg-chat:#14161c;--bg-hover:rgba(255,255,255,.055);--text:#edf0f7;--text-secondary:#a5adbe;--text-hint:#778196;--border:rgba(255,255,255,.09);
+ color:#edf0f7;background:#14161c;
+}
+:root[data-theme="dark"] .ui-menu{background:var(--ui-material)}
+:root[data-theme="dark"] :is(.bg-white,.bg-gray-50,.message-agent,.settings-modal,.language-picker-dialog,.gn-body,.agent-center-modal){background-color:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-hairline)}
+:root[data-theme="dark"] :is(.text-gray-800,.text-gray-900,.text-black){color:var(--ui-text)}
+:root[data-theme="dark"] :is(.text-gray-500,.text-gray-600,.text-gray-700){color:var(--ui-text-2)}
+:root[data-theme="dark"] .studio-embedded #chat-screen{background:var(--ui-surface)}
+:root[data-theme="dark"] .language-picker-list button{color:var(--ui-text);background:var(--ui-surface-2)}
+:root[data-theme="dark"] .language-picker-dialog input{background:var(--ui-surface-2);color:var(--ui-text);border-color:var(--ui-hairline)}
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb{background-color:#ffffff28}
+:root[data-theme="dark"] .group-avatar-grid{background:var(--ui-surface-2)!important}
+:root[data-theme="dark"] .group-avatar-grid .grid-cell{background:var(--ui-surface)!important}

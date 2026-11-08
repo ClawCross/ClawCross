@@ -187,6 +187,9 @@ pipeline `src/backend/agents/avatar_generation.py`, and the shared frontend edit
 | `src/frontend/static/js/tool-catalog.js` | tool categories and grouped picker shared by desktop/mobile |
 | `src/frontend/static/js/runtime-settings.js` | context usage meter and context/approval settings |
 | `src/frontend/static/js/main.js` | main desktop frontend logic |
+| `src/frontend/static/js/conversation-workspace.js`, `src/frontend/static/css/conversation-workspace.css` | unified conversation directory, recent Agent shortcuts, wide Agent center and embedded Studio sidebar |
+| `src/frontend/static/js/studio-embedded.js` | original Studio renderer and optional full Agent sidebar inside the unified shell; navigation never sends a prompt |
+| `src/frontend/static/js/interface-preferences.js`, `src/frontend/static/js/ui-languages.js` | browser-following/manual language and system/light/dark appearance shared by the shell and embedded Studio |
 | `src/frontend/static/js/conversation-start.js`, `src/frontend/static/css/conversation-polish.css` | draft suggestions, Create page and conversation presentation |
 | `src/frontend/static/js/settings-navigation.js`, `src/frontend/static/css/settings-polish.css` | shared Studio/Mobile settings categories, search, form presentation and public access controls |
 | `src/frontend/static/css/style.css` | main desktop styling, including OASIS Town / swarm / ReportAgent panels |

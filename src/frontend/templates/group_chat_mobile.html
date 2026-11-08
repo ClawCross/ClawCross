@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <link rel="stylesheet" href="/static/css/avatars.css?v=20261107-avatars">
+<script src="/static/js/interface-preferences.js?v=20261108-directory2"></script>
 <script src="/static/js/avatars.js?v=20261107-avatars"></script>
 <script src="/static/js/platform-icons.js?v=20261108-workspace"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -18,7 +19,7 @@
 <script>
   // Early language detection to avoid flash of wrong lang
   (function(){
-    var lang = localStorage.getItem('clawcross_lang') || 'zh';
+    var lang = window.InterfacePreferences?.language() || 'en';
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
   document.documentElement.dir=lang==='ar'?'rtl':'ltr';
     if (lang === 'en') document.title = 'Agent Message Center';
@@ -43,7 +44,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
 <script src="{{ url_for('static', filename='js/snapshot_zip_progress.js') }}?v=20261005-team-import"></script>
 <link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261004-fold-approval">
-<link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
+<link rel="stylesheet" href="/static/css/theme.css?v=20261108-directory2">
 <script src="/static/js/components.js?v=20261108-acp-native"></script>
 <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
 <script src="/static/js/runtime-presentation.js?v=20261008-inbox"></script>
@@ -3606,8 +3607,8 @@
   @media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
     /* The group list folds away while a chat is open, so the chat or its app gets the whole width. */
     #list-toggle-btn { display:flex; }
-    body.group-list-collapsed:has(#chat-page:not(.offscreen)) { --desktop-list-w: 0px; }
-    body.group-list-collapsed:has(#chat-page:not(.offscreen)) .tab-page { display:none; }
+    body.group-list-collapsed:has(#tab-chats.active):has(#chat-page:not(.offscreen)) { --desktop-list-w: 0px; }
+    body.group-list-collapsed:has(#tab-chats.active):has(#chat-page:not(.offscreen)) .tab-page { display:none; }
     :root {
       --desktop-rail-w: 72px;
       --desktop-list-w: clamp(300px, 24vw, 360px);
@@ -4109,7 +4110,7 @@
 <link rel="stylesheet" href="/static/css/workspace-pages.css?v=20261018-contacts-scroll">
 <link rel="stylesheet" href="/static/css/agent-profile.css?v=20261019">
 <style>.group-history-bar{display:flex;flex-direction:column;align-items:center;gap:5px;margin:0 auto 20px;padding:7px 12px;max-width:100%;font-size:11px;color:var(--text-secondary,#8190a2)}.group-history-bar button{border:0;border-radius:99px;background:var(--bg-card,#fff);color:var(--primary,#1479ec);padding:9px 16px;min-height:36px;font:inherit;font-size:12px;cursor:pointer}.group-history-bar button:disabled{opacity:.5}.group-history-bar button[hidden],#action-group-host[hidden],#profile-group-host[hidden]{display:none}</style>
-<script src="/static/js/ui-languages.js?v=20261107-activity-rail"></script><script src="/static/js/run-activity.js?v=20261107-final"></script>
+<script src="/static/js/ui-languages.js?v=20261108-directory2"></script><script src="/static/js/run-activity.js?v=20261107-final"></script>
 </head>
 <body>
 
@@ -4182,8 +4183,9 @@
       <input type="text" class="chat-search-input" id="chat-search-input" data-i18n="search_placeholder" placeholder="搜索对话..." oninput="filterGroupList()">
     </div>
   </div>
+  <div id="workspace-list-filters" class="workspace-list-filters" role="group" aria-label="对话类型"><button type="button" data-chat-view="all" aria-pressed="true" onclick="ConversationWorkspace.listView('all')"><span data-workspace-text="all"></span></button><button type="button" data-chat-view="agents" aria-pressed="false" onclick="ConversationWorkspace.listView('agents')"><span>Agent</span><small id="workspace-agent-total"></small></button><button type="button" data-chat-view="groups" aria-pressed="false" onclick="ConversationWorkspace.listView('groups')"><span data-workspace-text="groups"></span><small id="workspace-group-total"></small></button></div>
   <div class="chat-scroll-area" id="chat-scroll-area">
-    <section id="workspace-agent-section" aria-label="我的 Agent"><h2 class="workspace-section-label" data-workspace-text="agents"></h2><div id="workspace-agent-list"></div></section>
+    <section id="workspace-agent-section" aria-label="我的 Agent"><h2 class="workspace-section-label"><button type="button" id="workspace-agent-collapse" aria-expanded="true" aria-controls="workspace-agent-list" onclick="ConversationWorkspace.toggleAgents()"><svg class="ui-icon"><use href="/static/icons.svg#chevron-down"/></svg><span data-workspace-text="agents"></span></button></h2><div id="workspace-agent-list"></div><button type="button" id="workspace-agents-more" class="workspace-agents-more" hidden onclick="ConversationWorkspace.moreAgents()"></button></section>
     <h2 id="workspace-group-heading" class="workspace-section-label" data-workspace-text="groups"></h2>
     <div class="group-list-area" id="group-list-container"></div>
   </div>
@@ -4469,6 +4471,7 @@
     <button class="header-btn" onclick="refreshContacts()" data-i18n-title="tip_refresh" title="刷新" style="font-size:16px;margin-left:auto;">↻</button>
   </div>
   <div class="contacts-area" id="contacts-area">
+    <div class="workspace-contact-controls">
     <div class="contacts-search-bar"><svg class="ui-icon"><use href="/static/icons.svg#search"/></svg><input type="search" class="contacts-search-input" id="contacts-search-input" data-i18n-placeholder="search_contacts" placeholder="搜索联系人..." oninput="filterContactsList()"></div>
     <div class="contacts-team-switcher" id="contacts-scope" data-user-space="true">
       <label for="contacts-team-select" class="contacts-team-label"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#sliders"/></svg><span data-i18n="contacts_view">筛选</span></label>
@@ -4477,6 +4480,7 @@
     </div>
     <div class="workspace-contact-views" role="group" aria-label="联系人视图"><button type="button" data-contact-view="list" aria-pressed="true" onclick="ConversationWorkspace.contactsView('list')"><svg class="ui-icon"><use href="/static/icons.svg#list"/></svg><span data-workspace-text="directory"></span></button><button type="button" data-contact-view="cards" aria-pressed="false" onclick="ConversationWorkspace.contactsView('cards')"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg><span data-workspace-text="center"></span></button></div>
     <div class="contacts-library-heading"><span data-i18n="contacts_directory">联系人与人设</span><button type="button" onclick="DeviceConnections.open()"><svg class="ui-icon"><use href="/static/icons.svg#monitor"/></svg><span data-i18n="contacts_devices">设备与 SSH</span></button></div>
+    </div>
     <div id="contacts-list"></div>
   </div>
 </div>
@@ -6476,7 +6480,7 @@ const I18N = {
   },
 };
 
-let _currentLang = (localStorage.getItem('clawcross_ui_locale') || localStorage.getItem('clawcross_lang') || 'zh').replace(/^zh-CN$/,'zh');
+let _currentLang = (window.InterfacePreferences?.language() || 'en').replace(/^zh-CN$/,'zh');
 window.__currentUserHasPassword = false;
 window.__currentLoginMode = '';
 let _localPasswordBannerDismissed = false;
@@ -6497,11 +6501,11 @@ function t(key, vars) {
 function getLang() { return _currentLang; }
 
 /** Switch language and persist. */
-function setLang(lang) {
+function setLang(lang, {persist=true}={}) {
   if (!I18N[lang] && !ClawCrossLocale.has(lang)) return;
   _currentLang = lang;
-  localStorage.setItem('clawcross_lang', lang);
-  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  if(persist)localStorage.setItem('clawcross_lang', lang);
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
   document.title = t('page_title');
   applyLangToDOM();
   updateChatHeadingMeta();
@@ -13914,6 +13918,17 @@ function personaDisplayName(exp) {
 }
 
 // Agents grouped by platform (WeBot first), each group collapsible.
+const expandedContactPlatforms = new Set();
+function toggleContactPlatform(header) {
+  const list = document.getElementById(header.getAttribute('aria-controls'));
+  if (!list) return;
+  const expanded = header.getAttribute('aria-expanded') !== 'true';
+  header.setAttribute('aria-expanded', String(expanded));
+  header.classList.toggle('expanded', expanded);
+  list.classList.toggle('expanded', expanded);
+  if (expanded) expandedContactPlatforms.add(header.dataset.platform);
+  else expandedContactPlatforms.delete(header.dataset.platform);
+}
 function renderAgentGroupsHtml(entries, idPrefix, renderRow) {
   const byPlatform = {};
   entries.forEach(e => { (byPlatform[e.agent.platform] = byPlatform[e.agent.platform] || []).push(e); });
@@ -13921,7 +13936,8 @@ function renderAgentGroupsHtml(entries, idPrefix, renderRow) {
   return platforms.map(platform => {
     const items = byPlatform[platform];
     const uid = idPrefix + 'agents-' + platform.replace(/[^a-zA-Z0-9]/g, '_');
-    return `<div class="contacts-cat-group"><div class="contacts-cat-header contacts-ext-sub expanded" onclick="(function(h){var l=document.getElementById('${uid}');if(!l)return;h.classList.toggle('expanded');l.classList.toggle('expanded');})(this)"><span class="cat-icon">${PlatformIcons.markup(platform)}</span><span class="cat-name">${esc(agentPlatformLabel(platform))}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></div><div id="${uid}" class="contacts-cat-list expanded">${items.map(renderRow).join('')}</div></div>`;
+    const expanded = expandedContactPlatforms.has(platform) || !!contactsSearchKeyword;
+    return `<div class="contacts-cat-group"><button type="button" class="contacts-cat-header contacts-ext-sub${expanded ? ' expanded' : ''}" data-platform="${esc(platform)}" aria-expanded="${expanded}" aria-controls="${uid}" onclick="toggleContactPlatform(this)"><span class="cat-icon">${PlatformIcons.markup(platform)}</span><span class="cat-name">${esc(agentPlatformLabel(platform))}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></button><div id="${uid}" class="contacts-cat-list${expanded ? ' expanded' : ''}">${items.map(renderRow).join('')}</div></div>`;
   }).join('');
 }
 
@@ -13939,10 +13955,11 @@ function renderPersonaContactRow(exp, avatarClass) {
 }
 
 function renderContactSections(agents, customExperts, presetExperts, idPrefix) {
-  let html = `<div class="contact-section-title contact-section-l1-internal"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg> ${t('contacts_agents')} (${agents.length})</div>`;
+  let html = `<section class="workspace-agent-directory"><div class="contact-section-title contact-section-l1-internal"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg> ${t('contacts_agents')} (${agents.length})</div>`;
   html += agents.length
     ? '<div class="contact-external-nested">' + renderAgentGroupsHtml(agents, idPrefix, renderAgentContactRow) + '</div>'
     : `<div style="text-align:center;padding:20px;color:var(--text-secondary)">${t('no_agents')}</div>`;
+  html += '</section><section class="workspace-persona-library">';
   if (customExperts.length) {
     html += `<div class="contact-section-title contact-section-l3-custom"><svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg> ${t('contacts_custom_personas')} (${customExperts.length})</div>`;
     html += customExperts.map(exp => renderPersonaContactRow(exp, 'custom')).join('');
@@ -13954,7 +13971,7 @@ function renderContactSections(agents, customExperts, presetExperts, idPrefix) {
       contactsPresetCategoryLabels(), idPrefix + 'preset-', (exp) => renderPersonaContactRow(exp, 'preset'),
     ) + '</div>';
   }
-  return html;
+  return html + '</section>';
 }
 
 /** Preset expert category labels (agency / public), shared by contacts + modals */
@@ -14200,6 +14217,7 @@ async function loadProfile() {
         <span class="profile-row-label">${t('language_label')}</span>
         ${ClawCrossLocale.picker()}
       </div>
+      ${row(InterfacePreferences.appearanceLabel(), 'sun', 'InterfacePreferences.openAppearance()', 'gray')}
     </div>
 
     <div class="profile-section">
@@ -15671,26 +15689,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       await _consumeHubReturnParams();
-      await refreshGroups();
+      await Promise.all([refreshGroups(), window.ConversationWorkspace?.ready()]);
       const requestedGroup = new URLSearchParams(location.search).get('group');
       const requestedCard = requestedGroup && groups.find(group => group.group_id === requestedGroup);
       if (requestedCard) await openChat(requestedCard.group_id, requestedCard.title || requestedCard.name);
       startGroupsPolling();
-      await prefetchContactsBootstrap();
-      await window.ConversationWorkspace?.ready();
+      void prefetchContactsBootstrap();
     } catch (e) {
       console.warn('mobile boot data load:', e);
     }
 
-    try {
-      const r = await fetch('/api/llm_config_status');
-      if (r.ok) {
-        const d = await r.json();
-        if (!d.configured) {
-          document.getElementById('llm-warning-banner').style.display = 'block';
-        }
-      }
-    } catch (e) {}
+    void fetch('/api/llm_config_status').then(r=>r.ok?r.json():null).then(d=>{
+      if(d&&!d.configured)document.getElementById('llm-warning-banner').style.display='block';
+    }).catch(()=>{});
 
     updateLocalPasswordBanner();
     refreshMobileUpdateBanner();
@@ -15757,7 +15768,7 @@ window.addEventListener('group-network-changed', async event => {
 <link rel="stylesheet" href="/static/css/studio-refinements.css?v=20261107-iphone-viewport">
 <link rel="stylesheet" href="/static/css/message-center.css?v=20261107-single-avatar">
 <script src="/static/js/group-presence.js?v=20261107-avatars"></script>
-<link rel="stylesheet" href="/static/css/conversation-workspace.css?v=20261108-workspace">
-<script src="/static/js/conversation-workspace.js?v=20261108-workspace"></script>
+<link rel="stylesheet" href="/static/css/conversation-workspace.css?v=20261108-directory2">
+<script src="/static/js/conversation-workspace.js?v=20261108-directory2"></script>
 </body>
 </html>

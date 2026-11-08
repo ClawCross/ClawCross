@@ -24,6 +24,8 @@ for (const file of ["LICENSE", "bin/clawcross.js", "launch/run.sh", "launch/run.
   "src/backend/common/local_accounts.py", "src/backend/external/native_tool_policy.py", "src/frontend/static/js/local-accounts.js",
   "src/backend/external/acp_direct.py", "src/backend/external/acp_profiles.py", "src/backend/external/async_lock.py", "config/acp-adapters.json",
   "src/backend/external/acp_catalog.py", "src/backend/external/acp_migration.py", "config/acp-launchers.json",
+  "src/frontend/static/js/conversation-workspace.js", "src/frontend/static/css/conversation-workspace.css",
+  "src/frontend/static/js/studio-embedded.js", "src/frontend/static/js/interface-preferences.js", "src/frontend/static/js/ui-languages.js",
   "src/backend/server.py", "src/frontend/server.py", "config/.env.example",
   "config/requirements.txt", "data/prompts/base_system.txt", "docs/agent-join.md"]) {
   if (files ? !files.has(file) : !fs.existsSync(path.join(root, file))) throw Error(`Required runtime asset missing: ${file}`);
