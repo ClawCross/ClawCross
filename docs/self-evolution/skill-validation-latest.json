@@ -1,10 +1,10 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261107201010195655",
-  "candidate_id": "verification-loop-1",
+  "id": "vr_20261107190018645923",
+  "candidate_id": "blended-verification-loop-approval-auth",
   "skill_name": "repo-skill",
-  "strategy": "repair-only",
+  "strategy": "harden",
   "env_fingerprint": {
     "python_version": "3.11.16",
     "platform": "Linux",
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-11-07T20:10:10.195626+00:00"
+    "captured_at": "2026-11-07T19:00:18.645895+00:00"
   },
   "commands": [
     {
-      "command": "Restricted Codex ACP forwarding verification",
+      "command": "CLI join ownership, native permissions and group reply recovery",
       "ok": false,
       "stdout": "",
-      "stderr": "The normal group membership was connected but native_tools=false paused the Agent, so the user received no reply. ChatGPT workspace routing requires preserving the official origin; an HTTP proxy must frame metadata with Content-Length and SSE with chunked encoding. Codex sends zstd requests and response.metadata events. Treating transport success or ok=true alone as a reply proof is insufficient. Keep native tools disabled, validate a complete real private response, then confirm the original human request receives one normal group outbox reply. Block inference retries after a rejected tool event."
+      "stderr": "A real CLI-created Codex joined under the canonical first local user, invisible to a different frontend account. Membership and a connected poller did not prove a usable group reply. Native CLI built-ins bypass ClawCross command sandbox; ACP allowed_tools is advisory. Report owner and Agent readiness separately, retain the normal group APIs, default new joins to isolated workspaces with native execution disabled, expose a native off switch, and persist normal group reply targets across restart. Do not relax the host-only app SDK proxy to make an old test pass."
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-11-07T20:10:10.195678+00:00",
-  "asset_id": "sha256:c7bd3cac854edec671a422b76b2c6687825561a3094b408df220cfe8431d3e38"
+  "created_at": "2026-11-07T19:00:18.645943+00:00",
+  "asset_id": "sha256:37b8a87093aeb8cb257316d66536157c23cf91ec6ff62c56a7827fbe626f0e8d"
 }

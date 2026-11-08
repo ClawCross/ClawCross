@@ -13,7 +13,6 @@ langchain-core
 langchain-mcp-adapters
 python-dotenv
 httpx
-zstandard>=0.23,<1
 mcp
 apscheduler
 aiosqlite

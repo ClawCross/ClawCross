@@ -1,17 +1,15 @@
 # ClawCross 交接（2026-11-08）
 
-## Avalon Codex 无响应：已恢复真实群回复（2026-11-08）
+## 用户决定：撤销自建模型拦截（2026-11-08）
 
-本节更新下方“关闭原生工具只能暂停”的旧结论，仅增加本机 Linux Codex 的受限聊天路径。
+用户明确要求：工具限制应使用 acpx / 适配器原生能力；没有对应能力就不做，不接受自建模型代理作为替代。
 
-- Avalon 的 `ag_join_b7004516d38a03da15c2d1aa` 在原群“未来之室” `rg_cf9828b0f1ef3f8bbb621699`；保持同一身份、正常群成员、持久收件箱和群 outbox，没有旁路 session。
-- 实际无响应原因是此前 `native_tools:false` 暂停了整个 ACP 进程。当前仅此 Avalon 伙伴启用 `meta.acp.text_only:true`；原生工具仍为 false，ClawCross MCP 连接器当前也为 false。Cathy 的旧伙伴仍暂停，没有替其开启权限。
-- 已真实验证私聊完整回复“已连接”；随后只把原群事件 376（用户“听得见吗”）按原编号补送一次。正常群消息 API 已读到 **消息 384，发送者 Codex 转接伙伴，内容“我在，能看到你的消息。”**，目标 turn 已结束。没有伪造用户群消息。
-- `external/codex_tool_gate.py` 为官方本机 Codex 提供进程专用传输检查：请求只保留两个受 ClawCross 管理的 MCP 包装工具，完整验证模型返回事件，阻止其他原生调用。Linux Landlock TCP 限制阻止原生子进程直接绕过代理；全局 MCP 在目标进程内禁用。未把 ClawCross 命令沙盒说成整个原生 CLI 的文件隔离。
-- 不改全局 Codex 配置、系统证书、登录或原平台地址。只为目标进程创建临时本机代理和证书信任；仅代理官方模型/账号元数据，以及已有本机登录的严格 refresh_token 续期。不是通用代理，既有凭证不进入日志。真实续期未强制测试，避免旋转正在使用的共享平台登录。
-- Linux 新建 Codex CLI 转接默认启用该路径；SSH、自定义启动命令、其他平台或不满足隔离/登录要求仍失败关闭。原生工具需要用户明确开启，`join --agent` 不改已有权限。依赖 OpenSSL、Linux Landlock 网络能力和 zstandard。
-- 本机实测：已安装 Codex 0.159.3、官方 codex-acp 2.5.0。调试发现并修复了原始账号路由、正确 CA/叶证书链、HTTP 长度/分块边界、zstd 请求和 `response.metadata` 结束事件兼容。最初元数据被误拦截曾使一次私聊探针重复采样；已修正，且新增被拒绝输入指纹抑制后续自动推理重试。最终群回复只出现一次。
-- 最终定向回归 **75 项、9 subtests 通过**；JS 语法和 diff 检查通过。本地 `dist/clawcross-0.0.29.tgz` 已重建，833 个文件约 14.9 MB，未发布 npm registry。确认全部 27 个 Agent 空闲后加载修复，随后只做初始化和只读复查：原生工具 false、blocked false、群连接 connected、消息 384 仍可见、Studio / Message 公网均 200。不要再为了确认可用而重复给真实群制造探针。
+- 已撤销 `4e624c0` 引入的 HTTPS 模型代理、进程临时证书、Landlock 代理围栏、`text_only` 特例及对应 CLI 默认、依赖和测试；不再修改或检查模型服务的请求/响应来禁用工具。
+- 已先将 Avalon 的 `ag_join_b7004516d38a03da15c2d1aa` 的 `native_tools`、`text_only`、`clawcross_tools` 设为 false，并通过 acpx 的现有清理接口停止其目标连接。原群“未来之室” `rg_cf9828b0f1ef3f8bbb621699` 的成员和历史保留。没有自动放开原生工具；当前应显示 paused，不能再宣称可自动回复。
+- 本机实际 acpx 0.19.4 提供 `--deny-all`、`--permission-policy`、`--allowed-tools`、`--no-fs`、`--no-terminal`。这些分别控制 ACP 权限请求、传给适配器的工具选择、向适配器声明的客户端能力；不能据此保证所有适配器内部的所有原生行为均被阻止。
+- 仅保留既有的原生权限选项与工具关闭时的进程暂停保护。若需要让这个公网群伙伴恢复原生执行，必须由用户明确选择权限，不能因为撤销代理而隐式开启。
+- 不发送新的群消息或模型探针。之前消息 384 是撤销前的真实回复，不能用它证明撤销后的 Agent 正在运行。
+- 撤销验证：28 项定向测试通过，本地 npm 包重建通过；自建代理进程数量为 0。确认 27 个 Agent 均空闲后重载，实际 API 返回 `paused` / `native_tools_disabled`，能力卡 `native_tools:false`、`blocked:true`、`block-native-process`，原群成员仍在；公网 Studio / Message 均 200。
 
 ## 当前修复：账号归属、普通加群与工具边界（2026-11-08）
 

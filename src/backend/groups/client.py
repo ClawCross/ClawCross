@@ -428,8 +428,8 @@ class GroupClient:
                 if original and callable(busy):
                     state = 'running' if busy(original) else 'idle'
                     if state == 'idle' and original.driver == 'acpx':
-                        from external.native_tool_policy import runtime_allowed
-                        if not runtime_allowed(original.config):
+                        from external.native_tool_policy import native_tools_enabled
+                        if not native_tools_enabled(original.config):
                             state = 'paused'
                 agent = {'agent_id': principal, 'name': member['name'], 'platform': member['platform'],
                          'remote': not local, 'settings': {'persona': '', 'tools': [], 'teams': []},
@@ -683,8 +683,8 @@ class GroupClient:
         """Wakes one local agent with a group message or an app request; its reply goes back to the group."""
         aid = agent.agent_id
         if agent.driver == 'acpx':
-            from external.native_tool_policy import runtime_allowed
-            if not runtime_allowed(agent.config):
+            from external.native_tool_policy import native_tools_enabled
+            if not native_tools_enabled(agent.config):
                 self.store.mark_delivered(row, event_id, aid)
                 return  # Membership remains visible; disabled native sessions never queue or spend.
         from webot.runtime import effective_session_mode

@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
@@ -105,8 +104,7 @@ def test_explicit_new_mode_is_idempotent_and_does_not_inherit_project_access(bac
     assert len(created)==1 and not created[0].get('cli_workspace')
     assert created[0]['workspaces']=={'companion':True,'user_shared':False,'cli':False,'teams':False,'paths':[]}
     assert created[0]['meta']['acp']['native_tools'] is False
-    assert first['owner']=='alice' and first['agent_ready'] is (sys.platform=='linux')
-    assert created[0]['meta']['acp']['text_only'] is (sys.platform=='linux')
+    assert first['owner']=='alice' and first['agent_ready'] is False
 
 
 @pytest.mark.parametrize('link',['https://chat.example/map','http://remote.example/group-guest#t',
