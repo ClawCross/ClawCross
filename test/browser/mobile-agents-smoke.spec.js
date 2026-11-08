@@ -325,7 +325,7 @@ test('a space with an app shows the app site sandboxed in place of the chat',asy
   await expect(page.locator('#chat-page')).not.toHaveClass(/room-app-view/);
 });
 
-test('mobile empty chats create a first companion once and open its private conversation',async({page})=>{
+test('mobile empty chats create one first companion and open its Agent conversation',async({page})=>{
   await page.setViewportSize({width:390,height:844});
   await stub(page,{posts:[],control:[]});
   await page.addInitScript(()=>localStorage.setItem('clawcross_lang','zh'));
@@ -349,6 +349,7 @@ test('mobile empty chats create a first companion once and open its private conv
     return route.fulfill({json:{groups:conversation?[conversation]:[]}});
   });
   await page.route('**/proxy_groups/g_first**',route=>route.fulfill({json:route.request().url().includes('/messages')?{messages:[]}:conversation}));
+  await page.route('**/studio?embedded=1',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><main></main><script>window.WorkspaceStudio={open:async command=>{document.querySelector("main").textContent=command.agent.name;}};<\/script>'}));
   await page.goto('/mobile/group_chat');
   await expect(page.locator('#first-companion-create')).toHaveText('创建我的第一个伙伴');
   expect(created).toHaveLength(0);expect(privateChats).toHaveLength(0);
@@ -368,13 +369,14 @@ test('mobile empty chats create a first companion once and open its private conv
   await page.evaluate(()=>createFirstCompanion());
   expect(created).toHaveLength(1);
   release();
-  await expect.poll(()=>privateChats.length).toBe(1);
+  await expect(page.locator('#workspace-conversation')).toBeVisible();
+  await expect(page.frameLocator('#workspace-studio-frame').locator('main')).toHaveText('小星');
   expect(created[0]).toMatchObject({name:'小星',platform:'webot',creation_template:'personal'});
   expect(created[0].creation_template).toBe('personal');
   expect(created[0].tools).not.toContain('manage_team');
-  expect(privateChats[0]).toEqual({kind:'direct',agents:['first-companion']});
-  await expect(page.locator('#chat-title')).toHaveText('小星');
-  await expect(page.locator('#first-companion-create')).toHaveCount(0);
+  expect(privateChats).toEqual([]);
+  await expect(page.locator('#workspace-conversation h2')).toHaveText('小星');
+  await expect(page.locator('#first-companion-create')).toBeHidden();
 });
 
 test('mobile search with no matching chat does not show first-companion onboarding',async({page})=>{
@@ -384,7 +386,7 @@ test('mobile search with no matching chat does not show first-companion onboardi
   await page.locator('#chat-search-input').fill('no-such-conversation');
   await page.locator('#chat-search-input').dispatchEvent('input');
   await expect(page.locator('.empty-state')).toBeVisible();
-  await expect(page.locator('#first-companion-create')).toHaveCount(0);
+  await expect(page.locator('#first-companion-create')).toBeHidden();
 });
 
 function member(agent) {
@@ -500,6 +502,7 @@ test('mobile message center works with agents of any platform by id', async ({ p
   await expect(page.locator('#contacts-list')).toContainText('WeBot');
   await expect(page.locator('#contacts-list')).toContainText('Codex');
   await expect(page.locator('#contacts-list')).toContainText('创意专家');
+  await page.locator('#contacts-list .contacts-ext-sub[data-platform=codex]').click();
   await page.locator('#contacts-list .contact-item', { hasText: 'Codex' }).first().click();
   await expect(page.locator('#agent-detail-body')).toContainText('ag_codex00001');
 
@@ -616,7 +619,7 @@ test('external agent accepts a Chinese name without a manual runtime id and offe
   await page.locator('#create-agent-panel-acp details:has(#ca-acp-runtime) > summary').click();
   await expect(page.locator('#ca-acp-runtime')).toHaveValue('');
   await page.locator('#ca-acp-submit').click();
-  expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex',creation_template:'personal',tools:['read_file','send_to_group'],meta:{acp:{native_tools:true,clawcross_tools:true,tools:['read_file','send_to_group']}}});
+  expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex',persona:expect.stringContaining('智能伙伴'),creation_template:'personal',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group']}}});
 });
 
 
@@ -704,7 +707,7 @@ for (const platform of ['qwen','acp']) test('contact creation preserves drafts a
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:'/tmp/clawcross-mobile-agent-create.png'});
   await page.locator('#ca-acp-submit').click();
-  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Research',platform,persona:'Help me research',tools:['read_file','send_to_group'],meta:{acp:{native_tools:true,clawcross_tools:true,tools:['read_file','send_to_group'],...(platform==='acp'?{agent_name:'',agent_command:'node "/Apps/MyAgent/Server.js" --stdio'}:{})}},creation_template:'personal'});
+  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Research',platform,persona:'Help me research',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group'],...(platform==='acp'?{agent_name:'',agent_command:'node "/Apps/MyAgent/Server.js" --stdio'}:{})}},creation_template:'personal'});
   expect(errors).toEqual([]);
 });
 
@@ -739,7 +742,7 @@ test('small-screen Agent templates prepare safely and chat submits an explicit e
   expect(footer.y+footer.height).toBeLessThanOrEqual(600);
   await page.screenshot({path:'/tmp/clawcross-mobile-agent-templates.png'});
   await page.locator('#create-agent-submit').click();
-  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Chat companion',platform:'webot',tools:[],creation_template:'chat'});
+  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Chat companion',platform:'webot',persona:expect.stringContaining('智能伙伴'),tools:[],creation_template:'chat'});
   expect(errors).toEqual([]);
 });
 

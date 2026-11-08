@@ -610,7 +610,7 @@ for(const mobile of [false,true]) {
 test('guest history search quotes older messages and preserves the reference on retry',async({page})=>{
   await page.setViewportSize({width:390,height:844});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  let attempts=0;const messages=[{id:100,sender:'alice',sender_name:'Alice',content:'最近的消息',created_at:1790000000}];
+  let offline=true;const attempts=[];const messages=[{id:100,sender:'alice',sender_name:'Alice',content:'最近的消息',created_at:1790000000}];
   await page.route('**/group-guest-api/**',async route=>{
     const request=route.request(),url=new URL(request.url()),action=url.pathname.split('/').pop();
     if(action==='info') return route.fulfill({json:{title:'Friends'}});
@@ -622,7 +622,8 @@ test('guest history search quotes older messages and preserves the reference on 
     }
     if(action==='messages') {
       const body=request.postDataJSON();expect(body.reply_to).toBe(2);
-      if(++attempts===1) return route.fulfill({status:503,json:{error:'暂时断线'}});
+      attempts.push(body);
+      if(offline) return route.fulfill({status:503,json:{error:'暂时断线'}});
       messages.push({id:101,sender:'bob',sender_name:'Bob',content:body.content,reply_to:2,reply:{id:2,sender_name:'Alice',content:'旧消息 <script>bad</script>'},created_at:1790000010});
       return route.fulfill({json:{id:101,created:true}});
     }
@@ -636,7 +637,11 @@ test('guest history search quotes older messages and preserves the reference on 
   await page.getByRole('menuitem',{name:'引用回复',exact:true}).click();await expect(page.locator('#reply-preview')).toBeVisible();
   await page.locator('#text').fill('引用回答');await page.getByRole('button',{name:'发送',exact:true}).click();
   await expect(page.locator('#status')).toContainText('暂时断线');await expect(page.locator('#reply-preview')).toBeVisible();
-  await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.locator('#reply-preview')).toBeHidden();
+  await expect(page.locator('#text')).toHaveValue('引用回答');
+  offline=false;
+  await expect(page.locator('#reply-preview')).toBeHidden({timeout:7000});
+  expect(new Set(attempts.map(body=>body.client_msg_id)).size).toBe(1);
+  await expect(page.locator('#text')).toHaveValue('');
   await expect(page.locator('#messages .quote')).toContainText('旧消息 <script>');
   await page.reload();await expect(page.locator('#messages .quote')).toContainText('旧消息');
   await expect(page.locator('.quote-action')).toHaveCount(0);
@@ -666,7 +671,8 @@ for (const viewport of [{width:390,height:844},{width:360,height:640}]) {
     await page.getByLabel('默认模型',{exact:true}).fill('mobile-draft');
     await modal.screenshot({path:`/tmp/clawcross-settings-mobile-${viewport.width}.png`});
     for(const category of ['public','channels','integrations','account','advanced','models']) {
-      await page.locator(`[data-settings-tab="${category}"]`).click();
+      await page.locator('.settings-back').click();
+      await page.locator(`[data-open-settings="${category}"]`).click();
       await expect(modal.locator('.settings-footer .settings-btn-save')).toBeInViewport();
       const bounds=await modal.locator('.settings-modal').boundingBox();
       expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -675,7 +681,8 @@ for (const viewport of [{width:390,height:844},{width:360,height:640}]) {
       expect(await modal.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
     }
     await expect(page.getByLabel('默认模型',{exact:true})).toHaveValue('mobile-draft');
-    await page.locator('[data-settings-tab="public"]').click();
+    await page.locator('.settings-back').click();
+    await page.locator('[data-open-settings=public]').click();
     await expect(page.locator('#tunnel-provider')).toHaveValue('hub');
     await expect(page.locator('#tunnel-cloudflare-download')).toBeHidden();
     await page.locator('#tunnel-provider').selectOption('cloudflare');
@@ -683,7 +690,7 @@ for (const viewport of [{width:390,height:844},{width:360,height:640}]) {
     await page.getByRole('searchbox',{name:'搜索设置'}).fill('PORT_AGENT');
     await expect(page.locator('[data-key="PORT_AGENT"]')).toBeVisible();
     await modal.locator('.settings-footer .settings-btn-save').click();
-    expect(saved).toEqual([{LLM_MODEL:'mobile-draft'}]);
+    await expect.poll(()=>saved).toEqual([{LLM_MODEL:'mobile-draft'}]);
     await page.evaluate(()=>openSettings('user-password'));
     await expect(page.locator('#settings-user-password')).toBeVisible();
     await expect(page.locator('[data-settings-tab="account"]')).toHaveAttribute('aria-pressed','true');

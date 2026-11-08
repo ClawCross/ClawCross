@@ -2,9 +2,12 @@ param(
     [string]$Command = "help"
 )
 $Rest = @($args)
-if ($Command -eq "clawcross" -and $env:CLAWCROSS_CLI_ARGS_JSON) {
+if ($Command -eq "clawcross") {
     # Leave the JSON intact until Python. Windows PowerShell also strips
     # literal quotes when splatting an array into a native executable.
+    if (-not $env:CLAWCROSS_CLI_ARGS_JSON) {
+        $env:CLAWCROSS_CLI_ARGS_JSON = ConvertTo-Json -InputObject @($Rest) -Compress
+    }
     $Rest = @()
 }
 $utf8 = New-Object System.Text.UTF8Encoding($false)

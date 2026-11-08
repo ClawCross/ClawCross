@@ -2496,7 +2496,7 @@ function initSession() {
     }
     currentSessionId = saved;
     updateSessionDisplay();
-    if(document.documentElement.classList.contains('studio-embedded')){
+    if(new URLSearchParams(location.search).get('embedded')==='1'){
         // The parent selects the actual Agent. Loading an unrelated saved
         // conversation here serializes two history requests before first paint.
         renderWeBotWelcomeMessage();
@@ -5139,7 +5139,7 @@ function renderStudioConversations() {
     }
     const create = document.getElementById('studio-new-conversation');
     if (create) create.title = t('studio_new_conversation');
-    if(!document.documentElement.classList.contains('studio-embedded')||document.documentElement.classList.contains('studio-agents-visible'))renderStudioTeamTree();
+    if(new URLSearchParams(location.search).get('embedded')!=='1'||document.documentElement.classList.contains('studio-agents-visible'))renderStudioTeamTree();
 }
 
 async function renderStudioTeamTree(force = false) {

@@ -261,7 +261,7 @@ test('desktop new agent can select an external runtime and persists that platfor
   await page.route(/\/v1\/agents\/[^/?]+$/,route => route.fulfill({status:404,contentType:'application/json',body:'{}'}));
   await page.route('**/v1/teams*',route => route.fulfill({contentType:'application/json',body:'{"data":[]}'}));
   await page.route('**/v1/agents/creation-templates',route=>route.fulfill({json:{data:creation.templates}}));
-  await page.goto('/__test__/studio?embedded=1');
+  await page.goto('/studio?embedded=1');await page.waitForFunction(()=>window.__workspaceStudioReady===true);
   await page.evaluate(() => handleNewSession());
   await page.locator('#studio-agent-advanced > summary').click();
   await page.locator('#agent-meta-platform').selectOption('codex');

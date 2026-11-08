@@ -531,14 +531,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-08T10:03:04.305381+00:00`
+- Updated at: `2026-11-08T14:20:15.269618+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
-- Heuristic score: `0.732`
+- Heuristic candidate: `blended-verification-loop-structured-output-recurring-error`
+- Heuristic score: `0.79`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: GitHub CLI package and isolated browser regression repair. Signals: verification-loop, approval-auth, structured-output. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: Repair CI against the current unified interface. Signals: verification-loop, structured-output, recurring-error. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -547,12 +547,12 @@ Command exited with code 1. Command: GitHub CLI package and isolated browser reg
 
 ### Latest Trigger Command
 
-`GitHub CLI package and isolated browser regression repair`
+`Repair CI against the current unified interface`
 
 ### Latest Error Excerpt
 
 ```text
-Windows PowerShell native array splatting removed literal double quotes even after JSON decoding; keep the JSON envelope intact until Python. Python subprocess protocol fixtures must configure PYTHONUTF8/PYTHONIOENCODING and decode UTF-8 explicitly. Browser tests for the former standalone Studio need a test-only component route while unified shell behavior stays covered end-to-end. Block Service Workers in mocked API browser suites and set deterministic locale; automatic browser-language detection requires separate explicit locale tests. Update stale fixture contracts for ACP adapter components, profile editing and authoritative message IDs; preserve security and approval behavior assertions.
+Outdated standalone Studio navigation assertions must be removed or rewritten against the current unified shell and its real /studio?embedded=1 renderer. Do not restore old product UI, inject an old shell, strip production scripts, or alter product behavior to satisfy stale tests. The artificial /__test__/studio route has been removed. Browser API fixtures must reflect real creation defaults, collapsible platform lists, mobile settings overview navigation, and durable message retries. A real guest retry bug left a stale quote after automatic confirmation; clear the matching quote on successful outbox delivery. Windows direct PowerShell calls must also retain their arguments as JSON until Python.
 ```
 
 ### Governance Snapshot
@@ -575,14 +575,14 @@ Windows PowerShell native array splatting removed literal double quotes even aft
 
 ### Recent Evidence
 
-- `2026-11-08T10:03:04.305381+00:00` `repo-skill` — Windows PowerShell native array splatting removed literal double quotes even after JSON decoding; keep the JSON envelope intact until Python. ...[truncated]
+- `2026-11-08T14:20:15.269618+00:00` `repo-skill` — Outdated standalone Studio navigation assertions must be removed or rewritten against the current unified shell and its real /studio?embedded= ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-structured-output` score `0.732` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-3` score `0.692` — Tighten verification loops (intent `repair`)
-- `approval-auth-2` score `0.643` — Preflight auth and approval constraints (intent `repair`)
-- `structured-output-2` score `0.643` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-structured-output-recurring-error` score `0.79` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-3` score `0.75` — Tighten verification loops (intent `repair`)
+- `structured-output-1` score `0.614` — Harden structured-output handling (intent `repair`)
+- `recurring-error-1` score `0.614` — Deduplicate recurring failures before retrying (intent `repair`)
 
 ### Local State Snapshot
 

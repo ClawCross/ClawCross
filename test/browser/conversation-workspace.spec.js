@@ -79,6 +79,14 @@ test('the real embedded Studio renderer shows saved tool steps without sending a
  await expect(studio.locator('.agent-step-title')).toContainText('read_file');
  await expect(studio.locator('.studio-activity-bar')).toBeHidden();
  await expect(studio.locator('#user-input')).toBeVisible();
+ for(const height of [844,390]){
+  await page.setViewportSize({width:390,height});
+  await expect(studio.locator('#user-input')).toBeInViewport();
+  const composer=await studio.locator('.composer-dock').boundingBox();
+  expect(composer.y+composer.height).toBeLessThanOrEqual(height+1);
+  await expect(page.locator('.workspace-back')).toBeInViewport();
+ }
+ await page.setViewportSize({width:1400,height:900});
  await page.locator('#workspace-studio-sidebar-toggle').click();
  await expect(studio.locator('.studio-conversation-switcher')).toBeVisible();
  await expect(studio.locator('#studio-new-conversation')).toBeVisible();

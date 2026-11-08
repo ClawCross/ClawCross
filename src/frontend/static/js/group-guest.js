@@ -266,7 +266,10 @@
           await GroupChatState.sent(scope, message.client_msg_id);
           if (pendingSend?.client_msg_id === message.client_msg_id) {
             pendingSend = null;
-            if (el('text').value.trim() === message.content) { el('text').value = ''; selectedMentions = []; previousDraft = ''; }
+            if (el('text').value.trim() === message.content) {
+              if (replyContext?.id === message.reply_to) clearReply();
+              el('text').value = ''; selectedMentions = []; previousDraft = '';
+            }
           }
         } catch (error) {
           if (!retryable(error)) await GroupChatState.failed(scope, message.client_msg_id);

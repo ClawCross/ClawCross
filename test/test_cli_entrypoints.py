@@ -133,6 +133,19 @@ def test_windows_argument_envelope_is_decoded_only_in_python(backend):
     assert requests[-1][1]['messages'] == [{'role': 'user', 'content': message}]
 
 
+@pytest.mark.skipif(os.name != 'nt', reason='Windows PowerShell entrypoint')
+def test_direct_powershell_entry_preserves_literal_values(backend):
+    home, requests = backend
+    message = '中文 "quoted"\n$env:NAME; $(echo unsafe) & <x>'
+    env = {**env_for(home), 'CLAWCROSS_TEST_SCRIPT': str(ROOT / 'clawcross.ps1'),
+        'CLAWCROSS_TEST_MESSAGE': message}
+    result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+        '& $env:CLAWCROSS_TEST_SCRIPT chat $env:CLAWCROSS_TEST_MESSAGE -s fixture'],
+        env=env, cwd=ROOT, text=True, encoding='utf-8', capture_output=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    assert requests[-1][1]['messages'] == [{'role': 'user', 'content': message}]
+
+
 def test_interactive_turns_keep_agent_and_apply_mode_changes(backend):
     home, _ = backend
     program = '''
