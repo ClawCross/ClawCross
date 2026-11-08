@@ -2897,8 +2897,10 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
 
 function agentMetaPlatformChanged() {
     const container = document.getElementById('agent-meta-component');
-    container.innerHTML = document.getElementById('agent-meta-platform').value === 'webot' ? ''
-        : `<p style="margin:4px 0;color:#64748b;font-size:11px;">${currentLang === 'zh-CN' ? '外部 Agent 需要 acpx；如未安装，可在这里下载。' : 'External Agents require acpx; download it here if it is missing.'}</p>${componentControlMarkup('acpx')}`;
+    const platform = document.getElementById('agent-meta-platform').value;
+    const component = AcpLaunchSettings.component(platform);
+    container.innerHTML = platform === 'webot' || !component ? ''
+        : `<p style="margin:4px 0;color:#64748b;font-size:11px;">${currentLang === 'zh-CN' ? '安装连接组件，并在主机登录所选平台。' : 'Install the connector and sign in to this platform on the host.'}</p>${componentControlMarkup(component)}`;
     initComponentControls(container);
     _syncAgentMetaTemplatePlatform();
 }
@@ -12960,7 +12962,11 @@ async function deleteTeamMember(agentId) {
 }
 
 function addExtOnPlatformChange() {
-    AcpLaunchSettings.mount('add-ext-acp-launch', document.getElementById('add-ext-platform').value);
+    const platform = document.getElementById('add-ext-platform').value;
+    AcpLaunchSettings.mount('add-ext-acp-launch', platform);
+    const component = AcpLaunchSettings.component(platform);
+    const host = document.getElementById('add-ext-component');
+    if (host) { host.innerHTML = component ? componentControlMarkup(component) : ''; initComponentControls(host); }
 }
 
 const ADD_EXT_PLATFORM_FALLBACK = [
@@ -13148,8 +13154,7 @@ function showAddTeamMemberModal() {
             
             <!-- ACP agent form (codex, claude, gemini, …) -->
             <div id="form-external" style="display:none;">
-                <p style="margin:0 0 6px;color:#64748b;font-size:11px;">${currentLang === 'zh-CN' ? '连接外部 Agent 需要在主机安装 acpx。' : 'Connecting an external Agent requires acpx on this host.'}</p>
-                ${typeof componentControlMarkup === 'function' ? componentControlMarkup('acpx') : ''}
+                <div id="add-ext-component"></div>
                 <div style="display:flex;flex-direction:column;gap:8px;">
                     <label style="font-size:11px;font-weight:600;color:#374151;">名称
                         <input id="add-ext-name" type="text" placeholder="输入Agent名称" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">

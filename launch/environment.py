@@ -8,6 +8,7 @@ newly created virtual environment before project dependencies are installed.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import io
 import json
@@ -20,6 +21,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 
 
@@ -45,7 +47,7 @@ def _run(command: list[str], *, timeout: int = 600) -> None:
 
 
 def _core_imports_available(python: Path) -> bool:
-    modules = ("fastapi", "dotenv", "uvicorn", "langchain_openai", "mcp", "aiosqlite")
+    modules = ("fastapi", "dotenv", "uvicorn", "langchain_openai", "mcp", "aiosqlite", "acp")
     code = ("import importlib.util, sys; "
             f"sys.exit(0 if all(importlib.util.find_spec(name) for name in {modules!r}) else 1)")
     result = subprocess.run([str(python), "-c", code], stdout=subprocess.DEVNULL,
@@ -206,7 +208,36 @@ def _download_release_binary(component: str) -> Path:
     return destination
 
 
+@contextmanager
+def component_install_lock():
+    """Serialize installers across CLI processes; the OS releases a crashed lease."""
+    root = bin_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    with (root/'component-install.lock').open('a+b') as lease:
+        deadline = time.monotonic() + 660
+        if os.name == 'nt':
+            import msvcrt
+            lease.write(b'0'); lease.flush(); lease.seek(0)
+        else:
+            import fcntl
+        while True:
+            try:
+                if os.name == 'nt': msvcrt.locking(lease.fileno(), msvcrt.LK_NBLCK, 1)
+                else: fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Another component installation is still running') from None
+                time.sleep(.1)
+        yield
+
+
 def install_component(name: str, adapters: list[str]) -> None:
+    with component_install_lock():
+        _install_component(name, adapters)
+
+
+def _install_component(name: str, adapters: list[str]) -> None:
     """Run only a component named by the caller; startup never invokes this."""
     if name == "channels":
         python = venv_python()
@@ -223,8 +254,20 @@ def install_component(name: str, adapters: list[str]) -> None:
         if not npm:
             raise RuntimeError("npm is required to install acpx; install Node.js first")
         target = _node_component_target()
-        _run([npm, "install", "--ignore-scripts", "--save-exact", "--prefix", str(target), "acpx@latest"])
+        _run([npm, "install", "--ignore-scripts", "--save-exact", "--prefix", str(target), "acpx@0.19.4"])
         print(f"acpx installed under {target}")
+        return
+    if name in {'acp-codex', 'acp-claude'}:
+        profiles = json.loads((PROJECT_ROOT / 'config/acp-adapters.json').read_text())
+        package, version, _ = profiles[name.removeprefix('acp-')]
+        npm, node = shutil.which('npm.cmd' if os.name == 'nt' else 'npm'), shutil.which('node')
+        if not npm or not node:
+            raise RuntimeError('ACP adapters require Node.js 22+ and npm')
+        detected = subprocess.run([node, '-p', 'process.versions.node'], capture_output=True, text=True, timeout=5)
+        if detected.returncode or int(detected.stdout.strip().split('.')[0]) < 22:
+            raise RuntimeError('ACP adapters require Node.js 22+')
+        _run([npm, 'install', '--ignore-scripts', '--save-exact', '--prefix', str(_node_component_target()), f'{package}@{version}'])
+        print(f'{name} installed ({version})')
         return
     if name == 'deepseek-harness':
         npm = shutil.which('npm.cmd' if os.name == 'nt' else 'npm')
@@ -283,7 +326,7 @@ def main() -> int:
     sub.add_parser("ensure-core", help="Install core Python dependencies if needed")
     sub.add_parser("components", help="Report optional component availability")
     install = sub.add_parser("install", help="Explicitly install an optional component")
-    install.add_argument("component", choices=("acpx", "deepseek-harness", "nonebot", "channels", "weclaw", "cloudflared", "srt"))
+    install.add_argument("component", choices=("acpx", "acp-codex", "acp-claude", "deepseek-harness", "nonebot", "channels", "weclaw", "cloudflared", "srt"))
     install.add_argument("--adapter", action="append", default=[], help="NoneBot adapter name")
     args = parser.parse_args()
     try:

@@ -6,10 +6,30 @@ import hashlib
 import os
 import subprocess
 import sys
+import json
 from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_component_installers_serialize_across_processes(tmp_path):
+    code = '''import json,runpy,sys,time
+from pathlib import Path
+m=runpy.run_path(sys.argv[1]); root=Path(sys.argv[2]); log=Path(sys.argv[3])
+m['component_install_lock'].__globals__['bin_dir']=lambda:root
+with m['component_install_lock']():
+ with log.open('a') as f:f.write(json.dumps(['begin',time.time()])+'\\n')
+ time.sleep(.15)
+ with log.open('a') as f:f.write(json.dumps(['end',time.time()])+'\\n')
+'''
+    command=[sys.executable,'-c',code,str(ROOT/'launch/environment.py'),str(tmp_path/'bin'),str(tmp_path/'log')]
+    processes=[subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE) for _ in range(3)]
+    for process in processes:
+        _,stderr=process.communicate(timeout=5)
+        assert process.returncode==0,stderr.decode()
+    rows=[json.loads(line) for line in (tmp_path/'log').read_text().splitlines()]
+    assert [r[0] for r in rows] == ['begin','end']*3
 
 
 def _load_environment():
@@ -136,7 +156,7 @@ def test_channel_packages_are_opt_in():
     optional = (ROOT / "config/requirements-channels.txt").read_text(encoding="utf-8")
     assert "qq-botpy" not in core
     assert "python-telegram-bot" not in core
-    assert "agent-client-protocol" not in core
+    assert "agent-client-protocol==0.12.1" in core
     assert "qq-botpy" in optional
 
 

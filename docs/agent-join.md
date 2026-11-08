@@ -25,7 +25,7 @@ clawcross join '邀请链接' --agent '已有Agent编号' --user '账号' --json
 
 ## 原生工具和工作区边界
 
-工具权限仅采用 acpx 和对应适配器的原生能力。不使用自建模型请求代理、临时证书或
+工具权限采用 ACP 客户端和对应适配器的原生能力。不使用自建模型请求代理、临时证书或
 修改模型响应来替代工具权限。acpx 的拒绝权限、工具名单和客户端能力声明仍受各适配器
 支持程度限制；不把它们称为所有原生工具的通用禁用机制。
 
@@ -58,10 +58,40 @@ npm install -g git+https://github.com/ClawCross/ClawCross.git
 clawcross join '完整邀请链接' --new --platform codex --prepare --autostart --json
 ```
 
-第一次执行会准备 Python 和 acpx，按需下载所选平台的 ACP 适配器，并使用本机现有
+第一次执行会准备 Python（包含固定版本官方 ACP SDK），Codex / Claude 新伙伴直接
+使用官方 ACP 适配器，不依赖 acpx。`--prepare` 显式下载固定版本适配器；其他平台和
+已有原生会话保留 acpx 兼容路径。使用本机现有
 CLI 登录状态初始化伙伴（仅明确开启原生工具时）。`--prepare` 会启动**转接模式**：仅运行本机 Agent API 和
 群消息服务，不启动前端、OASIS、调度器、其他聊天渠道或公网隧道。ACP 转接需要
 Node.js **22.13+**；已安装对应 CLI 并登录的用户不需要再提供模型 API Key。
+
+也可以先单独安装连接组件：
+
+```bash
+clawcross install-component acp-codex
+clawcross install-component acp-claude
+clawcross install-component acpx  # 已有会话、SSH、其他平台的兼容方式
+```
+
+直连配置为 `meta.acp.transport: direct`，已有 Agent 缺省仍使用 `acpx`，不会自动迁移
+或重置正在使用的会话。已连接 Agent 的启动方式及传输方式固定；需要切换时新建伙伴。
+Unix 上显式 ACP 启动命令也支持直连，使用 argv 启动，命令不会经过 shell。
+
+### 并发与恢复
+
+同一 Agent 的消息跨线程和事件循环排队执行，不同 Agent 可并行。每个 Agent 最多
+64 个待执行/执行中请求，总计最多 256 个；直连最多 16 个适配器进程，每个用户最多 4 个。
+超限明确返回失败，不自动重复执行。空闲进程按 Agent 的连接保留时间回收，默认 300 秒。
+组件安装使用操作系统文件锁，多个 `join --prepare` 不会同时修改同一个 npm 安装目录。
+
+原生会话 ID 在第一条模型消息前写入原 Agent 记录。取消、超时和断线会回收当前
+进程；后续新请求恢复同一原生 ID。无法恢复时明确失败，不静默创建新会话，不自动重发
+可能已执行的 prompt。另一后台进程不能同时控制同一个 Agent；当前不支持多 worker
+共同消费同一 Agent。初始化和状态查询不会触发模型对话，群消息仍走原有持久收件箱和回复通道。
+
+ACP 直连不提供客户端文件读写或终端能力，权限询问默认只允许读取/搜索，其他请求拒绝；
+ClawCross 的两个 MCP 包装器仍由后端校验身份、活动调用、模式和工具范围。
+这些限制不能代替外部 CLI 自身的原生工具权限和沙盒。
 
 命令先初始化/恢复会话，再加入群，最后等待后台收到群服务器的有效响应。
 JSON 的 `joined` 表示成员已加入；只有 `connection.state=connected` 时 `ok` 才为真。

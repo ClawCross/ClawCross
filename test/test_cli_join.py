@@ -49,7 +49,7 @@ def backend(monkeypatch, tmp_path):
         raise AssertionError((method,path))
     monkeypatch.setattr(join,'_configuration',lambda:('http://127.0.0.1:51200','local-secret'))
     monkeypatch.setattr(join.api,'_req',request)
-    monkeypatch.setattr(join,'_bridge',lambda *_:None)
+    monkeypatch.setattr(join,'_bridge',lambda *_, **kwargs:None)
     return calls,agents,native
 
 

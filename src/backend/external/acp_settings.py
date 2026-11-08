@@ -6,6 +6,8 @@ from external.session import runtime_session
 
 
 def native_options(agent):
+    if ((agent.config.get('meta') or {}).get('acp') or {}).get('transport') == 'direct':
+        return agent.runtime.get('direct_config_options') or []
     if agent.config.get('connection_id'):
         return agent.runtime.get('remote_config_options') or []
     from external.session import native_workspace_cwd
@@ -65,6 +67,7 @@ def capability_card(agent):
     from external.acp_launcher import launch_settings
     from external.native_tool_policy import policy_card, native_tools_enabled
     return {'platform': agent.platform, 'transport': 'acpx', 'streaming_tools': True,
+            'connection_transport':acp.get('transport', 'acpx'),
             'launcher': launch_settings(agent.config),
             'connection_id':agent.config.get('connection_id',''),'remote_cwd':agent.config.get('remote_cwd',''),
             'mode': effective_session_mode(agent.owner, agent.agent_id),
@@ -81,7 +84,7 @@ def capability_card(agent):
 def validate_settings(agent, value):
     if not isinstance(value, dict):
         raise ValueError('ACP settings must be an object')
-    allowed = {'clawcross_tools', 'native_tools', 'config_options', 'timeout_sec', 'ttl_sec', 'tools', 'reasoning_level', 'agent_name', 'agent_command'}
+    allowed = {'transport', 'clawcross_tools', 'native_tools', 'config_options', 'timeout_sec', 'ttl_sec', 'tools', 'reasoning_level', 'agent_name', 'agent_command'}
     if set(value) - allowed:
         raise ValueError('Unknown ACP setting')
     from external.acp_launcher import validate_launch_settings, launch_settings
@@ -91,11 +94,14 @@ def validate_settings(agent, value):
         value = {**value, 'agent_command': ''}
     if value.get('agent_command') and 'agent_name' not in value:
         value = {**value, 'agent_name': ''}
-    current = (agent.config.get('meta') or {}).get('acp') or {}
-    proposed = {**agent.config, 'meta': {**(agent.config.get('meta') or {}), 'acp': {**current, **value}}}
-    if launch_settings(proposed) != launch_settings(agent.config) and native_workspace_pinned(agent):
+    config = getattr(agent, 'config', {}) or {}
+    current = (config.get('meta') or {}).get('acp') or {}
+    if value.get('transport', current.get('transport', 'acpx')) != current.get('transport', 'acpx') and native_workspace_pinned(agent):
+        raise ValueError('已连接会话保留原传输方式；请新建 Agent 使用其他传输方式')
+    proposed = {**config, 'meta': {**(config.get('meta') or {}), 'acp': {**current, **value}}}
+    if launch_settings(proposed) != launch_settings(config) and native_workspace_pinned(agent):
         raise ValueError('已连接会话保留原启动方式；请新建 Agent 使用其他 ACP 程序，以保留原会话历史')
-    if agent.platform == 'acp' and not any(launch_settings(proposed).values()):
+    if getattr(agent, 'platform', '') == 'acp' and not any(launch_settings(proposed).values()):
         raise ValueError('请填写自定义 ACP Agent 名称或启动命令')
     if 'clawcross_tools' in value and not isinstance(value['clawcross_tools'], bool):
         raise ValueError('clawcross_tools must be a boolean')

@@ -79,6 +79,7 @@
       <p>设置仅用于这个 Agent，从下一轮调用生效。原生模式和权限由外部 Agent 执行。</p>
       <div class="external-settings-fields">
       <div id="external-acp-launch"></div>
+      <div id="external-acp-component"></div>
       <label>运行设备<select id="external-connection"><option value="">本机</option>${connections.map(row=>`<option value="${escape(row.id)}" ${card.connection_id===row.id?'selected':''}>${escape(row.name)} · SSH</option>`).join('')}</select></label>
       <label>远端原生工作目录<input id="external-remote-cwd" value="${escape(card.remote_cwd||'')}" placeholder="留空使用远端独立工作目录"></label>
       <button type="button" data-devices>管理设备与 SSH 连接</button>
@@ -217,6 +218,11 @@
     };
     document.body.appendChild(overlay);
     AcpLaunchSettings.mount('external-acp-launch',card.platform,card.launcher || {},Boolean(card.native_workspace?.pinned));
+    const component = card.connection_id ? 'acpx' : AcpLaunchSettings.component(card.platform,card.launcher || {},card.connection_transport);
+    if (component) {
+      overlay.querySelector('#external-acp-component').innerHTML = componentControlMarkup(component);
+      initComponentControls(overlay.querySelector('#external-acp-component'));
+    }
     overlay.querySelector('[data-close]').focus();
     if (!uncreated && !refreshed && options.testConnection !== false) overlay.querySelector('[data-test]').click();
   }

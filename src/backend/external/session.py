@@ -20,16 +20,25 @@ from typing import Any, Awaitable, Callable
 from agents.messages import AgentMessage, AgentReply, compose_text_prompt
 from agents.store import ACPX, Agent, AgentStore, get_store
 from external import history
+from external.async_lock import AsyncLock
 
 logger = logging.getLogger(__name__)
 
 from common.runtime_paths import PROJECT_ROOT  # noqa: E402
 
-_turn_locks = weakref.WeakKeyDictionary()
+_turn_locks = weakref.WeakValueDictionary()
 _turn_locks_guard = threading.RLock()
 _turn_tasks = weakref.WeakKeyDictionary()
 _pending_turns = weakref.WeakKeyDictionary()
-_control_locks = weakref.WeakKeyDictionary()
+_control_locks = weakref.WeakValueDictionary()
+
+
+def _lock(table, key):
+    with _turn_locks_guard:
+        lock = table.get(key)
+        if lock is None:
+            lock = table[key] = AsyncLock()
+        return lock
 
 
 def runtime_session(agent: Agent) -> str:
@@ -95,40 +104,54 @@ def delivered_context(agent: Agent) -> dict[str, str]:
 async def turn(store: AgentStore | None, agent: Agent, *, cancellable=True):
     """Serialize a session's turns and read its persisted negotiation state afresh."""
     selected_store = store or get_store()
-    with _turn_locks_guard:
-        locks = _turn_locks.setdefault(asyncio.get_running_loop(), {})
     key = (selected_store.db_path, agent.owner, agent.agent_id)
     task = asyncio.current_task()
-    pending = _pending_turns.setdefault(asyncio.get_running_loop(), {}).setdefault(key,set())
-    if cancellable: pending.add(task)
+    with _turn_locks_guard:
+        if cancellable:
+            count = sum(len(tasks.get(key, ())) for tasks in list(_pending_turns.values()))
+            total = sum(len(group) for tasks in list(_pending_turns.values()) for group in tasks.values())
+            if count >= 64 or total >= 256:
+                from agents.runtime import ControlError
+                raise ControlError('Agent request queue is full; retry later')
+        pending = _pending_turns.setdefault(asyncio.get_running_loop(), {}).setdefault(key,set())
+        if cancellable: pending.add(task)
     try:
         if cancellable:
             async with control_lock(store,agent): pass
-        async with locks.setdefault(key, asyncio.Lock()):
-            tasks = _turn_tasks.setdefault(asyncio.get_running_loop(), {})
-            tasks[key] = task
+        async with _lock(_turn_locks, key):
+            with _turn_locks_guard:
+                tasks = _turn_tasks.setdefault(asyncio.get_running_loop(), {})
+                tasks[key] = task
             try:
                 yield selected_store.require(agent.owner, agent.agent_id)
             finally:
-                if tasks.get(key) is task: tasks.pop(key, None)
+                with _turn_locks_guard:
+                    if tasks.get(key) is task: tasks.pop(key, None)
     finally:
-        pending.discard(task)
+        with _turn_locks_guard:
+            pending.discard(task)
+            if not pending:
+                _pending_turns.get(task.get_loop(), {}).pop(key, None)
 
 
 def control_lock(store, agent):
     selected = store or get_store()
     key=(selected.db_path,agent.owner,agent.agent_id)
-    return _control_locks.setdefault(asyncio.get_running_loop(),{}).setdefault(key,asyncio.Lock())
+    return _lock(_control_locks, key)
 
 
 def request_tasks(store, agent):
     selected=store or get_store()
-    return set(_pending_turns.get(asyncio.get_running_loop(),{}).get((selected.db_path,agent.owner,agent.agent_id),()))
+    key = (selected.db_path,agent.owner,agent.agent_id)
+    with _turn_locks_guard:
+        return {task for tasks in list(_pending_turns.values()) for task in tasks.get(key, ())}
 
 
 def running_task(store: AgentStore | None, agent: Agent):
     selected = store or get_store()
-    return _turn_tasks.get(asyncio.get_running_loop(), {}).get((selected.db_path, agent.owner, agent.agent_id))
+    key = (selected.db_path, agent.owner, agent.agent_id)
+    with _turn_locks_guard:
+        return next((tasks[key] for tasks in list(_turn_tasks.values()) if key in tasks), None)
 
 
 def is_busy(store: AgentStore | None, agent: Agent) -> bool:
@@ -136,8 +159,8 @@ def is_busy(store: AgentStore | None, agent: Agent) -> bool:
     selected_store = store or get_store()
     key = (selected_store.db_path, agent.owner, agent.agent_id)
     with _turn_locks_guard:
-        return any(lock and lock.locked() for locks in list(_turn_locks.values())
-                   if (lock := locks.get(key)) is not None)
+        lock = _turn_locks.get(key)
+        return bool(lock and lock.locked())
 
 
 @dataclass(slots=True)

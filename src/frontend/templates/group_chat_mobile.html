@@ -43,15 +43,15 @@
 <script src="{{ url_for('static', filename='js/snapshot_zip_progress.js') }}?v=20261005-team-import"></script>
 <link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261004-fold-approval">
 <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
-<script src="/static/js/components.js?v=20261004-windows-sandbox"></script>
+<script src="/static/js/components.js?v=20261108-acp-direct"></script>
 <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
 <script src="/static/js/runtime-presentation.js?v=20261008-inbox"></script>
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
 <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
 <script src="/static/js/connections.js?v=20261011"></script>
 <script src="/static/js/mobile-rooms.js?v=20261017-preserve-focus"></script>
-<script src="/static/js/local-accounts.js?v=20261108"></script><script src="/static/js/acp-launch-settings.js?v=20261108"></script>
-<script src="/static/js/external-agent-settings.js?v=20261108"></script>
+<script src="/static/js/local-accounts.js?v=20261108"></script><script src="/static/js/acp-launch-settings.js?v=20261108-acp-direct"></script>
+<script src="/static/js/external-agent-settings.js?v=20261108-acp-direct"></script>
 <link rel="stylesheet" href="/static/css/agent-settings.css?v=20261104-hierarchy">
 <script src="/static/js/agent-settings.js?v=20261107-avatars"></script>
 <script src="/static/js/model-profiles.js?v=20261104-hierarchy"></script>
@@ -8411,6 +8411,8 @@ function mountMobileCompanionLaunch(platform) {
     host.querySelector('[data-launch-kind]').value=saved.kind;
     host.querySelector('[data-launch-value]').value=saved.value;
   }
+  const component=AcpLaunchSettings.component(platform),control=document.getElementById('ca-acp-component');
+  if(control){control.innerHTML=component?componentControlMarkup(component):'';initComponentControls(control);}
 }
 function renderMobileCompanionOptions(platforms = _mobileAcpPlatformsCache || MOBILE_ACP_PLATFORM_FALLBACK) {
   const select=document.getElementById('create-agent-companion');
@@ -8534,7 +8536,7 @@ async function renderCreateAgentAcpPanel() {
     <div class="create-agent-form">
       <select id="ca-acp-platform" hidden>${platformOpts}</select>
       <div id="ca-acp-launch"></div>
-      <div class="create-agent-component"><p>${esc(_currentLang === 'zh' ? '使用 Codex、Claude 等伙伴需要连接组件，可在这里下载。请先在主机上登录所选服务；所选程序也会使用自己的权限设置。' : 'Codex, Claude and other companions need a connector, available here. Sign in to the selected service on the host first; that program also uses its own permission settings.')}</p>${componentControlMarkup('acpx')}</div>
+      <div class="create-agent-component"><p>${esc(_currentLang === 'zh' ? '先在主机上登录所选服务；所选程序使用自己的权限设置。' : 'Sign in to the selected service on the host first; that program uses its own permission settings.')}</p><div id="ca-acp-component"></div></div>
       <details class="create-agent-advanced"><summary>${esc(t('agent_creation_advanced'))}</summary>
         <label class="side-panel-label" for="ca-acp-persona">${esc(t('agent_creation_persona'))}</label>
         <textarea id="ca-acp-persona" class="side-panel-input" rows="3"></textarea>

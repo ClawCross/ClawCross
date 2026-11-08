@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261107190018645923",
-  "candidate_id": "blended-verification-loop-approval-auth",
+  "id": "vr_20261108041805034623",
+  "candidate_id": "blended-verification-loop-bounded-execution",
   "skill_name": "repo-skill",
   "strategy": "harden",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-11-07T19:00:18.645895+00:00"
+    "captured_at": "2026-11-08T04:18:05.034593+00:00"
   },
   "commands": [
     {
-      "command": "CLI join ownership, native permissions and group reply recovery",
+      "command": "ACP resource and timeout verification",
       "ok": false,
-      "stdout": "",
-      "stderr": "A real CLI-created Codex joined under the canonical first local user, invisible to a different frontend account. Membership and a connected poller did not prove a usable group reply. Native CLI built-ins bypass ClawCross command sandbox; ACP allowed_tools is advisory. Report owner and Agent readiness separately, retain the normal group APIs, default new joins to isolated workspaces with native execution disabled, expose a native off switch, and persist normal group reply targets across restart. Do not relax the host-only app SDK proxy to make an old test pass."
+      "stdout": "31 direct ACP tests passed with unraisable-resource warnings treated as failures; no warning after pipe cleanup. npm package build passed.",
+      "stderr": "Prompt timeout tests must initialize the subprocess first so CPU contention does not consume a tiny model timeout before any prompt exists. After SDK shutdown stops stdout reading, drain both child pipes before stopping the actor loop; otherwise large output leaves a paused subprocess transport and Event loop is closed during finalization. Preserve OS leases until cleanup completes."
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-11-07T19:00:18.645943+00:00",
-  "asset_id": "sha256:37b8a87093aeb8cb257316d66536157c23cf91ec6ff62c56a7827fbe626f0e8d"
+  "created_at": "2026-11-08T04:18:05.034644+00:00",
+  "asset_id": "sha256:a11a3ed84fe0b163892572754d723a046f2843b66cf633a0d75d7053aed40036"
 }

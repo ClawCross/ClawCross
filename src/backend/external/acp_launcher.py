@@ -28,6 +28,8 @@ def launch_settings(config):
 
 
 def validate_launch_settings(options):
+    if 'transport' in options and options['transport'] not in {'direct', 'acpx'}:
+        raise ValueError('ACP transport must be direct or acpx')
     for key in ('agent_name', 'agent_command'):
         if key in options and (not isinstance(options[key], str) or len(options[key]) > 4096
                                or any(char in options[key] for char in ('\0', '\n', '\r'))):

@@ -7,11 +7,13 @@ import os
 from pathlib import Path
 import secrets
 import sys
+import tempfile
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 from agents.store import get_store, WEBOT
 from agents.gateway import get_gateway
 from common.runtime_paths import STATE_DIR
+from external.async_lock import AsyncLock
 
 _tokens = {}
 _active = {}
@@ -36,10 +38,19 @@ def connector_file(agent):
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     token_path = directory / (key + '.token')
     if not token_path.exists():
-        fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'w') as handle:
-            handle.write(secrets.token_urlsafe(32))
+        # Publish a complete credential atomically. Concurrent initializers must
+        # never observe a newly created but still empty token file.
+        with tempfile.NamedTemporaryFile(dir=directory, delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(secrets.token_urlsafe(32).encode())
+        try:
+            try: os.link(temporary, token_path)
+            except FileExistsError: pass
+        finally:
+            temporary.unlink(missing_ok=True)
     token = token_path.read_text().strip()
+    if not token:
+        raise RuntimeError('Invalid empty Agent connector credential')
     for granted, principal in list(_tokens.items()):
         if principal == (agent.owner, agent.agent_id) and granted != token:
             _tokens.pop(granted, None)
@@ -54,9 +65,11 @@ def connector_file(agent):
         # An explicit empty config also removes a previous session connector.
         encoded = json.dumps({'mcpServers': []})
     if not path.exists() or path.read_text() != encoded:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, 'w') as handle:
+        with tempfile.NamedTemporaryFile(mode='w', dir=directory, delete=False) as handle:
+            temporary = Path(handle.name)
             handle.write(encoded)
+        try: os.replace(temporary, path)
+        finally: temporary.unlink(missing_ok=True)
     return str(path)
 
 
@@ -71,7 +84,7 @@ def active_turn(agent, msg, context, mode, enabled_tools, *, prepared=None, resp
         'framework_group_requests': group_requests})
     resolve_conversation_reply(*key, review_context([human]))
     _active[key] = {'agent': agent, 'message': msg, 'context': context, 'mode': mode,
-                    'enabled_tools': enabled_tools, 'lock': asyncio.Lock(),
+                    'enabled_tools': enabled_tools, 'lock': AsyncLock(),
                     'review_counters': {}, 'dynamic_context': prepared.dynamic_context if prepared else None,
                     'response_format': response_format, 'tasks': set()}
     try:
@@ -80,7 +93,8 @@ def active_turn(agent, msg, context, mode, enabled_tools, *, prepared=None, resp
         turn = _active.pop(key, None)
         if turn:
             for task in turn['tasks']:
-                task.cancel()
+                if not task.get_loop().is_closed():
+                    task.get_loop().call_soon_threadsafe(task.cancel)
 
 
 def attach_runtime_context(payload, current, turn):

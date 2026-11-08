@@ -258,6 +258,8 @@ def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
         if body.tools is not None:
             acp = {**acp, 'tools':body.tools}
         config['meta']['acp'] = validate_launch_settings(acp)
+        from external.acp_profiles import set_default
+        set_default(config)
         if config['platform'] == 'acp' and not any(launch_settings(config).values()):
             raise ValueError('请填写自定义 ACP Agent 名称或启动命令')
     return driver, config
@@ -334,6 +336,9 @@ def create_agents_router(
         if not valid_agent_id(ref):
             raise HTTPException(status_code=404, detail=f"no agent {ref!r}")
         driver, config = runtime_of(platform)
+        if driver == ACPX:
+            from external.acp_profiles import set_default
+            set_default(config)
         from webot.workspace import normalize_workspace_config
         try:
             config['workspaces'] = normalize_workspace_config(None,

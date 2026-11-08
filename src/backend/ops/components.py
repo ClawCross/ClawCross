@@ -10,11 +10,17 @@ import threading
 from common.runtime_paths import BIN_DIR, PROJECT_ROOT
 
 COMPONENTS = {"deepseek-harness": "DeepSeek Harness", "srt": "Anthropic Sandbox Runtime", "acpx": "ACP agent bridge", "srt-system": "Sandbox system dependencies", "weclaw": "WeClaw", "cloudflared": "Cloudflare Tunnel", "nonebot": "NoneBot", "channels": "QQ and Telegram connectors"}
+COMPONENTS.update({'acp-codex':'Codex ACP adapter', 'acp-claude':'Claude ACP adapter'})
 _lock = threading.Lock()
 _jobs = {}
 
 
 def binary_path(name):
+    if name in {'acp-codex', 'acp-claude'}:
+        from external.acp_profiles import PACKAGES
+        package, _, _ = PACKAGES[name.removeprefix('acp-')]
+        script = BIN_DIR/'node/node_modules'/package/'dist/index.js'
+        return str(script) if script.is_file() else None
     if name == 'deepseek-harness':
         name = 'dsh'
     if name in {"weclaw", "cloudflared"}:

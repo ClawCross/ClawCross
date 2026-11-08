@@ -20,7 +20,7 @@ from external import acp_events, session
 from external.inbox import InboxRuntime
 
 
-def adapter(agent: Agent | None = None):
+def adapter(agent: Agent | None = None, *, store=None):
     from external.acpx import AcpxError, get_acpx_adapter
 
     if agent:
@@ -31,6 +31,10 @@ def adapter(agent: Agent | None = None):
         from connections.acpx import SSHAcpxAdapter
         try:return SSHAcpxAdapter(agent)
         except (LookupError,RuntimeError) as exc:raise ControlError(str(exc)) from exc
+
+    if agent and ((agent.config.get('meta') or {}).get('acp') or {}).get('transport') == 'direct':
+        from external.acp_direct import DirectAdapter
+        return DirectAdapter(agent, store=store)
 
     from ops.components import binary_path
     if not binary_path("acpx"):
@@ -82,14 +86,20 @@ class AcpRuntime(InboxRuntime):
         self._sequence = 0
         self._control_stopping = set()
 
+    def _adapter(self, agent):
+        if (((getattr(agent, 'config', {}) or {}).get('meta') or {}).get('acp') or {}).get('transport') == 'direct':
+            return adapter(agent, store=self._store)
+        return adapter(agent)
+
     def _changed(self, key, turn, item=None):
         self._sequence += 1
         turn.cursor = self._sequence
         if item is not None:
             turn.changed[item['id']] = self._sequence
-        follower = self._followers.pop(key, None)
-        if follower:
-            follower.set()
+        followers = self._followers.pop(key, set())
+        for loop, follower in list(followers):
+            if not loop.is_closed():
+                loop.call_soon_threadsafe(follower.set)
 
     async def events(self, agent, after=0, wait=0.0):
         """The agent's current (or last) turn and its items changed after *after*.
@@ -102,12 +112,19 @@ class AcpRuntime(InboxRuntime):
             after = 0  # a cursor from before a restart
         turn = self._turns.get(key)
         if wait and (turn is None or turn.cursor <= after):
-            follower = self._followers.setdefault(key, asyncio.Event())
+            follower = asyncio.Event()
+            subscription = (asyncio.get_running_loop(), follower)
+            followers = self._followers.setdefault(key, set())
+            followers.add(subscription)
             try:
                 await asyncio.wait_for(follower.wait(), wait)
                 await asyncio.sleep(0.08)  # gather the next few chunks into this reply
             except TimeoutError:
                 pass
+            finally:
+                followers.discard(subscription)
+                if not followers and self._followers.get(key) is followers:
+                    self._followers.pop(key, None)
             turn = self._turns.get(key)
         if turn is None:
             return {'turn': None, 'items': [], 'cursor': self._sequence}
@@ -219,6 +236,8 @@ class AcpRuntime(InboxRuntime):
             if (agent.owner, agent.agent_id) in self._control_stopping:
                 return AgentReply(ok=False, error='Agent turn cancelled')
             raise
+        except ControlError as exc:
+            return AgentReply(ok=False, error=str(exc))
 
     async def _ask_turn(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         from external.acpx import AcpxError, acpx_options_from_agent, get_acpx_adapter
@@ -256,7 +275,7 @@ class AcpRuntime(InboxRuntime):
             self._changed(key, turn)
             try:
                 with active_turn(agent, msg, context, mode, enabled_tools, prepared=prepared, response_format=response_format):
-                    selected = adapter(agent)
+                    selected = self._adapter(agent)
                     trace = await selected.prompt_with_trace(
                         tool=canonical_platform(agent.platform),
                         session_key=session.runtime_session(agent),
@@ -300,7 +319,7 @@ class AcpRuntime(InboxRuntime):
             options['timeout_sec'] = min(options.get('timeout_sec') or 60, 90)
             model, connector, _ = self._native_session(current)
             try:
-                selected = adapter(current)
+                selected = self._adapter(current)
                 await selected.ensure_session(
                     tool=canonical_platform(current.platform), session_key=session.runtime_session(current),
                     acpx_session=session.runtime_session(current), system_prompt=None,
@@ -350,11 +369,10 @@ class AcpRuntime(InboxRuntime):
         tasks.discard(current)
         key = (agent.owner, agent.agent_id)
         self._control_stopping.add(key)
-        for task in tasks:
-            task.cancel()
         try:
             if tasks:
-                await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 15)
+                from external.async_lock import cancel_tasks
+                await asyncio.wait_for(cancel_tasks(tasks), 15)
         except TimeoutError as exc:
             raise ControlError('Agent cancellation did not finish; retry after its native turn stops') from exc
         finally:
@@ -363,7 +381,7 @@ class AcpRuntime(InboxRuntime):
     async def _control(self, agent: Agent, action: str) -> dict[str, Any]:
         from external.acpx import AcpxError
 
-        acpx, key = adapter(agent), session.runtime_session(agent)
+        acpx, key = self._adapter(agent), session.runtime_session(agent)
         try:
             if agent.config.get('connection_id'):
                 from connections.store import get_connection_store
@@ -392,7 +410,7 @@ class AcpRuntime(InboxRuntime):
     async def transport_history(self, agent: Agent, limit: int) -> list[dict[str, Any]]:
         """Read captured acpx text locally, without loading or prompting the provider."""
         from external.acpx import AcpxError
-        acpx = adapter(agent)
+        acpx = self._adapter(agent)
         name = acpx.to_acpx_session_name(tool=agent.platform, session_key=session.runtime_session(agent))
         try:
             result = await acpx.read_session(tool=agent.platform, name=name, tail=limit)
@@ -420,7 +438,7 @@ class AcpRuntime(InboxRuntime):
                     from connections.store import get_connection_store
                     remote_paused=not get_connection_store().get(current.owner,current.config['connection_id'])['enabled']
                 if not remote_paused and (was_busy or current.runtime.get('acp_cwd') or current.runtime.get('native_resume_id')):
-                    acpx, key = adapter(current), session.runtime_session(current)
+                    acpx, key = self._adapter(current), session.runtime_session(current)
                     await acpx.close_session(tool=current.platform, session_key=key,
                         acpx_session=acpx.to_acpx_session_name(tool=current.platform, session_key=key),
                         **command_options(current, long=False))

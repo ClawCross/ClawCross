@@ -58,7 +58,7 @@ def _lifecycle(*args):
         raise JoinError(f'准备未完成，请查看本机日志：{log.name}')
 
 
-def _bridge(platform, prepare):
+def _bridge(platform, prepare, *, direct=False):
     if platform in {'webot', 'internal', 'http', 'llm'}:
         return
     node = shutil.which('node')
@@ -73,8 +73,16 @@ def _bridge(platform, prepare):
         raise JoinError('ACP 转接需要 Node.js 22.13 或更新版本；本次没有安装不兼容的 acpx。')
     if platform == 'deepseek-harness' and current < (24, 9):
         raise JoinError('DeepSeek Harness 需要 Node.js 24.9+；本次没有安装不兼容的 DSH。')
+    if direct and platform in {'codex', 'claude'}:
+        from src.backend.external.acp_profiles import PACKAGES
+        package, _, _ = PACKAGES[platform]
+        if not (BIN_DIR/'node/node_modules'/package/'dist/index.js').is_file():
+            if not prepare:
+                raise JoinError(f'缺少 ACP 适配器。请加 --prepare，或执行 clawcross install-component acp-{platform}。')
+            _lifecycle('install-component', f'acp-{platform}')
+        return
     binary = BIN_DIR/'node/node_modules/.bin'/('acpx.cmd' if os.name == 'nt' else 'acpx')
-    if not (shutil.which('acpx') or binary.is_file()):
+    if not direct and not (shutil.which('acpx') or binary.is_file()):
         if not prepare:
             raise JoinError('缺少 acpx。请加 --prepare，或先执行 clawcross install-component acpx。')
         _lifecycle('install-component', 'acpx')
@@ -171,7 +179,8 @@ def connect(args, default_user):
             agent = request('POST', '/v1/agents/native-sessions', {'ticket':selected['ticket'], 'name':args.name or ''})
         source = 'native'
     else:
-        _bridge(args.platform, args.prepare)
+        _bridge(args.platform, args.prepare, direct=args.platform in {'codex', 'claude'} or
+                os.name != 'nt' and args.platform in {'codebuddy', 'zcode', 'deepseek-harness'})
         # Repeating a prompt in the same workspace reuses the same managed Agent.
         identity = f'{owner}\0{args.platform}\0{Path.cwd().resolve()}\0{args.name or "我的伙伴"}'
         aid = 'ag_join_'+hashlib.sha256(identity.encode()).hexdigest()[:24]
@@ -195,7 +204,7 @@ def connect(args, default_user):
     acp_settings = (agent.get('settings', {}).get('meta') or agent.get('meta') or {}).get('acp') or {}
     native_blocked = agent['platform'] not in {'webot', 'internal', 'http', 'llm'} and acp_settings.get('native_tools') is False
     if args.prepare and not native_blocked and agent['platform'] not in {'webot', 'internal', 'http', 'llm'}:
-        _bridge(agent['platform'], True)
+        _bridge(agent['platform'], True, direct=acp_settings.get('transport') == 'direct')
         # Initialization/login checks use ACP session/new or session/load, never
         # session/prompt. Only incoming group work should spend model tokens.
         if (agent.get('status') or {}).get('state') != 'running':

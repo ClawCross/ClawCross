@@ -187,6 +187,8 @@ async def lifespan(app: FastAPI):
     group_service.apps.close()
     await group_client.close()
     await session_service.close()
+    from external.acp_direct import shutdown as close_acp
+    await close_acp()
     await agent.shutdown()
     from connections.ssh import get_connections
     await get_connections().close()

@@ -18,6 +18,11 @@ async def list_all_sessions(user_id: str, acpx_bin: str | None) -> dict:
              "cwd":agent.runtime.get('acp_cwd') or agent.config.get('remote_cwd',''),
              "connection_id":agent.config['connection_id'],"closed":False}
             for agent in owned.values() if agent.config.get('connection_id')]
+    direct = [agent for agent in owned.values() if ((agent.config.get('meta') or {}).get('acp') or {}).get('transport') == 'direct']
+    rows.extend({'platform':agent.platform, 'name':runtime_session(agent), 'agent_id':agent.agent_id,
+                 'agent_name':agent.name, 'session_id':agent.runtime.get('native_resume_id'),
+                 'cwd':agent.runtime.get('acp_cwd', ''), 'closed':False, 'transport':'direct'} for agent in direct)
+    owned = {key:agent for key,agent in owned.items() if agent not in direct}
     if not acpx_bin:return {'status':'success','acpx_sessions':rows}
     adapter = get_acpx_adapter()
     from external.acp_launcher import launch_settings
@@ -62,7 +67,7 @@ async def close_acp_session(platform: str, session_name: str, cwd: str = "", *, 
                   and runtime_session(agent) == session_name), None)
     if owned is None:
         raise HTTPException(404, "No owned ACP session")
-    if owned.config.get('connection_id'):
+    if owned.config.get('connection_id') or ((owned.config.get('meta') or {}).get('acp') or {}).get('transport') == 'direct':
         from external.acp import adapter as select_adapter, command_options
         try:
             selected=select_adapter(owned)

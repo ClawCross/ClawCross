@@ -538,28 +538,28 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-07T19:00:18.646021+00:00`
+- Updated at: `2026-11-08T04:18:05.034727+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-approval-auth`
-- Heuristic score: `0.628`
+- Heuristic candidate: `blended-verification-loop-bounded-execution`
+- Heuristic score: `0.685`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: CLI join ownership, native permissions and group reply recovery. Signals: verification-loop, approval-auth. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: ACP resource and timeout verification. Signals: verification-loop, bounded-execution. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
 - Intent mix: repair `0.4`, optimize `0.4`, innovate `0.2`
-- Shift toward stability, bounded retries, and verifier quality.
+- Failure pressure is elevated, so the frontier should bias toward hardening.
 
 ### Latest Trigger Command
 
-`CLI join ownership, native permissions and group reply recovery`
+`ACP resource and timeout verification`
 
 ### Latest Error Excerpt
 
 ```text
-A real CLI-created Codex joined under the canonical first local user, invisible to a different frontend account. Membership and a connected poller did not prove a usable group reply. Native CLI built-ins bypass ClawCross command sandbox; ACP allowed_tools is advisory. Report owner and Agent readiness separately, retain the normal group APIs, default new joins to isolated workspaces with native execution disabled, expose a native off switch, and persist normal group reply targets across restart. Do not relax the host-only app SDK proxy to make an old test pass.
+Prompt timeout tests must initialize the subprocess first so CPU contention does not consume a tiny model timeout before any prompt exists. After SDK shutdown stops stdout reading, drain both child pipes before stopping the actor loop; otherwise large output leaves a paused subprocess transport and Event loop is closed during finalization. Preserve OS leases until cleanup completes.
 ```
 
 ### Governance Snapshot
@@ -582,13 +582,13 @@ A real CLI-created Codex joined under the canonical first local user, invisible 
 
 ### Recent Evidence
 
-- `2026-11-07T19:00:18.646021+00:00` `repo-skill` — A real CLI-created Codex joined under the canonical first local user, invisible to a different frontend account. Membership and a connected po ...[truncated]
+- `2026-11-08T04:18:05.034727+00:00` `repo-skill` — Prompt timeout tests must initialize the subprocess first so CPU contention does not consume a tiny model timeout before any prompt exists. Af ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth` score `0.628` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-1` score `0.588` — Tighten verification loops (intent `repair`)
-- `approval-auth-1` score `0.588` — Preflight auth and approval constraints (intent `repair`)
+- `blended-verification-loop-bounded-execution` score `0.685` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-2` score `0.645` — Tighten verification loops (intent `repair`)
+- `bounded-execution-1` score `0.531` — Bound long-running and flaky execution (intent `optimize`)
 
 ### Local State Snapshot
 

@@ -1,5 +1,21 @@
 # ClawCross 交接（2026-11-08）
 
+## 本轮完成：ACP 直连与并发管理（2026-11-08）
+
+- 用户授权实现自己的 ACP 客户端并重点验证并发。采用固定 `agent-client-protocol==0.12.1` 官方 Python SDK，新增 `external/acp_direct.py` / `acp_profiles.py` / `async_lock.py`；原 Agent、持久收件箱、历史、正常群回复组件继续共用，没有隐藏 Agent 或群聊旁路。
+- 新建本机 Codex / Claude 默认 `meta.acp.transport:direct`，固定官方适配器版本见 `config/acp-adapters.json`。Unix 的显式 ACP 命令也可直连；命令使用 argv，不经过 shell。已有 Agent 缺省继续 acpx，SSH 和命名配置使用兼容路径，兼容 acpx 安装固定为 0.19.4。没有迁移或重置 Avalon。
+- SDK 随核心 Python 环境准备，适配器由 `install-component acp-codex` / `acp-claude` 或 `join --prepare` 显式准备，安装器跨进程互斥。Studio / 手机创建页、Agent 连接设置和全局连接组件页提供对应入口，静态脚本版本已更新。本机已安装官方 Codex ACP 2.5.0；没有安装 Claude 适配器或 DSH。
+- 同一 Agent 的 turn/control 锁跨线程和事件循环共享，键含数据库、用户和 Agent；不同 Agent 并行。直连由单独 actor loop 管理进程，单 Agent 最多 64 个请求，全局最多 256 个；直连进程总计最多 16 个、每用户 4 个，空闲按配置回收，默认 300 秒。OS 文件租约拒绝另一后台进程重复接管同一 Agent；不支持多个 worker 共同消费同一 Agent。
+- 原生 ID 在模型 prompt 前保存，排队请求进入锁后重新读身份。取消、超时、断线关闭并回收当前连接；后续新请求恢复同一原生 ID，不静默新建替代会话，也不自动重发不确定是否已执行的 prompt。MCP 配置变更只重连原会话。退出先取消/等待排队与活动操作，再回收进程和管道。SDK 历史重放不会重新发给页面。
+- 不声明客户端文件/终端能力；权限询问按只读、拒绝或用户明确的批准策略处理，ClawCross 两个 MCP 包装器继续由后端校验活动调用、身份及权限。MCP 凭证和配置改为完整文件原子发布，避免并发初始化读到空凭证；跨线程退出按任务所属循环取消。输出超限关闭连接，stderr 持续排空但不记录潜在敏感内容。
+- **保持用户要求的工具边界**：没有恢复模型代理、证书或响应改写。ACP 客户端不能保证阻止适配器内部直接执行原生工具，仍由原 CLI 自身沙盒和权限管理。`native_tools:false` 继续暂停整个原生进程，新建 CLI 转接伙伴不隐式放开。未声称跨 OS 用户隔离。
+- 最终回归：**218 passed、1 skipped、12 subtests passed**；跳过的是需显式启用的独立守护进程启动测试。本轮实际生产服务另经空闲受控重载验证。专项直连 31 项均通过，资源回收警告按失败处理。覆盖 20 条同 Agent FIFO、12 个跨线程调用、不同 Agent/用户并行、12 个并发 HTTP 请求、20 次群投递去重为一次模型调用和正常群回复、跨循环取消、排队上限、关闭/退出、超时/崩溃恢复、MCP 更换、权限和安装锁。
+- 真实 Codex 使用独立临时数据库/工作区测试：初始化成功，回复 `ACP_OK`，关闭连接后回复 `ACP_RESUME_OK`，原生 ID 相同，未调用工具。最终代码再次验证通过；没有向真实群发送测试消息。Claude / 其他平台没有进行真实模型对话验证；协议和兼容路径用替身进程及回归验证。
+- 浏览器：`component-entrypoints.spec.js` 的 Studio 设置与显式安装入口测试 1 项通过；JS 语法检查、`git diff --check` 通过。本地 `dist/clawcross-0.0.29.tgz` 已重建，836 个运行文件，约 14.9 MB；未发布 npm registry。
+- 在 4 个用户、27 个 Agent 全部空闲、待处理 inbox 为 0 时，用既有 `restart_flag` 受控加载。重载后 27 个 Agent 配置和原生 ID 全部一致；Avalon 继续 `acpx`、`native_tools:true`，原群连接 `connected`。公网 `/studio`、`/mobile/group_chat` 均 200。Hub 仓库和自启动登记未改动。
+- 安装时 npm audit 发现**原有兼容组件依赖**仍有 3 个 high 项：acpx 0.19.4 的 zod，以及现有 sandbox-runtime 0.0.78 的 node-forge/zod。新增 Codex ACP 树使用 zod 4.6.7，不在该报告项内。未用跨主版本 overrides 或盲目 `npm audit fix` 改动运行中的兼容组件；这些已有依赖需单独升级验证，不能宣称整个部署已无已知漏洞。
+- 详细参数与安装说明见 `docs/agent-join.md` 和 `docs/runtime-reference.md`。本轮提交号以 `git log -1 --oneline` 为准。
+
 ## Avalon 伙伴已按用户要求恢复（2026-11-08）
 
 - 用户在撤销自建拦截后明确要求“Avalon 的伙伴恢复”，已授权恢复正常原生 ACP 运行。
