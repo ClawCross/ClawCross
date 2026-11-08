@@ -422,6 +422,11 @@ def _legacy_command(command: str, arguments: list[str]) -> int | None:
         # is needed for the stdlib terminal client and local model configuration.
         os.environ.update(_process_env())
         if command == "clawcross":
+            encoded_args = os.environ.pop("CLAWCROSS_CLI_ARGS_JSON", None)
+            if encoded_args is not None:
+                arguments = json.loads(encoded_args)
+                if not isinstance(arguments, list) or not all(isinstance(arg, str) for arg in arguments):
+                    raise ValueError("CLI arguments must be a JSON array of strings")
             from src.cli.clawcross import main as cli_main
         else:
             from src.cli.cli import main as cli_main

@@ -3,10 +3,9 @@ param(
 )
 $Rest = @($args)
 if ($Command -eq "clawcross" -and $env:CLAWCROSS_CLI_ARGS_JSON) {
-    # Pass CLI values as data. PowerShell -File otherwise parses a bare '-'
-    # and named-looking arguments before Python gets to read them.
-    $Rest = @(ConvertFrom-Json -InputObject $env:CLAWCROSS_CLI_ARGS_JSON)
-    Remove-Item Env:CLAWCROSS_CLI_ARGS_JSON
+    # Leave the JSON intact until Python. Windows PowerShell also strips
+    # literal quotes when splatting an array into a native executable.
+    $Rest = @()
 }
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [Console]::InputEncoding = $utf8

@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(not NODE, reason="Node is required for the npm e
 
 def env_for(home):
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAWCROSS_", "PORT_")) and k not in {"INTERNAL_TOKEN", "CLAW_USER", "CLI_USER", "PUBLIC_DOMAIN"}}
-    return {**env, "CLAWCROSS_HOME": str(home), "CLAWCROSS_USE_LEGACY_PATHS": "0", "CLAW_USER": "alice", "PYTHONDONTWRITEBYTECODE": "1"}
+    return {**env, "CLAWCROSS_HOME": str(home), "CLAWCROSS_USE_LEGACY_PATHS": "0", "CLAW_USER": "alice", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
 
 
 def call(args, home, cwd=ROOT, **kwargs):
@@ -121,6 +121,16 @@ def test_cli_arguments_reach_python_as_literal_values(backend, message):
     result = call(['chat', message, '-s', 'fixture'], home)
     assert result.returncode == 0, result.stderr
     assert requests[-1][1]['messages'] == [{'role':'user','content':message}]
+
+
+def test_windows_argument_envelope_is_decoded_only_in_python(backend):
+    home, requests = backend
+    message = '中文 "quoted"\n$env:NAME; $(echo unsafe) & <x>'
+    env = {**env_for(home), "CLAWCROSS_CLI_ARGS_JSON": json.dumps(['chat', message, '-s', 'fixture'])}
+    result = subprocess.run([sys.executable, str(ROOT / 'launch/runtime_control.py'), 'clawcross'],
+        env=env, cwd=ROOT, text=True, encoding='utf-8', capture_output=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    assert requests[-1][1]['messages'] == [{'role': 'user', 'content': message}]
 
 
 def test_interactive_turns_keep_agent_and_apply_mode_changes(backend):
