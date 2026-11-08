@@ -10,7 +10,7 @@ langchain-google-genai
 langchain-anthropic
 langchain-deepseek
 langchain-core
-langchain-mcp-adapters
+langchain-mcp-adapters==0.3.2
 python-dotenv
 httpx
 mcp

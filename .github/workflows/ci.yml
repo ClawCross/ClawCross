@@ -8,6 +8,27 @@ on:
   pull_request:
 
 jobs:
+  ci-agent-startup:
+    name: startup / ${{ matrix.os }} / MCP ${{ matrix.mcp }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        mcp: ["0.2.1", "0.3.2"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v8.0.0
+      - name: Install runtime and test dependencies
+        run: uv pip install --system -r config/requirements-dev.txt
+      - name: Select compatibility version in the isolated runner
+        run: uv pip install --system --no-deps langchain-mcp-adapters==${{ matrix.mcp }}
+      - name: Start actual Agent service and check health
+        run: python -m pytest test/test_agent_startup.py -q
+
   ci-cli-package:
     name: cli-package / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

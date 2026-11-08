@@ -117,7 +117,8 @@ def _req(method: str, url: str, headers: dict | None = None,
     except (socket.timeout, TimeoutError):
         return 0, {"error": f"request timed out: {url}"}
     except urllib.error.URLError as e:
-        return 0, {"error": f"connection failed: {e.reason}"}
+        from src.cli.connection_errors import connection_error_message
+        return 0, {"error": connection_error_message(e.reason, url, english=True)}
     except Exception as e:  # pragma: no cover - defensive
         return 0, {"error": f"unexpected error: {e}"}
 

@@ -71,6 +71,25 @@ def test_metadata_does_not_bootstrap_or_create_user_data(tmp_path):
     assert not home.exists()
 
 
+def test_stopped_local_service_has_an_actionable_message(tmp_path):
+    import socket
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
+    home=tmp_path/'offline';config=home/'config';config.mkdir(parents=True)
+    (config/'.env').write_text(f"PORT_AGENT='{port}'\nINTERNAL_TOKEN='test-only'\n",encoding='utf-8')
+    for args in (['agents','list'],['chat','hello','-s','fixture']):
+        result=call(args,home)
+        assert result.returncode != 0
+        assert 'clawcross start' in result.stdout+result.stderr
+
+
+def test_remote_failures_do_not_suggest_starting_the_local_service():
+    from src.cli.connection_errors import connection_error_message
+    reason=ConnectionRefusedError(10061,'refused')
+    assert 'clawcross start' not in connection_error_message(reason,'https://example.invalid/api')
+    assert 'clawcross start' not in connection_error_message(OSError('certificate error'),'https://localhost/api')
+
+
 def test_welcome_screen_does_not_require_backend_dependencies(tmp_path):
     program = '''
 import sys

@@ -1138,7 +1138,8 @@ def run_prompt(prompt: str, state: dict, *, model: str = "default") -> int:
         print(f"HTTP {exc.code}: {detail}", file=sys.stderr)
         return 1
     except urllib.error.URLError as exc:
-        print(f"Connection failed: {exc.reason}", file=sys.stderr)
+        from src.cli.connection_errors import connection_error_message
+        print(connection_error_message(exc.reason, AGENT_BASE, english=True), file=sys.stderr)
         return 1
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)

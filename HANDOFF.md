@@ -1,3 +1,13 @@
+## 最新：MCP 启动阻断修复（2026-11-09）
+
+- Windows 报告的 `MultiServerMCPClient.handle_tool_errors` 崩溃，已用官方 `langchain-mcp-adapters==0.2.1` 在 Linux 原样复现；旧客户端没有此属性，旧转换函数也不接受该参数。属于依赖接口兼容问题，不能归为 Windows 专属问题。Windows 报告的确切依赖版本仍未提供。
+- 内置工具加载只在转换函数支持时传入 `handle_tool_errors`，新版本保留原有 True/False 策略，旧版本保留其原本的错误语义。没有把错误吞掉、没有启用新工具权限，也没有恢复逐服务器启动来枚举工具的旧路径。
+- 新安装固定 `langchain-mcp-adapters==0.3.2`。已有环境在下一次 `clawcross start` 时会因 requirements 指纹变化重新检查/安装核心依赖；仅更新代码但还没更新环境时，也兼容报告对应的旧接口。
+- 新增实际服务启动测试：临时数据目录包含中文和空格，启动真实 Uvicorn / server.py lifespan，等待 `/health`，禁止模型调用和原生 Agent。官方 0.2.1 与本机 0.3.2 各 2 项本机测试通过。CI 新增 Windows/Linux × 0.2.1/0.3.2 的真实启动矩阵。
+- 本地服务拒绝连接时，CLI 明确提示 `clawcross start` 和启动日志；远程/证书错误不误报为本机未运行。`agents list` 的错误返回不再被当作成功退出。
+- 额外工具 schema 专项为 40 passed、261 subtests passed，既有 `start_new_oasis` 的 strict 断言失败；该用例手动构造工具，不经过此次修改的加载器，本轮没有为了该断言改动产品工具 schema。此项不能宣称全绿。
+- 只启动隔离测试服务，没有重启现有部署或向真实群发送消息。最终 CI 与提交号见本轮完成报告。
+
 ## 最新：消息排序与长历史首屏（2026-11-08）
 
 - 用户最终选择按**最新消息**排序，取代点击顺序和固定创建顺序。默认仍显示 2 个快捷 Agent；点击、改设置不置顶。无消息或时间相同时按创建时间/ID 稳定排列。

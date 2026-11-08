@@ -283,7 +283,8 @@ def _req(method, url, headers=None, data=None, params=None, timeout=30):
     except (socket.timeout, TimeoutError):
         return 0, {"error": "请求超时"}
     except urllib.error.URLError as e:
-        return 0, {"error": f"连接失败: {e.reason}"}
+        from src.cli.connection_errors import connection_error_message
+        return 0, {"error": connection_error_message(e.reason, url)}
 
 
 def _stream_req(url, headers=None, data=None, params=None, timeout=300):
@@ -411,6 +412,7 @@ def _err(code, body):
     """
     msg = body.get("error", body) if isinstance(body, dict) else body
     print(f"❌ [{code}] {msg}", file=sys.stderr)
+    return 1
 
 
 # ═══════════════════════════════════════════════════════════════════════

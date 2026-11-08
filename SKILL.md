@@ -531,14 +531,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-08T15:07:36.823031+00:00`
+- Updated at: `2026-11-08T16:06:42.982323+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-approval-auth`
-- Heuristic score: `0.756`
+- Heuristic candidate: `verification-loop-1`
+- Heuristic score: `0.886`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: python -m pytest test/test_agents.py -q. Signals: verification-loop, approval-auth. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: MCP 0.2.1 actual Agent startup. Signals: verification-loop. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -547,12 +547,12 @@ Command exited with code 1. Command: python -m pytest test/test_agents.py -q. Si
 
 ### Latest Trigger Command
 
-`python -m pytest test/test_agents.py -q`
+`MCP 0.2.1 actual Agent startup`
 
 ### Latest Error Excerpt
 
 ```text
-Unit tests patched the retired external.acpx.get_acpx_adapter entry, so the current direct ACP adapter was selected instead of the fake. The run was interrupted. Patch external.acp.adapter and forbid constructing external.acp_direct.DirectAdapter in unit tests; exercise actual native adapters only in explicitly authorized integration checks. After the fix, the focused backend suite passed 82 tests and 4 subtests.
+The unpinned langchain-mcp-adapters dependency allowed 0.2.1, which has neither MultiServerMCPClient.handle_tool_errors nor that converter keyword. The original loader failed with AttributeError before the Agent service listened. Reproduced with the official 0.2.1 wheel on Linux; this is not an OS-specific attribute. Pass the error policy only when the converter supports it, pin new installs to verified 0.3.2, and run actual isolated server lifespan/health checks on Windows and Linux with both versions. Both local version checks now pass without model calls.
 ```
 
 ### Governance Snapshot
@@ -564,24 +564,22 @@ Unit tests patched the retired external.acpx.get_acpx_adapter entry, so the curr
 
 ### Operating Adjustments
 
-1. Start from the narrowest reproducible failure before broad retries.
-2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
-3. End every fix attempt with an explicit verifier command and observed result.
+1. State the exact failure mode before editing anything.
+2. Choose the narrowest reproducer first, then a broader regression command.
+3. Record pass/fail status immediately after each attempted fix.
 
 ### Validation Loop
 
-1. Run the minimal reproducer first, then the broader regression command.
-2. Persist the command and result summary in the evolution report.
+1. Rerun the minimal reproducer before any broad test suite.
+2. When a fix passes, note the exact verifier command in the skill.
 
 ### Recent Evidence
 
-- `2026-11-08T15:07:36.823031+00:00` `repo-skill` — Unit tests patched the retired external.acpx.get_acpx_adapter entry, so the current direct ACP adapter was selected instead of the fake. The r ...[truncated]
+- `2026-11-08T16:06:42.982323+00:00` `repo-skill` — The unpinned langchain-mcp-adapters dependency allowed 0.2.1, which has neither MultiServerMCPClient.handle_tool_errors nor that converter key ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth` score `0.756` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-1` score `0.716` — Tighten verification loops (intent `repair`)
-- `approval-auth-1` score `0.716` — Preflight auth and approval constraints (intent `repair`)
+- `verification-loop-1` score `0.886` — Tighten verification loops (intent `repair`)
 
 ### Local State Snapshot
 
