@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261108090350154826",
-  "candidate_id": "verification-loop-4",
+  "id": "vr_20261108100304305227",
+  "candidate_id": "blended-verification-loop-approval-auth-structured-output",
   "skill_name": "repo-skill",
   "strategy": "repair-only",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-11-08T09:03:50.154783+00:00"
+    "captured_at": "2026-11-08T10:03:04.305181+00:00"
   },
   "commands": [
     {
-      "command": "npx playwright test test/browser/conversation-workspace.spec.js --config playwright.config.mjs --workers=1 -g 'real embedded Studio renderer'",
+      "command": "GitHub CLI package and isolated browser regression repair",
       "ok": false,
       "stdout": "",
-      "stderr": "Workflow layout regression assertion expected a canvas wider than 650px at the default 1280px viewport. Actual editor width is 1212px after the navigation rail; the 637px canvas already exceeds half the editor. Assert the actual requirement (canvas receives over half the editor and height over 350px) instead of a threshold derived from a larger viewport; keep testing the real renderer and do not execute the workflow."
+      "stderr": "Windows PowerShell native array splatting removed literal double quotes even after JSON decoding; keep the JSON envelope intact until Python. Python subprocess protocol fixtures must configure PYTHONUTF8/PYTHONIOENCODING and decode UTF-8 explicitly. Browser tests for the former standalone Studio need a test-only component route while unified shell behavior stays covered end-to-end. Block Service Workers in mocked API browser suites and set deterministic locale; automatic browser-language detection requires separate explicit locale tests. Update stale fixture contracts for ACP adapter components, profile editing and authoritative message IDs; preserve security and approval behavior assertions."
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-11-08T09:03:50.154851+00:00",
-  "asset_id": "sha256:1f0dec08da11d8af74cf7c23b6f3794c9b1757bf50c635ba4b9a13f325913f92"
+  "created_at": "2026-11-08T10:03:04.305262+00:00",
+  "asset_id": "sha256:619968973984f4d581b7dfbf35cbd32e0fa2f38c0dc6e1c903629fa26cd8c4f1"
 }

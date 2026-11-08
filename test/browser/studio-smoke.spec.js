@@ -5,7 +5,7 @@ test('account picker shows the default and logs in through the existing endpoint
   await page.route('**/proxy_local_accounts',route=>route.fulfill({json:{accounts:['alice','bob'],default:'alice',current:'alice'}}));
   const logins=[];
   await page.route('**/proxy_login',route=>{logins.push(route.request().postDataJSON());return route.fulfill({json:{ok:true,user_id:'bob'}});});
-  await page.setViewportSize({width:1280,height:800});await page.goto('/studio');
+  await page.setViewportSize({width:1280,height:800});await page.goto('/__test__/studio?embedded=1');
   await page.locator('.studio-activity-footer button[title="选择账号"],.studio-activity-footer button[title="Choose account"]').click();
   const dialog=page.locator('#local-account-dialog');await expect(dialog).toBeVisible();
   await expect(dialog.locator('select')).toHaveValue('alice');
@@ -18,7 +18,7 @@ test('account picker shows the default and logs in through the existing endpoint
 test('Studio uses a mobile menu and a persistent desktop activity rail',async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await stubStudioNetwork(page,{}, {agents:[],approvals:[]});
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   const link=page.locator('#tab-groupchat'),menu=page.locator('#studio-mobile-menu-toggle'),nav=page.locator('.studio-activity-bar');
   await expect(link).toHaveAttribute('href','/mobile/group_chat');
   await expect(page.locator('.page-tab-bar')).toHaveCount(0);
@@ -69,17 +69,18 @@ test('Studio uses a mobile menu and a persistent desktop activity rail',async({p
   await expect(page.locator('#studio-preferences')).toBeInViewport({ratio:1});
   expect(errors).toEqual([]);
   await link.click();await expect(page).toHaveURL(/\/mobile\/group_chat$/);
-  await expect(page.locator('.mobile-studio-header-link')).toBeInViewport({ratio:1});
+  await expect(page.locator('#workspace-agent-list')).toBeVisible();
+  await expect(page.locator('.mobile-studio-header-link')).toHaveCount(0);
 });
 
 test('installed mobile window accepts consecutive menu and Message taps',async({browser})=>{
-  const context=await browser.newContext({viewport:{width:390,height:740},isMobile:true,hasTouch:true});
+  const context=await browser.newContext({locale:'zh-CN',viewport:{width:390,height:740},isMobile:true,hasTouch:true});
   const page=await context.newPage();
   try{
     await page.addInitScript(()=>Object.defineProperty(navigator,'standalone',{configurable:true,get:()=>true}));
     await page.emulateMedia({reducedMotion:'reduce'});
     await stubStudioNetwork(page,{}, {agents:[],approvals:[]});
-    await page.goto('/studio');
+    await page.goto('/__test__/studio?embedded=1');
     await expect(page.locator('#studio-mobile-menu-toggle')).toBeVisible();
     await page.locator('#studio-mobile-menu-toggle').tap();
     await page.locator('#tab-groupchat .ui-icon').tap();
@@ -88,7 +89,7 @@ test('installed mobile window accepts consecutive menu and Message taps',async({
 });
 
 test('iPhone safe area and keyboard keep navigation visible and composer at the bottom',async({browser})=>{
-  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  const context=await browser.newContext({locale:'zh-CN',viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const page=await context.newPage();let posts=0;
   try{
     await page.addInitScript(()=>{
@@ -99,7 +100,7 @@ test('iPhone safe area and keyboard keep navigation visible and composer at the 
     });
     await stubStudioNetwork(page,{}, {agents:[],approvals:[]});
     await page.route('**/v1/chat/completions',route=>{posts++;return route.fulfill({json:{choices:[]}});});
-    await page.goto('/studio');
+    await page.goto('/__test__/studio?embedded=1');
     await page.evaluate(()=>{document.documentElement.style.setProperty('--safe-top','59px');document.documentElement.style.setProperty('--safe-bottom','34px');});
     const menu=page.locator('#studio-mobile-menu-toggle'),input=page.locator('#user-input'),dock=page.locator('.composer-dock');
     await expect(menu).toBeInViewport({ratio:1});
@@ -136,7 +137,7 @@ test('Team pages keep the personal overview separate and preserve resource navig
   await page.route('**/proxy_visual/load-layouts**',route=>route.fulfill({json:new URL(route.request().url()).searchParams.get('mode')==='python'?[]:['Weekly report']}));
   page.on('pageerror',error=>errors.push(error.message));
   await page.setViewportSize({width:1440,height:900});
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.waitForFunction(()=>window._ocSwitcherInitialized === true);
   await page.locator('#tab-group').click();
   const personal=page.locator('#group-list .user-space-item');
@@ -176,7 +177,7 @@ test('new conversation suggestions stay editable and do not create or send until
     return route.fulfill({contentType:'text/event-stream',body:'data: {"choices":[{"delta":{"content":"WELCOME_SENT_OK"}}]}\n\ndata: [DONE]\n\n'});
   });
   await page.setViewportSize({width:1440,height:900});
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await expect(page.locator('[data-conversation-welcome]')).toBeVisible();
   await expect(page.locator('.welcome-idea')).toHaveCount(3);
   await page.screenshot({path:'/tmp/clawcross-welcome-desktop.png'});
@@ -203,7 +204,7 @@ test('Create links prefill the current Studio conversation and English welcome r
   await stubStudioNetwork(page, calls, {agents:[], approvals:[]});
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(()=>localStorage.setItem('lang','en'));
-  await page.goto('/studio?compose=team');
+  await page.goto('/__test__/studio?embedded=1&compose=team');
   await expect(page.locator('#user-input')).toHaveValue(/Help me build a team/);
   await expect(page.locator('.welcome-idea[data-compose="team"]')).toContainText('Build a team');
   await expect(page).not.toHaveURL(/compose=/);
@@ -218,7 +219,7 @@ test('local and SSH Agents share the center and remote ACP works without local a
   const agents=[{agent_id:'local',name:'本机伙伴',platform:'webot',settings:{},location:{kind:'local',name:'本机'},status:{state:'idle'}},
     {agent_id:'remote',name:'远端伙伴',platform:'claude',settings:{},location:{kind:'ssh',name:'笔记本',host:'laptop'},status:{state:'idle'}}];
   await stubStudioNetwork(page,{}, {agents,acpxStatusPayload:{available:false,tools:[]}});
-  await page.goto('/studio');await page.evaluate(()=>openAgentCenter());
+  await page.goto('/__test__/studio?embedded=1');await page.evaluate(()=>openAgentCenter());
   await expect(page.locator('.agent-center-card')).toHaveCount(2);
   await expect(page.locator('.agent-center-card[data-agent="remote"]')).toContainText('笔记本 · SSH');
   await page.evaluate(()=>closeAgentCenter());
@@ -230,7 +231,7 @@ test('local and SSH Agents share the center and remote ACP works without local a
 test('UI tool opens a resizable center workspace and keeps the conversation and iframe state',async({page})=>{
   await page.setViewportSize({width:1600,height:900});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await stubStudioNetwork(page,{});await page.goto('/studio');
+  await stubStudioNetwork(page,{});await page.goto('/__test__/studio?embedded=1');
   await expect(page.locator('#user-input')).toBeVisible();
   await page.locator('#user-input').fill('未发送的草稿');
   await page.evaluate(()=>{
@@ -287,7 +288,7 @@ test('Studio recent Agents collapse and long Team membership uses one rail scrol
   const agents=Array.from({length:90},(_,index)=>({agent_id:'scroll-'+index,name:'伙伴 '+index,platform:'webot',settings:{},status:{state:'idle'}}));
   await stubStudioNetwork(page,{}, {agents});
   await page.route(/\/v1\/teams(\?.*)?$/,route=>route.fulfill({json:{data:[{team:'Long team',members:agents.map(agent=>({agent}))}]}}));
-  await page.goto('/studio');await page.locator('.studio-conversation-switcher > summary').click();
+  await page.goto('/__test__/studio?embedded=1');await page.locator('.studio-conversation-switcher > summary').click();
   await page.locator('#studio-recent-agents > summary').click();
   await expect(page.locator('#studio-conversation-list')).toBeHidden();
   const team=page.locator('.studio-team-node[data-team="Long team"]');await team.locator('summary').click();
@@ -305,7 +306,7 @@ test('recent Agents stop at five and Team branches remain expanded after member 
   await stubStudioNetwork(page,{}, {agents});
   await page.route(/\/v1\/teams(\?.*)?$/,route=>route.fulfill({json:{data:[{team:'Project',members:[{agent:agents[0],role:'Member'}]}]}}));
   await page.route('**/v1/agents/recent-0',route=>route.fulfill({json:agents[0]}));
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('.studio-conversation-switcher > summary').click();
   await expect(page.locator('.studio-conversation-item')).toHaveCount(5);
   expect(await page.locator('.studio-conversation-item > span').allTextContents()).toEqual(['Agent 6','Agent 5','Agent 4','Agent 3','Agent 2']);
@@ -341,7 +342,7 @@ test('recent conversations show Agent names with virtual user space and update a
     return route.fulfill({json:agents[0]});
   });
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('.studio-conversation-switcher > summary').click();
   const row=page.locator('.studio-conversation-item[data-session-id="named-agent"]');
   await expect(row.locator('span')).toHaveText('研究员 Alice');
@@ -373,7 +374,7 @@ test('studio Agent templates keep administrative tools opt-in and platform compa
   await page.route('**/v1/agents/creation-templates',route=>route.fulfill({json:{data:creation.templates}}));
   await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.evaluate(tools=>{allTools=tools;void openAgentMetaModal('create');},creation.tools);
   await expect(page.locator('#studio-agent-advanced')).not.toHaveAttribute('open','');
   await expect(page.locator('#agent-meta-name')).toHaveValue('我的伙伴');
@@ -945,7 +946,7 @@ test('studio workflow tab and settings actions stay responsive', async ({ page }
     localStorage.setItem('oasisTownWorkspaceView', 'graph');
   });
 
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
 
   await expect(page.locator('#chat-screen')).toBeVisible();
   await expect(page.locator('#tab-chat')).toHaveClass(/active/);
@@ -1001,7 +1002,7 @@ test('studio webot runtime sidebar shows runtime state and resolves approvals', 
     localStorage.removeItem('clawcrossSessionRuntimePanelHeightV1');
   });
 
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('#studio-more-menu > summary').click();
   await page.locator('#studio-runtime-menu > summary').click();
   await page.locator('#studio-runtime-details').click();
@@ -1055,7 +1056,7 @@ test('studio webot runtime surfaces recovery hints and applies workflow presets'
     localStorage.removeItem('clawcrossSessionRuntimePanelHeightV1');
   });
 
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('#studio-more-menu > summary').click();
   await page.locator('#studio-runtime-menu > summary').click();
   await page.locator('#studio-runtime-details').click();
@@ -1097,7 +1098,7 @@ test('studio builtin preset modal installs team presets', async ({ page }) => {
     window.confirm = () => true;
   });
 
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.evaluate(() => {
     window.__openedBuiltinTeam = '';
     const originalOpenGroup = window.openGroup;
@@ -1157,7 +1158,7 @@ test('studio oasis swarm uses pretext-backed multiline labels', async ({ page })
     window.confirm = () => true;
   });
 
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
 
   const metrics = await page.evaluate(() => {
     const node = buildOasisSwarmNodeMetrics({
@@ -1222,7 +1223,7 @@ test('oasis town runtime mounts, draws canvas, and accepts live updates', async 
     window.confirm = () => true;
   });
 
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   expect(await page.evaluate(() => Boolean(window.OasisTown))).toBe(false);
   expect(await page.evaluate(() => performance.getEntriesByType('resource').some(e => e.name.includes('cdn.tailwindcss.com')))).toBe(false);
   await page.evaluate(() => loadOasisTownBundle());
@@ -1373,7 +1374,7 @@ test('Agent Center opens from the activity rail and update controls follow Engli
   const calls = {};
   await stubStudioNetwork(page, calls, {agents:[{agent_id:'test-codex',name:'Codex',platform:'codex',settings:{},status:{state:'idle'}}]});
   await page.addInitScript(() => localStorage.setItem('lang', 'en'));
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await expect(page.locator('#hamburger-panel button[onclick*="toggleSessionSidebar"]')).toHaveCount(0);
   await page.locator('#tab-agent-center').click();
   await expect(page.locator('#tab-agent-center')).toHaveAttribute('aria-current','page');
@@ -1404,7 +1405,7 @@ test('conversation rail lists history and has a separate New button without a ma
     {agent_id:'history-two',name:'Second conversation',platform:'webot',settings:{},status:{state:'idle',title:'Second conversation'}}
   ];
   await stubStudioNetwork(page, calls, {agents});
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await expect(page.locator('#refresh-chat-btn')).toHaveCount(0);
   await page.locator('.studio-conversation-switcher > summary').click();
   await expect(page.locator('.studio-conversation-item[data-session-id="history-one"]')).toBeVisible();
@@ -1454,7 +1455,7 @@ for (const platform of ['webot', 'codex']) {
     page.on('dialog', dialog => dialog.accept());
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto('/studio');
+    await page.goto('/__test__/studio?embedded=1');
     await page.locator('.studio-conversation-switcher > summary').click();
     if (platform === 'codex') {
       await page.locator('.studio-platform-picker > summary').click();
@@ -1487,7 +1488,7 @@ test('recent Agents retain an Agent when deletion fails', async ({page}) => {
   await page.route('**/v1/agents/keep-me', route => route.request().method() === 'DELETE'
     ? route.fulfill({status:500,json:{detail:'Deletion failed'}}) : route.fallback());
   page.on('dialog', dialog => dialog.accept());
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('.studio-conversation-switcher > summary').click();
   await expect(page.locator('.studio-conversation-item[data-session-id="keep-me"]')).toBeVisible();
   const result = await page.evaluate(() => deleteAgent({agent_id:'keep-me'}, 'Keep me').catch(error => error.message));
@@ -1498,7 +1499,7 @@ test('recent Agents retain an Agent when deletion fails', async ({page}) => {
 test('recent Agents refresh on opening after deletion in another page', async ({page}) => {
   const agents = [{agent_id:'gone-elsewhere',name:'Old Agent',platform:'webot',settings:{},status:{state:'idle',title:'Old Agent'}}];
   await stubStudioNetwork(page, {}, {agents});
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('.studio-conversation-switcher > summary').click();
   await expect(page.locator('.studio-conversation-item[data-session-id="gone-elsewhere"]')).toBeVisible();
   await page.locator('.studio-conversation-switcher > summary').click();
@@ -1511,7 +1512,7 @@ test('recent Agents ignore list responses started before deletion', async ({page
   const agents = [{agent_id:'delete-race',name:'Old response',platform:'webot',settings:{},status:{state:'idle',title:'Old response'}}];
   await stubStudioNetwork(page, {}, {agents});
   page.on('dialog', dialog => dialog.accept());
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('.studio-conversation-switcher > summary').click();
   await expect(page.locator('.studio-conversation-item[data-session-id="delete-race"]')).toBeVisible();
   let release;
@@ -1545,7 +1546,7 @@ test('external New Agent stays a draft until the first message request', async (
     }
     return route.fulfill({json:{data:agents}});
   });
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('.studio-conversation-switcher > summary').click();
   await page.locator('.studio-platform-picker > summary').click();
   await page.locator('[data-acp-tool="codex"]').click();
@@ -1599,7 +1600,7 @@ test('an external Agent turn is followed after a reload and its steps fold above
       {id:'t2', kind:'tool', title:'运行 npm test', status:'completed', input:null, output:'2 passed'},
       {id:'text-3', kind:'text', text:'已修复：登录按钮重复提交。'}]}});
   });
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('.studio-conversation-switcher > summary').click();
   await page.locator('.studio-platform-picker > summary').click();
   await page.locator('[data-acp-tool="codex"]').click();
@@ -1629,7 +1630,7 @@ test('Studio approval buttons and typed replies use the same control without sen
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await stubStudioNetwork(page, calls, {approvals:[]});
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   const sid = await page.evaluate(() => currentSessionId);
   let pending = true;
   const item = {approval_id:'approval-chat123',session_id:sid,tool_name:'run_command',status:'pending',
@@ -1668,7 +1669,7 @@ test('Studio approval buttons and typed replies use the same control without sen
 test('Studio approval buttons live in the verified bubble and display the human reply',async({page})=>{
   const calls={importOpenClaw:0,tinyfishRun:0,approvalActions:[]};
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await stubStudioNetwork(page,calls);await page.goto('/studio');
+  await stubStudioNetwork(page,calls);await page.goto('/__test__/studio?embedded=1');
   const sid=await page.evaluate(()=>currentSessionId);
   const item={approval_id:'approval-inline789',session_id:sid,tool_name:'run_command',status:'pending',
     args:{command:'echo VERIFIED'},request_reason:'确认执行',review:{reviewer:'user',conversation_reply:true}};
@@ -1704,9 +1705,10 @@ test('settings categories preserve drafts, search configuration keys, and save h
   await page.route('**/proxy_tunnel/status', route => route.fulfill({json:{running:true,provider:'hub',public_domain:'https://d-test.clawcross.net'}}));
   page.on('pageerror', error => errors.push(error.message));
   await page.setViewportSize({width:1280,height:900});
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.evaluate(() => openSettings());
   const modal = page.locator('#settings-modal');
+  await page.locator('[data-open-settings=models]').click();
   await expect(page.getByLabel('默认模型', {exact:true})).toHaveValue('saved-model');
   await page.getByLabel('默认模型', {exact:true}).fill('draft-model');
   await modal.screenshot({path:'/tmp/clawcross-settings-desktop-models.png'});
@@ -1739,7 +1741,7 @@ test('refinement: one scrolling rail, platform identity and archive restoration'
   await page.route(/\/v1\/agents(\?.*)?$/,route=>route.fulfill({json:{data:new URL(route.request().url()).searchParams.has('include_archived')?[agent]:agent.settings.archived?[]:[agent]}}));
   await page.route('**/v1/agents/rail-agent',route=>{if(route.request().method()==='PATCH')Object.assign(agent.settings,route.request().postDataJSON().settings);return route.fulfill({json:agent});});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.locator('.studio-conversation-switcher').evaluate(el=>el.open=true);
   await expect(page.locator('.page-tab-bar .page-tab:not(#uid-display)')).toHaveCount(0);
   await expect(page.locator('.studio-activity-primary > *')).toHaveCount(6);
@@ -1786,9 +1788,10 @@ test('refinement: one scrolling rail, platform identity and archive restoration'
 test('refinement: language preferences persist and activity shows elapsed time',async({page})=>{
   await stubStudioNetwork(page,{}, {agents:[],approvals:[]});
   await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.evaluate(()=>ClawCrossLocale.open());
-  await expect(page.locator('.language-picker-list button')).toHaveCount(14);
+  await expect(page.locator('.language-picker-list button[lang]')).toHaveCount(14);
+  await expect(page.locator('.language-picker-list [data-language-auto]')).toHaveCount(1);
   await page.locator('.language-picker-list button[lang="ja-JP"]').click();
   await expect(page.locator('#tab-chat')).toHaveText('チャット');
   await page.reload();await expect(page.locator('#tab-chat')).toHaveText('チャット');

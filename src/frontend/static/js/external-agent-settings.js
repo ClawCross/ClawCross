@@ -155,9 +155,15 @@
       try {
         await createIfNeeded();
         await saveConnection();
-        await request('/v1/agents/'+encodeURIComponent(id)+'/acp-settings','PATCH', {
+        const policy = {
           native_tools:overlay.querySelector('#external-native-tools').checked,
-          clawcross_tools:overlay.querySelector('#external-tools').checked});
+          clawcross_tools:overlay.querySelector('#external-tools').checked};
+        // Opening an existing editor tests its saved connection. Only persist
+        // tool permissions when the user actually changes them before testing.
+        if (policy.native_tools !== (card.native_tools !== false) ||
+            policy.clawcross_tools !== Boolean(card.clawcross_tools)) {
+          await request('/v1/agents/'+encodeURIComponent(id)+'/acp-settings','PATCH', policy);
+        }
         const fresh = await request('/v1/agents/' + encodeURIComponent(id) + '/test-connection', 'POST');
         cache.set(id, {value:fresh, at:Date.now()});
         if (!overlay.isConnected) return;

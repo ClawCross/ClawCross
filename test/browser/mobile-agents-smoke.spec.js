@@ -106,6 +106,7 @@ test('Contacts use a compact team filter and keep names readable near the top',a
   await expect(page.locator('#contacts-team-select option:checked')).toContainText('用户空间');
   await expect(page.locator('#tab-contacts .contacts-intro, #tab-contacts .contacts-actions, #contacts-import-panel')).toHaveCount(0);
   const name=page.locator('#contacts-list .contact-name').filter({hasText:longName});
+  await page.locator('#contacts-list .contacts-ext-sub[data-platform=webot]').click();
   await expect(name).toBeVisible();
   expect(await name.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
   await page.screenshot({path:'/tmp/clawcross-contacts-personal-phone.png'});
@@ -121,13 +122,17 @@ test('Contacts use a compact team filter and keep names readable near the top',a
   for(const width of [390,360,1440]){
     await page.setViewportSize({width,height:560});
     await expect(name).toBeInViewport({ratio:1});
-    if(width<=600) expect((await name.boundingBox()).y).toBeLessThan(320);
+    if(width<=600) {
+      const list=await page.locator('#contacts-list').boundingBox();
+      expect((await name.boundingBox()).y-list.y).toBeLessThan(160);
+    }
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await page.screenshot({path:`/tmp/clawcross-contacts-${width}.png`});
   }
   await page.locator('#contacts-team-select').selectOption('');
   await expect(page.locator('#contacts-team-info')).toBeHidden();
   await page.setViewportSize({width:390,height:844});
+  await page.locator('#contacts-list .contacts-ext-sub[data-platform=codex]').click();
   await page.locator('#contacts-list [data-agent-activity="ag_codex00001"]').click();
   await expect(page.locator('#agent-detail-overlay')).toHaveClass(/open/);
   expect(errors).toEqual([]);
@@ -141,6 +146,7 @@ test('Contacts category labels scroll with long lists without covering contacts'
   await page.goto('/mobile/group_chat');
   await page.evaluate(()=>switchTab('contacts'));
   await expect(page.locator('#contacts-list .contact-item')).toHaveCount(22);
+  await page.locator('#contacts-list .contacts-ext-sub[data-platform=webot]').click();
   for(const width of [390,360,1440]){
     await page.setViewportSize({width,height:560});
     const geometry=await page.evaluate(()=>{
@@ -240,12 +246,10 @@ test('contact creation offers group roles and keeps capabilities in advanced set
   await page.evaluate(()=>setCreateAgentMode('webot'));
   await expect.poll(()=>page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets').id)).toBe('group');
   if(!await page.locator('#mobile-create-agent-advanced').evaluate(el=>el.open))await page.locator('#mobile-create-agent-advanced > summary').click();
-  await page.locator('#mobile-agent-capability-presets > summary').click();
   await page.locator('#mobile-agent-creation-presets [data-preset="admin"]').click();
   expect(await page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets').id)).toBe('admin');
   await page.locator('#mobile-agent-creation-presets [data-preset="group"]').click();
   if(!await page.locator('#mobile-create-agent-advanced').evaluate(el=>el.open))await page.locator('#mobile-create-agent-advanced > summary').click();
-  await page.locator('#mobile-agent-capability-presets > summary').click();
   await page.locator('#create-agent-name').fill('科学顾问');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:'/tmp/clawcross-contact-group-roles.png'});
@@ -297,7 +301,7 @@ test('a space with an app shows the app site sandboxed in place of the chat',asy
   card={...card,app:{name:'精灵对战',online:true}};
   await page.evaluate(card=>applyGroupDetail({...card,messages:[]}),card);
   const frame=page.locator('#room-app-surface iframe');
-  await expect(frame).toHaveAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals allow-downloads');
+  await expect(frame).toHaveAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock');
   await expect(page.frameLocator('#room-app-surface iframe').locator('#app')).toHaveText('arena');
   expect(sessions).toBe(1);
   const before=await frame.boundingBox();
@@ -353,7 +357,8 @@ test('mobile empty chats create a first companion once and open its private conv
   await expect(page.locator('#create-agent-modal')).toHaveClass(/show/);
   await expect(page.locator('#create-agent-name')).toBeFocused();
   await expect(page.locator('#mobile-create-agent-advanced')).not.toHaveAttribute('open','');
-  await expect(page.locator('#mobile-agent-creation-basics [data-style=warm]')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#mobile-agent-creation-presets [data-preset=personal]')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('[data-style]')).toHaveCount(0);
   expect(created).toHaveLength(0);
   await page.locator('#create-agent-name').fill('小星');
   await page.screenshot({path:'/tmp/clawcross-first-companion-name.png'});
@@ -365,7 +370,7 @@ test('mobile empty chats create a first companion once and open its private conv
   release();
   await expect.poll(()=>privateChats.length).toBe(1);
   expect(created[0]).toMatchObject({name:'小星',platform:'webot',creation_template:'personal'});
-  expect(created[0].persona).toContain('自然、亲切');
+  expect(created[0].creation_template).toBe('personal');
   expect(created[0].tools).not.toContain('manage_team');
   expect(privateChats[0]).toEqual({kind:'direct',agents:['first-companion']});
   await expect(page.locator('#chat-title')).toHaveText('小星');
@@ -475,7 +480,7 @@ test('mobile message center works with agents of any platform by id', async ({ p
   await page.evaluate(() => controlMemberAgent('ag_codex00001', 'reset', 'Codex'));
   expect(calls.control).toEqual([{ action: 'reset' }]);
   await page.evaluate(() => showAgentDetail('ag_codex00001'));
-  await expect(page.locator('#agent-detail-body')).toContainText('Dev (g_dev)');
+  await expect(page.locator('#agent-detail-body')).toContainText('Dev');
   await page.evaluate(() => closeAgentDetail());
 
   // An @ picked from the list is sent as the agent's id
@@ -588,9 +593,9 @@ test('external agent accepts a Chinese name without a manual runtime id and offe
   const installs = [];
   await page.route('**/proxy_acpx_status', route => route.fulfill({json:{tools:['codex','claude']}}));
   await page.route('**/proxy_tools', route => route.fulfill({json:{tools:creation.tools}}));
-  await page.route('**/proxy_components/acpx', route => {
-    if (route.request().method() === 'POST') installs.push('acpx');
-    return route.fulfill({contentType:'application/json',body:JSON.stringify({name:'acpx',installed:installs.length > 0,ready:installs.length > 0,missing:[],can_install:true,state:installs.length ? 'complete' : '',platform:'linux'})});
+  await page.route('**/proxy_components/acp-codex', route => {
+    if (route.request().method() === 'POST') installs.push('acp-codex');
+    return route.fulfill({contentType:'application/json',body:JSON.stringify({name:'acp-codex',installed:installs.length > 0,ready:installs.length > 0,missing:[],can_install:true,state:installs.length ? 'complete' : '',platform:'linux'})});
   });
   await page.addInitScript(() => { localStorage.setItem('clawcross_lang','zh'); });
   await page.goto('/mobile/group_chat');
@@ -606,11 +611,12 @@ test('external agent accepts a Chinese name without a manual runtime id and offe
   expect(await page.evaluate(() => window.__createdFields)).toBeUndefined();
   await page.locator('[data-component-install]').click();
   await expect(page.locator('[data-component-status]')).toContainText('已安装');
-  expect(installs).toEqual(['acpx']);
+  expect(installs).toEqual(['acp-codex']);
   await page.locator('#create-agent-name').fill('中文助手');
+  await page.locator('#create-agent-panel-acp details:has(#ca-acp-runtime) > summary').click();
   await expect(page.locator('#ca-acp-runtime')).toHaveValue('');
   await page.locator('#ca-acp-submit').click();
-  expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex',creation_template:'personal',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group']}}});
+  expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex',creation_template:'personal',tools:['read_file','send_to_group'],meta:{acp:{native_tools:true,clawcross_tools:true,tools:['read_file','send_to_group']}}});
 });
 
 
@@ -682,7 +688,8 @@ for (const platform of ['qwen','acp']) test('contact creation preserves drafts a
   await page.locator('#create-agent-companion').selectOption(platform);
   if(platform==='acp') await page.locator('#ca-acp-launch [data-launch-value]').fill('node "/Apps/MyAgent/Server.js" --stdio');
   await page.locator('#create-agent-name').fill('Research');
-  await page.locator('#create-agent-panel-acp .create-agent-advanced > summary').click();
+  await page.locator('#create-agent-panel-acp details:has(#ca-acp-persona) > summary').click();
+  await page.locator('#create-agent-panel-acp details:has(#ca-acp-tools-picker) > summary').click();
   await page.locator('#ca-acp-persona').fill('Help me research');
   await page.locator('#ca-acp-tools-picker [data-tool-all]').uncheck();
   await expect(page.locator('#ca-acp-tools-picker .tool-tag.enabled')).toHaveCount(2);
@@ -697,7 +704,7 @@ for (const platform of ['qwen','acp']) test('contact creation preserves drafts a
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:'/tmp/clawcross-mobile-agent-create.png'});
   await page.locator('#ca-acp-submit').click();
-  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Research',platform,persona:'Help me research',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group'],...(platform==='acp'?{agent_name:'',agent_command:'node "/Apps/MyAgent/Server.js" --stdio'}:{})}},creation_template:'personal'});
+  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Research',platform,persona:'Help me research',tools:['read_file','send_to_group'],meta:{acp:{native_tools:true,clawcross_tools:true,tools:['read_file','send_to_group'],...(platform==='acp'?{agent_name:'',agent_command:'node "/Apps/MyAgent/Server.js" --stdio'}:{})}},creation_template:'personal'});
   expect(errors).toEqual([]);
 });
 

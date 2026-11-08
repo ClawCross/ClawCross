@@ -6,7 +6,8 @@ async function setup(page) {
   let approvals = [{approval_id: 'approval-live1', session_id: 's', status: 'pending',
     tool_name: 'run_command', args: {command: 'echo approved'}, request_reason: '请确认此操作', review: {reviewer: 'user'}}];
   const actions = [];
-  await page.route('**/studio', route => route.fulfill({contentType: 'text/html', body:
+  Object.defineProperty(actions,'errors',{value:[]});page.on('pageerror',error=>actions.errors.push(error.message));
+  await page.route('**/studio', route => route.fulfill({contentType: 'text/html; charset=utf-8', body:
     '<html lang="zh"><body><div id="studio-approval-strip"></div><div id="chat-box"></div><input id="input"><button id="send">发送</button></body></html>'}));
   await page.route('**/proxy_webot_tool_approvals?*', route => route.fulfill({json: {
     approvals: new URL(route.request().url()).searchParams.get('status') === 'pending' ? approvals.filter(item => item.status === 'pending') : approvals,
@@ -100,7 +101,7 @@ for (const surface of ['studio', 'mobile']) for (const reply of ['Y', 'N', 'KEEP
     } else {
       await page.evaluate(() => {
         inputField.id = 'msg-input';
-        window.currentGroupId = 'g'; window.currentMembers = [{agent: {agent_id:'s'}}];
+        window.groupReplyContext = null; window.currentGroupId = 'g'; window.currentMembers = [{agent: {agent_id:'s'}}];
         window.pendingAttachments = []; window.mcPendingAudios = []; window.selectedOasisContexts = [];
         window.selectedWorkflow = null; window.closeInputActions = () => {}; window.t = key => key; window.toast = () => {};
         window.refreshPendingApprovalsForCurrentGroup = refreshStudioApprovalStrip;
@@ -113,7 +114,7 @@ for (const surface of ['studio', 'mobile']) for (const reply of ['Y', 'N', 'KEEP
     }
     await page.locator(surface === 'studio' ? '#input' : '#msg-input').fill(reply);
     await page.locator('#send').click();
-    await expect.poll(() => actions.length).toBe(1);
+    await expect.poll(() => ({count:actions.length,errors:actions.errors})).toEqual({count:1,errors:[]});
     expect(actions[0]).toEqual({approval_id:'approval-live1', session_id:'s', action:reply === 'N' ? 'deny' : 'approve', remember:reply === 'KEEP Y'});
     await expect(page.locator('.cc-approval-disclosure')).toHaveJSProperty('open', false);
     expect(await page.evaluate(() => continuations)).toEqual([]);

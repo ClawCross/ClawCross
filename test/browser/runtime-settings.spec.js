@@ -250,7 +250,7 @@ test('sandbox install is explicit and does not enable the sandbox', async ({ pag
 test('desktop new agent can select an external runtime and persists that platform', async ({page}) => {
   const created = [];
   await page.route('**/proxy_visual/experts*',route => route.fulfill({contentType:'application/json',body:'[]'}));
-  await page.route('**/proxy_components/acpx',route => route.fulfill({contentType:'application/json',body:JSON.stringify({name:'acpx',installed:false,ready:false,missing:[],can_install:true,state:'',platform:'linux'})}));
+  await page.route('**/proxy_components/acp-codex',route => route.fulfill({contentType:'application/json',body:JSON.stringify({name:'acpx',installed:false,ready:false,missing:[],can_install:true,state:'',platform:'linux'})}));
   await page.route(/\/v1\/agents(?:\?.*)?$/, route => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON(); created.push(body);
@@ -261,7 +261,7 @@ test('desktop new agent can select an external runtime and persists that platfor
   await page.route(/\/v1\/agents\/[^/?]+$/,route => route.fulfill({status:404,contentType:'application/json',body:'{}'}));
   await page.route('**/v1/teams*',route => route.fulfill({contentType:'application/json',body:'{"data":[]}'}));
   await page.route('**/v1/agents/creation-templates',route=>route.fulfill({json:{data:creation.templates}}));
-  await page.goto('/studio');
+  await page.goto('/__test__/studio?embedded=1');
   await page.evaluate(() => handleNewSession());
   await page.locator('#studio-agent-advanced > summary').click();
   await page.locator('#agent-meta-platform').selectOption('codex');

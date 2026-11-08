@@ -2,9 +2,9 @@ const {test, expect} = require('@playwright/test');
 const path = require('node:path');
 test.use({launchOptions: {executablePath: process.env.CLAWCROSS_TEST_CHROME || '/usr/bin/google-chrome'}});
 
-async function setup(page, platform = 'codex') {
+async function setup(page, platform = 'codex', nativeTools = true) {
   const key = platform === 'claude' ? 'effort' : 'reasoning_effort';
-  const card = {platform, transport: 'acpx', clawcross_tools: false, settings: {}, config_options: [
+  const card = {platform, transport: 'acpx', clawcross_tools: false, native_tools: nativeTools, settings: {}, config_options: [
     {id: key, name: '思考强度', currentValue: 'medium', options: [{value:'low',name:'Low'},{value:'medium',name:'Medium'},{value:'high',name:'High'}]},
   ]};
   const writes = [];
@@ -16,12 +16,15 @@ async function setup(page, platform = 'codex') {
   await page.route('**/v1/agents/session-1/test-connection', route => route.fulfill({json:card}));
   await page.route('**/v1/agents/session-1/acp-settings', route => {
     const value = route.request().postDataJSON(); writes.push(value);
-    card.settings = {...card.settings, ...value}; card.clawcross_tools = value.clawcross_tools;
+    card.settings = {...card.settings, ...value};
+    if ('clawcross_tools' in value) card.clawcross_tools=value.clawcross_tools;
+    if ('native_tools' in value) card.native_tools=value.native_tools;
     return route.fulfill({json:card});
   });
   await page.goto('/studio');
   await page.evaluate(() => {window.currentSessionId = 'session-1';});
   await page.addStyleTag({path:path.resolve('src/frontend/static/css/external-agent-settings.css')});
+  await page.addScriptTag({path:path.resolve('src/frontend/static/js/components.js')});
   await page.addScriptTag({path:path.resolve('src/frontend/static/js/reasoning-levels.js')});
   await page.addScriptTag({path:path.resolve('src/frontend/static/js/acp-launch-settings.js')});
   await page.addScriptTag({path:path.resolve('src/frontend/static/js/external-agent-settings.js')});
@@ -44,7 +47,7 @@ test('ACP menu and settings follow native capabilities and save only this Agent'
   await page.locator('#external-tool-list').fill('get_current_time');
   await page.locator('[data-save]').click();
   await expect(page.locator('[data-status]')).toContainText('已保存');
-  expect(writes).toEqual([{config_options:{reasoning_effort:'high'},clawcross_tools:true,tools:['get_current_time'],timeout_sec:180,ttl_sec:300}]);
+  expect(writes).toEqual([{config_options:{reasoning_effort:'high'},clawcross_tools:true,native_tools:true,tools:['get_current_time'],timeout_sec:180,ttl_sec:300}]);
   await page.keyboard.press('Escape');
   await expect(page.locator('#external-agent-settings')).toHaveCount(0);
   await expect(page.locator('#return-focus')).toBeFocused();
@@ -60,6 +63,18 @@ test('Claude uses its own effort key and the dialog fits a mobile viewport', asy
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(390);
   expect(box.y + box.height).toBeLessThanOrEqual(844);
+});
+
+test('opening a saved ACP editor preserves disabled native tools without a settings write',async({page})=>{
+  const {writes}=await setup(page,'codex',false);
+  await page.evaluate(()=>openExternalAgentSettings('session-1'));
+  await expect(page.locator('[data-status]')).toContainText('连接成功');
+  await expect(page.locator('#external-native-tools')).not.toBeChecked();
+  expect(writes).toEqual([]);
+  await page.locator('#external-native-tools').check();
+  await page.locator('[data-test]').click();
+  await expect(page.locator('[data-status]')).toContainText('连接成功');
+  expect(writes).toEqual([{native_tools:true,clawcross_tools:false}]);
 });
 
 test('external settings delegate run mode and workspaces to their dedicated editors', async ({page}) => {
@@ -159,7 +174,7 @@ test('custom ACP launcher is saved per Agent and selecting it does not create a 
   await page.locator('[data-save]').click();
   await expect(page.locator('[data-status]')).toContainText('已保存');
   expect(created.platform).toBe('acp');
-  expect(created.meta.acp).toEqual({agent_name:'',agent_command:'node "/Apps/MyAgent/Server.js" --stdio'});
+  expect(created.meta.acp).toEqual({clawcross_tools:true,native_tools:true,agent_name:'',agent_command:'node "/Apps/MyAgent/Server.js" --stdio'});
 });
 
 test('an ACP draft can explicitly create its workspace settings without connecting or sending a message',async({page})=>{

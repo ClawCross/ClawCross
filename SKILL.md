@@ -531,14 +531,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-08T09:03:50.154940+00:00`
+- Updated at: `2026-11-08T10:03:04.305381+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `verification-loop-4`
-- Heuristic score: `0.886`
+- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
+- Heuristic score: `0.732`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: npx playwright test test/browser/conversation-workspace.spec.js --config playwright.config.mjs --workers=1 -g 'real embedded Studio renderer'. Signals: verification-loop. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: GitHub CLI package and isolated browser regression repair. Signals: verification-loop, approval-auth, structured-output. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -547,12 +547,12 @@ Command exited with code 1. Command: npx playwright test test/browser/conversati
 
 ### Latest Trigger Command
 
-`npx playwright test test/browser/conversation-workspace.spec.js --config playwright.config.mjs --workers=1 -g 'real embedded Studio renderer'`
+`GitHub CLI package and isolated browser regression repair`
 
 ### Latest Error Excerpt
 
 ```text
-Workflow layout regression assertion expected a canvas wider than 650px at the default 1280px viewport. Actual editor width is 1212px after the navigation rail; the 637px canvas already exceeds half the editor. Assert the actual requirement (canvas receives over half the editor and height over 350px) instead of a threshold derived from a larger viewport; keep testing the real renderer and do not execute the workflow.
+Windows PowerShell native array splatting removed literal double quotes even after JSON decoding; keep the JSON envelope intact until Python. Python subprocess protocol fixtures must configure PYTHONUTF8/PYTHONIOENCODING and decode UTF-8 explicitly. Browser tests for the former standalone Studio need a test-only component route while unified shell behavior stays covered end-to-end. Block Service Workers in mocked API browser suites and set deterministic locale; automatic browser-language detection requires separate explicit locale tests. Update stale fixture contracts for ACP adapter components, profile editing and authoritative message IDs; preserve security and approval behavior assertions.
 ```
 
 ### Governance Snapshot
@@ -564,22 +564,25 @@ Workflow layout regression assertion expected a canvas wider than 650px at the d
 
 ### Operating Adjustments
 
-1. State the exact failure mode before editing anything.
-2. Choose the narrowest reproducer first, then a broader regression command.
-3. Record pass/fail status immediately after each attempted fix.
+1. Start from the narrowest reproducible failure before broad retries.
+2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
+3. End every fix attempt with an explicit verifier command and observed result.
 
 ### Validation Loop
 
-1. Rerun the minimal reproducer before any broad test suite.
-2. When a fix passes, note the exact verifier command in the skill.
+1. Run the minimal reproducer first, then the broader regression command.
+2. Persist the command and result summary in the evolution report.
 
 ### Recent Evidence
 
-- `2026-11-08T09:03:50.154940+00:00` `repo-skill` — Workflow layout regression assertion expected a canvas wider than 650px at the default 1280px viewport. Actual editor width is 1212px after th ...[truncated]
+- `2026-11-08T10:03:04.305381+00:00` `repo-skill` — Windows PowerShell native array splatting removed literal double quotes even after JSON decoding; keep the JSON envelope intact until Python. ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `verification-loop-4` score `0.886` — Tighten verification loops (intent `repair`)
+- `blended-verification-loop-approval-auth-structured-output` score `0.732` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-3` score `0.692` — Tighten verification loops (intent `repair`)
+- `approval-auth-2` score `0.643` — Preflight auth and approval constraints (intent `repair`)
+- `structured-output-2` score `0.643` — Harden structured-output handling (intent `repair`)
 
 ### Local State Snapshot
 

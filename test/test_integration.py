@@ -142,7 +142,14 @@ class FrontendIntegrationTests(unittest.TestCase):
         html = response.get_data(as_text=True)
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('class="page-tab active" id="tab-chat"', html)
+        self.assertIn('id="tab-chats"', html)
+        self.assertIn('id="workspace-agent-list"', html)
+        self.assertIn('/static/js/conversation-workspace.js', html)
+        self.assertNotIn('class="mobile-studio-header-link"', html)
+        response = self.client.get('/studio?embedded=1')
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('id="tab-chat"', html)
         self.assertIn('id="page-chat" class="chat-page" style="display:flex;"', html)
         self.assertIn('id="tab-orchestrate"', html)
         self.assertIn('id="settings-modal"', html)
@@ -155,7 +162,7 @@ class FrontendIntegrationTests(unittest.TestCase):
         self.assertIn('class="studio-conversation-switcher"', html)
         self.assertIn('id="webot-policy-editor"', html)
         self.assertIn("/static/js/orchestration.js", html)
-        self.assertIn("/static/js/tinyfish-live-shared.js", html)
+        self.assertIn("/static/js/studio-embedded.js", html)
 
     def test_proxy_check_session_missing_session_is_soft_false(self):
         with self.client.session_transaction() as session:

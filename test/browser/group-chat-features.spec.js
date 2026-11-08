@@ -324,6 +324,7 @@ test('Create offers conversation-based creation and preserves manual resources a
     }
     for(const action of ['/studio?compose=team','/studio?compose=app']){
       const button=page.locator('.create-shortcut[href="'+action+'"]');
+      await button.scrollIntoViewIfNeeded();
       await expect(button).toBeInViewport({ratio:1});
       const box=await button.boundingBox(),tabs=await page.locator('.tab-bar').boundingBox();
       if(size.width<=600) expect(box.y+box.height).toBeLessThanOrEqual(tabs.y);
@@ -623,7 +624,7 @@ test('guest history search quotes older messages and preserves the reference on 
       const body=request.postDataJSON();expect(body.reply_to).toBe(2);
       if(++attempts===1) return route.fulfill({status:503,json:{error:'暂时断线'}});
       messages.push({id:101,sender:'bob',sender_name:'Bob',content:body.content,reply_to:2,reply:{id:2,sender_name:'Alice',content:'旧消息 <script>bad</script>'},created_at:1790000010});
-      return route.fulfill({json:{created:true}});
+      return route.fulfill({json:{id:101,created:true}});
     }
     return route.fulfill({json:{}});
   });
@@ -660,6 +661,7 @@ for (const viewport of [{width:390,height:844},{width:360,height:640}]) {
     await page.route('**/proxy_tunnel/status',route=>route.fulfill({json:{running:false,provider:'hub',public_domain:''}}));
     await page.evaluate(()=>openSettings());
     const modal=page.locator('#settings-modal');
+    await page.locator('[data-open-settings=models]').click();
     await expect(page.getByLabel('默认模型',{exact:true})).toHaveValue('mobile-model');
     await page.getByLabel('默认模型',{exact:true}).fill('mobile-draft');
     await modal.screenshot({path:`/tmp/clawcross-settings-mobile-${viewport.width}.png`});

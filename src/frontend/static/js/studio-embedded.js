@@ -29,9 +29,9 @@
     document.documentElement.classList.toggle('studio-agents-visible',!!open);rail.open=!!open;
     parent.postMessage({type:'clawcross:studio-sidebar',open:!!open},location.origin);
   }
-  document.querySelector('.studio-conversation-switcher')?.addEventListener('toggle',event=>{
+  document.addEventListener('DOMContentLoaded',()=>document.querySelector('.studio-conversation-switcher')?.addEventListener('toggle',event=>{
     if(!event.target.open&&document.documentElement.classList.contains('studio-agents-visible'))sidebar(false);
-  });
+  }));
   document.addEventListener('clawcross:agent-selected',event=>parent.postMessage({type:'clawcross:studio-selection',agentId:event.detail.agentId},location.origin));
   document.addEventListener('keydown',event=>{if(event.key==='Escape')sidebar(false);});
   let queue=Promise.resolve();

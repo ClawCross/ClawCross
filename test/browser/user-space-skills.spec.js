@@ -33,7 +33,7 @@ test('Studio separates fixed user space and loads Skill edits by directory key',
     await page.goto('/studio');
     await page.addStyleTag({path:path.resolve('src/frontend/static/css/style.css')});
     await page.addScriptTag({path:path.resolve('src/frontend/static/js/workspace-settings.js')});
-    await page.addScriptTag({content: helpers + `let currentGroupId='__default__'; let currentLang='zh';
+    await page.addScriptTag({content: helpers + `let currentGroupId='__default__'; let currentLang='zh-CN';
         let _teamSkillCurrentName=''; let _teamSkillCurrentScope='personal';` +
         between(main, 'function renderGroupList(', 'async function openGroup(') +
         between(main, 'async function loadTeamExperts(', '// ── Team Skills') +
@@ -41,7 +41,7 @@ test('Studio separates fixed user space and loads Skill edits by directory key',
     await page.evaluate(() => {renderGroupList(['project','__default__']); return loadTeamSkills();});
     const fixed = page.locator('#group-list .group-item').first();
     await expect(fixed).toContainText('用户空间');
-    await expect(fixed).toContainText('固定视图');
+    await expect(fixed).toContainText('固定个人总览');
     await expect(fixed.locator('button')).toHaveCount(0);
     await expect(page.locator('[data-team="project"] button')).toHaveCount(2);
     await page.locator('#team-skills-list button', {hasText:'中文显示名'}).click();

@@ -23,7 +23,7 @@ for (const mobile of [false, true]) {
         if (data.content.includes('@Alice')) expect(data.mentions).toEqual(['alice']);
         messages.push({id:messages.length+1,sender:'bob',sender_name:'Bob',content:data.content,created_at:1790000010}); result={id:messages.length};
       }
-      if (action === 'rename') {renamed=true;result={name:'Carol'};}
+      if (action === 'profile') {expect(route.request().postDataJSON().name).toBe('Carol');renamed=true;result={name:'Carol'};}
       await route.fulfill({status,contentType:'application/json',body:JSON.stringify(result)});
     });
     await page.goto('/group-guest#test-invite');
@@ -52,7 +52,13 @@ for (const mobile of [false, true]) {
     await page.locator('#text').fill('删掉提及');
     await page.getByRole('button',{name:'发送',exact:true}).click();
     await expect(page.locator('#messages')).toContainText('删掉提及');
-    page.once('dialog', dialog => dialog.accept('Carol')); await page.getByRole('button',{name:'改名',exact:true}).click();
+    await page.getByRole('button',{name:'我的资料',exact:true}).click();
+    const profile=page.getByRole('dialog',{name:'个人资料',exact:true});
+    await profile.getByRole('button',{name:'编辑我的资料',exact:true}).click();
+    await profile.getByLabel('群昵称').fill('Carol');
+    await profile.getByRole('button',{name:'保存',exact:true}).click();
+    await expect(profile).toContainText('资料已更新');
+    await profile.getByRole('button',{name:'关闭',exact:true}).click();
     await expect(page.locator('#status')).toContainText('Carol');
     await page.reload(); await expect(page.locator('#chat')).toBeVisible();
     expect(joins).toBe(2);

@@ -11,7 +11,7 @@ async function fixtures(page){
 }
 
 test('Studio settings have a readable centered dialog and accessible actions',async({page})=>{
-  const writes=await fixtures(page);await page.setViewportSize({width:1280,height:900});await page.goto('/studio');
+  const writes=await fixtures(page);await page.setViewportSize({width:1280,height:900});await page.goto('/__test__/studio?embedded=1');
   await page.evaluate(()=>openSettings());await expect(page.locator('#configuration-assistant')).toContainText('配置助手');
   const dialog=page.locator('#settings-modal .settings-modal');await expect(dialog).toBeVisible();
   const bounds=await dialog.boundingBox();expect(bounds.width).toBeGreaterThan(600);expect(bounds.x+bounds.width).toBeLessThanOrEqual(1280);
