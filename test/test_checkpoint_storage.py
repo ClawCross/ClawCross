@@ -16,12 +16,39 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from webot.engine.lightweight_agent_runtime import AgentRecursionError, LightweightAgentRuntime
 from webot.checkpoint_paths import checkpoint_db_path_for_thread
 from webot.checkpoint_repository import delete_thread_records, delete_thread_records_like, list_thread_ids_by_prefix
-from webot.context_store import ContextStore
+from webot.context_store import ContextStore, fetch_context_message_page
 from webot.context import assemble_input_messages
 from webot.session_search import session_search
 
 
 class CheckpointStorageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_history_pages_decode_only_the_requested_tail_and_keep_cursors_during_appends(self):
+        from unittest.mock import patch
+        import webot.context_store as contexts
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            async with ContextStore(root) as store:
+                await store.append_messages('alice#long', [HumanMessage(content=f'm{i}') for i in range(1000)])
+                with patch.object(contexts, '_decode_message', wraps=contexts._decode_message) as decode:
+                    recent = await fetch_context_message_page(root, 'alice#long', limit=40)
+                    self.assertEqual(decode.call_count,40)
+                self.assertEqual([m.content for m in recent['messages']], [f'm{i}' for i in range(960,1000)])
+                await store.append_messages('alice#long',[HumanMessage(content='new')])
+                older = await fetch_context_message_page(root, 'alice#long', limit=40, before=recent['next_before'])
+                self.assertEqual([m.content for m in older['messages']], [f'm{i}' for i in range(920,960)])
+                first = await fetch_context_message_page(root,'alice#long',limit=40,before=40)
+                self.assertFalse(first['has_more'])
+                self.assertIsNone(first['next_before'])
+                from webot.api.session_service import SessionService
+                from types import SimpleNamespace
+                from unittest.mock import AsyncMock
+                engine = SimpleNamespace(agent_app=SimpleNamespace(aget_state=AsyncMock(side_effect=AssertionError('full context load'))))
+                service = SessionService(db_path=str(root),agent=engine,extract_text=str)
+                page = await service.message_page('alice','long',40)
+                self.assertEqual(len(page['messages']),40)
+                self.assertEqual(page['messages'][-1]['content'],'new')
+                engine.agent_app.aget_state.assert_not_awaited()
+
     async def test_runtime_state_transition_survives_restart_without_polluting_history(self):
         with TemporaryDirectory() as tmpdir:
             checkpoint_dir = Path(tmpdir) / "agent_checkpoints"

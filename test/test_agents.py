@@ -50,6 +50,8 @@ class StoreCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.store = AgentStore(Path(self.tmp.name) / "agents.db")
+        self.enterContext(mock.patch('external.acp_direct.DirectAdapter',
+            side_effect=AssertionError('Unit tests must inject an ACP adapter; native processes are forbidden')))
 
     def webot(self, owner="alice", name="Coder", session="s1", **config):
         return self.store.create(owner, driver=WEBOT, config=config, name=name, agent_id=session)
@@ -98,7 +100,7 @@ class TestStore(StoreCase):
 
 
 class _Acpx:
-    """The acpx adapter as the ACP runtime uses it; ``calls`` holds each prompt's arguments."""
+    """ACP adapter test double; ``calls`` holds each prompt's arguments."""
 
     def __init__(self, text: str = "ok"):
         self.calls = []
@@ -172,8 +174,7 @@ class TestGateway(StoreCase):
         self.acpx = _Acpx()
         _Http.posts = []
         for target, value in (("webot.profiles.frame_session_identity", lambda *a: "PERSONA"),
-                              ("external.acpx.get_acpx_adapter", lambda *a, **k: self.acpx),
-                              ("ops.components.binary_path", lambda component: "/fixture/acpx" if component == "acpx" else None),
+                              ("external.acp.adapter", lambda *a, **k: self.acpx),
                               ("external.http.httpx.AsyncClient", _Http),
                               ("external.history._STORE", None)):
             patcher = mock.patch(target, value)
@@ -576,6 +577,36 @@ class ApiCase(StoreCase):
 
 
 class TestAgentsApi(ApiCase):
+    def test_directory_and_activity_expose_owned_message_times_without_runtime_probes(self):
+        self.webot(owner='alice')
+        self.webot(owner='bob')
+        with mock.patch('agents.message_activity.message_times', return_value={'s1':123}) as times:
+            self.assertEqual(self.call('GET','/v1/agents').json()['data'][0]['last_message_at'],123)
+            self.assertEqual(self.call('GET','/v1/agents/activity').json()['data'][0]['last_message_at'],123)
+        self.assertTrue(all([agent.owner for agent in call.args[0]] == ['alice'] for call in times.call_args_list))
+        self.gateway.ask.assert_not_awaited()
+
+    def test_webot_history_uses_the_paged_reader_with_an_owner_scoped_cursor(self):
+        agent = self.webot()
+        sessions = self.gateway.runtime(agent).sessions
+        page = mock.AsyncMock(return_value={'messages':[{'role':'assistant','content':'recent'}],
+                                           'has_more':True,'next_before':920})
+        with mock.patch.object(sessions,'message_page',page,create=True), \
+             mock.patch.object(sessions,'messages',mock.AsyncMock(side_effect=AssertionError('full history')),create=True):
+            response = self.call('GET','/v1/agents/s1/history?limit=40&before=960')
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json()['next_before'],920)
+        page.assert_awaited_once_with('alice','s1',40,960)
+
+    def test_http_agent_history_keeps_older_pages_available(self):
+        agent = self.store.create('alice',driver=HTTP,config={'platform':'custom'})
+        with mock.patch('external.session.log_page',mock.AsyncMock(return_value={
+                'messages':[],'has_more':True,'next_before':960})) as page:
+            response = self.call('GET',f'/v1/agents/{agent.agent_id}/history?limit=40&before=1000')
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json()['next_before'],960)
+        page.assert_awaited_once_with(agent,40,1000)
+
     def test_archive_keeps_identity_and_can_be_restored(self):
         agent = self.store.create('alice', driver=WEBOT, name='My companion')
         url = '/v1/agents/' + agent.agent_id

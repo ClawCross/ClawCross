@@ -377,22 +377,31 @@ def create_agents_router(
             agents = [a for a in agents if not a.config.get('archived')]
         if platform:
             agents = [a for a in agents if a.platform == canonical_platform(platform)]
+        import asyncio
+        from agents.message_activity import message_times
+        times = await asyncio.to_thread(message_times, agents)
         if status:
-            import asyncio
             cards = await asyncio.gather(*(with_status(a) for a in agents))
         else:
             cards = [agent_card(a) for a in agents]
+        for card in cards:
+            card['last_message_at'] = times.get(card['agent_id'], 0)
         return {"object": "list", "data": list(cards)}
 
     @router.get('/v1/agents/activity')
     async def agent_activity(authorization: str | None = Header(None)):
-        """Live states without adapter probes, history reads or membership scans."""
+        """Live states and cached message times without adapter probes or full history loads."""
+        import asyncio
+        from agents.message_activity import message_times
         from agents.runtime import Runtime
+        agents = store.list(user_of(authorization))
+        times = await asyncio.to_thread(message_times, agents)
         states = []
-        for agent in store.list(user_of(authorization)):
+        for agent in agents:
             runtime = gateway.runtime(agent)
             state = 'unknown' if type(runtime).is_busy is Runtime.is_busy else ('running' if runtime.is_busy(agent) else 'idle')
-            states.append({'agent_id':agent.agent_id, 'name':agent.name, 'state':state})
+            states.append({'agent_id':agent.agent_id, 'name':agent.name, 'state':state,
+                           'last_message_at':times.get(agent.agent_id, 0)})
         return {'data':states}
 
     @router.get('/v1/agents/model-profiles')
@@ -701,12 +710,17 @@ def create_agents_router(
     async def agent_history(ref: str, limit: int = Query(200, ge=1, le=1000), source: Literal['clawcross', 'acpx'] = Query('clawcross'), before: int | None = Query(None), authorization: str | None = Header(None)):
         agent = lookup(user_of(authorization), ref)
         try:
-            if agent.driver == ACPX and source == 'clawcross':
+            if agent.driver in (ACPX, HTTP) and source == 'clawcross':
                 from external.session import log_page
                 return {'agent':agent_card(agent), 'source':source,
                         'native_history':agent.runtime.get('native_history') or {},
                         'can_load_native':bool(agent.runtime.get('native_resume_id')),
                         **await log_page(agent, limit, before)}
+            if agent.driver == WEBOT and source == 'clawcross':
+                sessions = getattr(gateway.runtime(agent), 'sessions', None)
+                if callable(getattr(sessions, 'message_page', None)):
+                    return {'agent':agent_card(agent), 'source':source,
+                            **await sessions.message_page(agent.owner, agent.agent_id, limit, before)}
             messages = await gateway.history(agent, limit, source=source) if source == 'acpx' else await gateway.history(agent, limit)
             return {"agent": agent_card(agent), "messages": messages, "source": source}
         except ControlError as exc:

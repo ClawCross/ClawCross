@@ -64,6 +64,10 @@ jobs:
         run: >
           .venv/bin/python -m pytest
           test/test_agent_runtime_state.py
+          test/test_agent_message_activity.py
+          test/test_agents.py
+          test/test_checkpoint_storage.py
+          test/test_external_agent_history.py
           test/test_openai_protocol.py
           test/test_configure_openclaw_sync.py
           test/test_team_creator_jobs.py

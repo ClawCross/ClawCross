@@ -10,8 +10,9 @@
       const response = await fetch('/v1/agents/activity');
       if (!response.ok) return;
       const states = new Map(((await response.json()).data || []).map(agent=>[agent.agent_id,agent]));
+      document.dispatchEvent(new CustomEvent('clawcross:agent-activity',{detail:[...states.values()]}));
       const english = document.documentElement.lang.startsWith('en');
-      for (const row of rows) {
+      for (const row of document.querySelectorAll('[data-agent-activity], [data-group-agent-ids]')) {
         if (row.dataset.agentActivity) {
           const state = states.get(row.dataset.agentActivity)?.state || 'unknown';
           row.dataset.activityState = state;

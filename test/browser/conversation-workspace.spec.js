@@ -159,16 +159,18 @@ test('large directories keep groups reachable and the Agent center fills the mai
  expect(errors).toEqual([]);
 });
 
-test('two Agent shortcuts keep a fixed order across selection, refresh and reload',async({page})=>{
- const {errors}=await fixtures(page,{agents:largeDirectory.map(a=>({...a,updated_at:a.agent_id==='agent-20'?99999999:1})),groups:[{group_id:'g1',title:'我的伙伴',kind:'direct',member_count:2,members:[]}]});
+test('two Agent shortcuts follow latest messages, while clicks and settings do not reorder them',async({page})=>{
+ const directory=largeDirectory.map(a=>({...a,updated_at:a.agent_id==='agent-20'?99999999:1,
+  last_message_at:a.agent_id==='agent-17'?200:a.agent_id==='agent-8'?100:0}));
+ const {errors}=await fixtures(page,{agents:directory,groups:[{group_id:'g1',title:'我的伙伴',kind:'direct',member_count:2,members:[]}]});
  await page.addInitScript(()=>localStorage.setItem('clawcross_recent_agents:workspace-test',JSON.stringify({'agent-17':20,'agent-8':10})));
  await page.goto('/mobile/group_chat');
  const ids=()=>page.locator('#workspace-agent-list button').evaluateAll(rows=>rows.map(row=>row.dataset.agentId));
- await expect.poll(ids).toEqual(['agent-0','agent-1']);
+ await expect.poll(ids).toEqual(['agent-17','agent-8']);
  await expect(page.locator('#workspace-agent-collapse')).toContainText('我的 Agent');
  await expect(page.locator('#group-list-container .group-item')).toHaveCount(1);
- await page.locator('[data-agent-id="agent-1"]').click();
- await expect.poll(ids).toEqual(['agent-0','agent-1']);
+ await page.locator('[data-agent-id="agent-8"]').click();
+ await expect.poll(ids).toEqual(['agent-17','agent-8']);
  await page.evaluate(()=>ConversationWorkspace.hide());
  await page.locator('[data-chat-view="agents"]').click();
  const allIds=await ids();
@@ -178,7 +180,11 @@ test('two Agent shortcuts keep a fixed order across selection, refresh and reloa
  await expect.poll(ids).toEqual(allIds);
  await page.reload();await expect.poll(ids).toEqual(allIds);
  await page.locator('[data-chat-view="all"]').click();
- await expect.poll(ids).toEqual(['agent-0','agent-1']);
+ await expect.poll(ids).toEqual(['agent-17','agent-8']);
+ await page.route('**/v1/agents/activity',route=>route.fulfill({json:{data:directory.map(a=>({agent_id:a.agent_id,state:'idle',
+  last_message_at:a.agent_id==='agent-20'?300:a.last_message_at}))}}));
+ await page.evaluate(()=>AgentActivity.refresh());
+ await expect.poll(ids).toEqual(['agent-20','agent-17']);
  expect(errors).toEqual([]);
 });
 
@@ -213,6 +219,29 @@ test('WeBot history renders before a slow runtime status request',async({page})=
   await expect(page.frameLocator('#workspace-studio-frame').locator('#chat-box')).toContainText('WeBot history ready',{timeout:3000});
   await expect(page.locator('#workspace-conversation .workspace-frame-status')).toBeHidden({timeout:1000});
  }finally{release();}
+ expect(errors).toEqual([]);
+});
+
+for(const platform of ['webot','codex'])test(`${platform} opens a bounded history page and loads older messages on demand`,async({page})=>{
+ const {errors}=await fixtures(page);await page.route('**/studio?embedded=1',route=>route.continue());
+ const agent=agents.find(a=>a.platform===platform),requests=[];
+ await page.route('**/proxy_acpx_status',route=>route.fulfill({json:{available:true,transport:'direct',tools:['codex']}}));
+ await page.route(`**/v1/agents/${agent.agent_id}/history**`,route=>{
+  const params=new URL(route.request().url()).searchParams;requests.push({limit:params.get('limit'),before:params.get('before')});
+  const older=params.has('before');
+  return route.fulfill({json:{messages:older?[{role:'user',content:'Earlier prompt'},{role:'assistant',content:'Earlier reply'}]:
+   [{role:'user',content:'Recent prompt'},{role:'assistant',content:'Recent reply'}],has_more:!older,next_before:older?null:960}});
+ });
+ await page.goto('/mobile/group_chat');await page.locator(`[data-agent-id="${agent.agent_id}"]`).click();
+ const studio=page.frameLocator('#workspace-studio-frame');
+ await expect(studio.locator('#chat-box')).toContainText('Recent reply');
+ expect(requests).toEqual([{limit:'40',before:null}]);
+ await expect(studio.locator('#chat-box')).not.toContainText('Earlier reply');
+ await studio.locator('[data-history-older]').click();
+ await expect(studio.locator('#chat-box')).toContainText('Earlier reply');
+ await expect(studio.locator('#chat-box')).toContainText('Recent reply');
+ await expect(studio.locator('[data-history-older]')).toHaveCount(0);
+ expect(requests[1]).toEqual({limit:'40',before:'960'});
  expect(errors).toEqual([]);
 });
 

@@ -249,6 +249,21 @@ class StoreTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([row["content"] for row in older["rows"]][0], "q0")
             self.assertFalse(older["has_more"])
 
+    async def test_one_huge_tool_turn_does_not_expand_the_first_page_to_the_entire_turn(self):
+        with TemporaryDirectory() as tmp:
+            store = ExternalAgentHistoryStore(tmp)
+            rid = await store.record_send(platform='codex', session_key='long',connect_type='acp',prompt='large task',options=None)
+            items = [{'id':f't{i}','kind':'tool','title':'Read','status':'completed','input':None,'output':str(i)} for i in range(2000)]
+            items.append({'id':'answer','kind':'text','text':'done'})
+            await store.record_recv(platform='codex',session_key='long',connect_type='acp',request_id=rid,
+                ok=True,content='done',raw_response={'items':items},error=None,options=None)
+            page = await store.message_page(platform='codex',session_key='long',limit=40)
+            self.assertEqual(len(page['rows']),40)
+            self.assertEqual(page['rows'][-1]['content'],'done')
+            older = await store.message_page(platform='codex',session_key='long',limit=40,before=page['next_before'])
+            self.assertEqual(len(older['rows']),40)
+            self.assertLess(older['rows'][-1]['rowid'],page['rows'][0]['rowid'])
+
     async def test_purge_keeps_last_n(self):
         with TemporaryDirectory() as tmp:
             store = ExternalAgentHistoryStore(tmp)

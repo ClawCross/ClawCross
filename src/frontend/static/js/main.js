@@ -4982,8 +4982,8 @@ async function switchToSession(sessionId, force = false, options = {}) {
         chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
     }
     try {
-        // The messages first: reading them brings the session's context use up to date.
-        const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(sessionId)}/history?limit=1000`)
+        // Show a bounded page before loading optional status indicators.
+        const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(sessionId)}/history?limit=40`)
             .catch(e => { if (e.status === 404) return {messages: []}; throw e; });
         if (stale()) return;
         // History is useful immediately; context/mode indicators can arrive
@@ -5002,65 +5002,72 @@ async function switchToSession(sessionId, force = false, options = {}) {
             return;
         }
 
-        const parts = [];
-        const uiPanels = [];
-        for (const msg of data.messages) {
-            if (msg.role === 'user') {
-                // 支持多模态历史消息（content 可能是 string 或 array）
-                let textContent = '';
-                let imagesHtml = '';
-                if (typeof msg.content === 'string') {
-                    textContent = msg.content;
-                } else if (Array.isArray(msg.content)) {
-                    for (const part of msg.content) {
-                        if (part.type === 'text') textContent = part.text || '';
-                        else if (part.type === 'image_url') {
-                            imagesHtml += `<img src="${part.image_url.url}" class="chat-inline-image">`;
+        const renderPage = messages => {
+            const parts = [];
+            const uiPanels = [];
+            for (const msg of messages) {
+                if (msg.role === 'user') {
+                    // 支持多模态历史消息（content 可能是 string 或 array）
+                    let textContent = '';
+                    let imagesHtml = '';
+                    if (typeof msg.content === 'string') {
+                        textContent = msg.content;
+                    } else if (Array.isArray(msg.content)) {
+                        for (const part of msg.content) {
+                            if (part.type === 'text') textContent = part.text || '';
+                            else if (part.type === 'image_url') {
+                                imagesHtml += `<img src="${part.image_url.url}" class="chat-inline-image">`;
+                            }
                         }
                     }
+                    parts.push(`
+                        <div class="flex justify-end">
+                            <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
+                                ${imagesHtml}${imagesHtml ? '<div style="margin-top:6px">' : ''}${RuntimePresentation.user(textContent || '('+t('image_placeholder')+')', msg)}${imagesHtml ? '</div>' : ''}
+                            </div>
+                        </div>`);
+                } else if (msg.role === 'tool') {
+                    const panel = parseConversationUiPanel(msg.content);
+                    if (panel) {
+                        const index = uiPanels.push(panel) - 1;
+                        parts.push(`<div data-ui-panel-index="${index}"></div>`);
+                        continue;
+                    }
+                    parts.push(`
+                        <div class="flex justify-start">
+                            <div class="bg-gray-100 border border-dashed border-gray-300 p-3 max-w-[85%] shadow-sm text-xs text-gray-500 rounded-lg">
+                                <div class="font-semibold text-gray-600 mb-1">🔧 ${t('tool_return')}: ${escapeHtml(msg.tool_name || '')}</div>
+                                ${RuntimePresentation.tool(renderToolPager(msg.content, { title: t('tool_full_output') }), msg.tool_name || '工具轨迹')}
+                            </div>
+                        </div>`);
+                } else {
+                    const toolCallsHtml = renderToolCallDetails(msg.tool_calls);
+                    parts.push(`
+                        <div class="flex justify-start">
+                            <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown" data-tts-ready="1">
+                                ${toolCallsHtml}${msg.content ? renderMarkdown(msg.content) : ''}
+                            </div>
+                        </div>`);
                 }
-                parts.push(`
-                    <div class="flex justify-end">
-                        <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
-                            ${imagesHtml}${imagesHtml ? '<div style="margin-top:6px">' : ''}${RuntimePresentation.user(textContent || '('+t('image_placeholder')+')', msg)}${imagesHtml ? '</div>' : ''}
-                        </div>
-                    </div>`);
-            } else if (msg.role === 'tool') {
-                const panel = parseConversationUiPanel(msg.content);
-                if (panel) {
-                    const index = uiPanels.push(panel) - 1;
-                    parts.push(`<div data-ui-panel-index="${index}"></div>`);
-                    continue;
-                }
-                parts.push(`
-                    <div class="flex justify-start">
-                        <div class="bg-gray-100 border border-dashed border-gray-300 p-3 max-w-[85%] shadow-sm text-xs text-gray-500 rounded-lg">
-                            <div class="font-semibold text-gray-600 mb-1">🔧 ${t('tool_return')}: ${escapeHtml(msg.tool_name || '')}</div>
-                            ${RuntimePresentation.tool(renderToolPager(msg.content, { title: t('tool_full_output') }), msg.tool_name || '工具轨迹')}
-                        </div>
-                    </div>`);
-            } else {
-                const toolCallsHtml = renderToolCallDetails(msg.tool_calls);
-                parts.push(`
-                    <div class="flex justify-start">
-                        <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown" data-tts-ready="1">
-                            ${toolCallsHtml}${msg.content ? renderMarkdown(msg.content) : ''}
-                        </div>
-                    </div>`);
             }
-        }
-        chatBox.innerHTML = parts.join('');
-        chatBox.querySelectorAll('[data-ui-panel-index]').forEach(node => {
-            node.replaceWith(createConversationUiPanel(uiPanels[Number(node.dataset.uiPanelIndex)]));
-        });
-        // 为历史 AI 消息添加朗读按钮
-        chatBox.querySelectorAll('[data-tts-ready="1"]').forEach(div => {
-            div.removeAttribute('data-tts-ready');
-            const ttsBtn = createTtsButton(() => extractTtsTextFromElement(div));
-            div.appendChild(ttsBtn);
-        });
-        // 高亮代码块
-        highlightMarkdownIn(chatBox);
+            const template = document.createElement('template');
+            template.innerHTML = parts.join('');
+            const fragment = template.content;
+            fragment.querySelectorAll('[data-ui-panel-index]').forEach(node => {
+                node.replaceWith(createConversationUiPanel(uiPanels[Number(node.dataset.uiPanelIndex)]));
+            });
+            // 为历史 AI 消息添加朗读按钮
+            fragment.querySelectorAll('[data-tts-ready="1"]').forEach(div => {
+                div.removeAttribute('data-tts-ready');
+                const ttsBtn = createTtsButton(() => extractTtsTextFromElement(div));
+                div.appendChild(ttsBtn);
+            });
+            // 高亮代码块
+            highlightMarkdownIn(fragment);
+            return fragment;
+        };
+        chatBox.replaceChildren(renderPage(data.messages));
+        ClawcrossNativeSessions.attachHistoryPager({agentId:sessionId,container:chatBox,nextBefore:data.next_before,render:renderPage});
         scrollChatToBottom(chatBox, { force: true });
     } catch (e) {
         if (stale()) return;
@@ -15327,7 +15334,7 @@ const studioHistoryCursors = new Map();
 
 async function studioAgentHistoryHtml(agentId) {
     try {
-        const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(agentId)}/history?limit=200`);
+        const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(agentId)}/history?limit=40`);
         studioHistoryCursors.set(agentId, data.next_before);
         return studioHistoryHtml(data.messages || []) || null;
     } catch (e) {

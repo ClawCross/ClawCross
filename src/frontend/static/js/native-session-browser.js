@@ -91,7 +91,7 @@
         select.focus();
     }
     async function historyRequest(agentId, before) {
-        const response=await fetch('/v1/agents/'+encodeURIComponent(agentId)+'/history?limit=200'+(before != null ? '&before='+encodeURIComponent(before) : ''));
+        const response=await fetch('/v1/agents/'+encodeURIComponent(agentId)+'/history?limit=40'+(before != null ? '&before='+encodeURIComponent(before) : ''));
         const data=await response.json();
         if(!response.ok) throw new Error(data.detail || text('读取失败','Failed to load'));
         return data;
@@ -108,7 +108,9 @@
                 if(!container.isConnected || !button.isConnected) return;
                 const oldHeight=container.scrollHeight;
                 const oldTop=container.scrollTop;
-                button.insertAdjacentHTML('afterend', render(data.messages || []));
+                const content=render(data.messages || []);
+                if(typeof content==='string')button.insertAdjacentHTML('afterend', content);
+                else button.after(content);
                 nextBefore=data.next_before;
                 container.scrollTop=oldTop+container.scrollHeight-oldHeight;
                 if(nextBefore == null) button.remove();

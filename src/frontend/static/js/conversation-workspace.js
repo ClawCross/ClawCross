@@ -69,7 +69,8 @@
     const list=document.getElementById('workspace-agent-list');if(!list)return;
     const keyword=document.getElementById('chat-search-input')?.value.trim().toLowerCase()||'';
     const rows=agents.filter(a=>[a.name,a.platform,a.settings?.title].some(v=>String(v||'').toLowerCase().includes(keyword)))
-      .sort((a,b)=>(Number(a.created_at)||0)-(Number(b.created_at)||0)||a.agent_id.localeCompare(b.agent_id,undefined,{numeric:true}));
+      .sort((a,b)=>(Number(b.last_message_at)||0)-(Number(a.last_message_at)||0)
+        ||(Number(a.created_at)||0)-(Number(b.created_at)||0)||a.agent_id.localeCompare(b.agent_id,undefined,{numeric:true}));
     const section=document.getElementById('workspace-agent-section');section.hidden=chatView==='groups'||(!rows.length&&!keyword);
     const collapse=document.getElementById('workspace-agent-collapse');collapse?.setAttribute('aria-expanded',String(!agentsCollapsed));
     list.hidden=agentsCollapsed;list.replaceChildren();
@@ -194,6 +195,15 @@
   document.addEventListener('clawcross:appearance',localize);
   document.addEventListener('clawcross:language',()=>{localize();renderAgents();});
   addEventListener('agent-settings-changed',()=>void refresh(true));
+  document.addEventListener('clawcross:agent-activity',event=>{
+    let changed=false;
+    for(const item of event.detail||[]){
+      const agent=agents.find(a=>a.agent_id===item.agent_id);
+      if(!agent||!Number.isFinite(item.last_message_at)||agent.last_message_at===item.last_message_at)continue;
+      agent.last_message_at=item.last_message_at;changed=true;
+    }
+    if(changed)renderAgents();
+  });
   addEventListener('message',event=>{
     if(event.origin!==location.origin||event.source!==frame?.contentWindow)return;
     if(event.data?.type==='clawcross:studio-sidebar'){

@@ -47,6 +47,31 @@ def _decode_message(raw: str) -> BaseMessage:
     return messages_from_dict([json.loads(raw)])[0]
 
 
+async def fetch_context_message_page(store_path: str | Path, thread_id: str, *,
+                                     limit: int, before: int | None = None) -> dict | None:
+    """Read only one indexed page; do not reconstruct or estimate the full context."""
+    if not Path(store_path).exists():
+        return None
+    for path in candidate_checkpoint_db_paths_for_thread(store_path, thread_id):
+        async with aiosqlite.connect(path.resolve().as_uri() + '?mode=ro', uri=True) as db:
+            try:
+                clause = ' AND sequence < ?' if before is not None else ''
+                args = (thread_id, before, limit + 1) if before is not None else (thread_id, limit + 1)
+                cursor = await db.execute(
+                    'SELECT sequence,message_json FROM context_messages WHERE thread_id=?' + clause +
+                    ' ORDER BY sequence DESC LIMIT ?', args)
+                rows = await cursor.fetchall()
+            except sqlite3.OperationalError as exc:
+                if 'no such table' in str(exc).lower():
+                    continue
+                raise
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        return {'messages':[_decode_message(row[1]) for row in reversed(rows)],
+                'has_more':has_more, 'next_before':rows[-1][0] if has_more else None}
+    return None
+
+
 def _messages_from_state_json(raw: str) -> list[BaseMessage]:
     """Read the temporary full-state format used by the first lightweight runtime."""
     try:

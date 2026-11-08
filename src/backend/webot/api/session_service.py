@@ -169,6 +169,26 @@ class SessionService:
                 self.agent.set_thread_context_usage(thread_id, static_tokens, window)
         except Exception:
             logger.exception("context usage estimation failed for %s", thread_id)
+        return self._present_messages(msgs)
+
+    async def message_page(self, user_id: str, session_id: str, limit: int,
+                           before: int | None = None) -> dict:
+        from webot.context_store import fetch_context_message_page
+        thread = f'{user_id}#{session_id}'
+        page = await fetch_context_message_page(self.db_path, thread, limit=limit, before=before)
+        if page is None:
+            # Older snapshots migrate through the established reader once.
+            legacy = await self.messages(user_id, session_id)
+            page = await fetch_context_message_page(self.db_path, thread, limit=limit, before=before)
+            if page is None:
+                end = min(before, len(legacy)) if before is not None else len(legacy)
+                start = max(0, end - limit)
+                return {'messages':legacy[start:end], 'has_more':start > 0,
+                        'next_before':start if start > 0 else None}
+        page['messages'] = self._present_messages(page['messages'])
+        return page
+
+    def _present_messages(self, msgs) -> list[dict]:
         result = []
         for msg in msgs:
             msg_type = type(msg).__name__

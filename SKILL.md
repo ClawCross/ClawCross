@@ -531,14 +531,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-11-08T14:20:15.269618+00:00`
+- Updated at: `2026-11-08T15:07:36.823031+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-structured-output-recurring-error`
-- Heuristic score: `0.79`
+- Heuristic candidate: `blended-verification-loop-approval-auth`
+- Heuristic score: `0.756`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: Repair CI against the current unified interface. Signals: verification-loop, structured-output, recurring-error. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: python -m pytest test/test_agents.py -q. Signals: verification-loop, approval-auth. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -547,12 +547,12 @@ Command exited with code 1. Command: Repair CI against the current unified inter
 
 ### Latest Trigger Command
 
-`Repair CI against the current unified interface`
+`python -m pytest test/test_agents.py -q`
 
 ### Latest Error Excerpt
 
 ```text
-Outdated standalone Studio navigation assertions must be removed or rewritten against the current unified shell and its real /studio?embedded=1 renderer. Do not restore old product UI, inject an old shell, strip production scripts, or alter product behavior to satisfy stale tests. The artificial /__test__/studio route has been removed. Browser API fixtures must reflect real creation defaults, collapsible platform lists, mobile settings overview navigation, and durable message retries. A real guest retry bug left a stale quote after automatic confirmation; clear the matching quote on successful outbox delivery. Windows direct PowerShell calls must also retain their arguments as JSON until Python.
+Unit tests patched the retired external.acpx.get_acpx_adapter entry, so the current direct ACP adapter was selected instead of the fake. The run was interrupted. Patch external.acp.adapter and forbid constructing external.acp_direct.DirectAdapter in unit tests; exercise actual native adapters only in explicitly authorized integration checks. After the fix, the focused backend suite passed 82 tests and 4 subtests.
 ```
 
 ### Governance Snapshot
@@ -575,14 +575,13 @@ Outdated standalone Studio navigation assertions must be removed or rewritten ag
 
 ### Recent Evidence
 
-- `2026-11-08T14:20:15.269618+00:00` `repo-skill` — Outdated standalone Studio navigation assertions must be removed or rewritten against the current unified shell and its real /studio?embedded= ...[truncated]
+- `2026-11-08T15:07:36.823031+00:00` `repo-skill` — Unit tests patched the retired external.acpx.get_acpx_adapter entry, so the current direct ACP adapter was selected instead of the fake. The r ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-structured-output-recurring-error` score `0.79` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-3` score `0.75` — Tighten verification loops (intent `repair`)
-- `structured-output-1` score `0.614` — Harden structured-output handling (intent `repair`)
-- `recurring-error-1` score `0.614` — Deduplicate recurring failures before retrying (intent `repair`)
+- `blended-verification-loop-approval-auth` score `0.756` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-1` score `0.716` — Tighten verification loops (intent `repair`)
+- `approval-auth-1` score `0.716` — Preflight auth and approval constraints (intent `repair`)
 
 ### Local State Snapshot
 

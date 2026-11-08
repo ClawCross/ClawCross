@@ -482,16 +482,22 @@ class ExternalAgentHistoryStore:
             has_more = len(rows) > limit
             rows = rows[:limit]
             if has_more and rows[-1]['direction'] != 'send':
-                # Start the page at a prompt, so no turn is split between two pages.
+                # Complete ordinary turns, but never pull an unbounded tool run
+                # into the first screen. The pager also supports partial turns.
                 oldest = rows[-1]['rowid']
-                start = (await (await db.execute(
-                    "SELECT MAX(rowid) FROM messages WHERE rowid < ? AND direction = 'send'", (oldest,))).fetchone())[0]
+                prompt = await (await db.execute(
+                    "SELECT rowid FROM (SELECT rowid,direction FROM messages WHERE rowid < ? "
+                    "ORDER BY rowid DESC LIMIT ?) WHERE direction='send' ORDER BY rowid DESC LIMIT 1",
+                    (oldest, limit))).fetchone()
+                start = prompt[0] if prompt else None
                 if start is not None:
                     cursor = await db.execute(
-                        'SELECT * FROM messages WHERE rowid >= ? AND rowid < ? ORDER BY rowid DESC', (start, oldest))
-                    rows += await cursor.fetchall()
-                    has_more = bool(await (await db.execute(
-                        'SELECT 1 FROM messages WHERE rowid < ? LIMIT 1', (start,))).fetchone())
+                        'SELECT * FROM messages WHERE rowid >= ? AND rowid < ? ORDER BY rowid DESC LIMIT ?', (start, oldest, limit + 1))
+                    extra = await cursor.fetchall()
+                    if len(extra) <= limit:
+                        rows += extra
+                        has_more = bool(await (await db.execute(
+                            'SELECT 1 FROM messages WHERE rowid < ? LIMIT 1', (start,))).fetchone())
         out = []
         for row in reversed(rows):
             item = dict(row)
