@@ -122,7 +122,7 @@ const largeDirectory=Array.from({length:21},(_,i)=>({agent_id:'agent-'+i,platfor
 test('large directories keep groups reachable and the Agent center fills the main column',async({page})=>{
  await page.setViewportSize({width:1440,height:900});const {errors}=await fixtures(page,{agents:largeDirectory,experts:[{name:'设计模板',tag:'design-template',source:'agency',category:'design',persona:'Design helper'}]});
  await page.goto('/mobile/group_chat');
- await expect(page.locator('#workspace-agent-list button')).toHaveCount(4);
+ await expect(page.locator('#workspace-agent-list button')).toHaveCount(2);
  await expect(page.locator('#group-list-container .group-item')).toBeInViewport();
  await page.locator('#workspace-agents-more').click();await expect(page.locator('#workspace-agent-list button')).toHaveCount(21);
  await page.locator('#workspace-agent-collapse').click();await expect(page.locator('#workspace-agent-list')).toBeHidden();
@@ -159,14 +159,26 @@ test('large directories keep groups reachable and the Agent center fills the mai
  expect(errors).toEqual([]);
 });
 
-test('recent Agent shortcuts ignore settings update times and keep private chats in the group list',async({page})=>{
+test('two Agent shortcuts keep a fixed order across selection, refresh and reload',async({page})=>{
  const {errors}=await fixtures(page,{agents:largeDirectory.map(a=>({...a,updated_at:a.agent_id==='agent-20'?99999999:1})),groups:[{group_id:'g1',title:'我的伙伴',kind:'direct',member_count:2,members:[]}]});
  await page.addInitScript(()=>localStorage.setItem('clawcross_recent_agents:workspace-test',JSON.stringify({'agent-17':20,'agent-8':10})));
  await page.goto('/mobile/group_chat');
- await expect(page.locator('#workspace-agent-list button').first()).toHaveAttribute('data-agent-id','agent-17');
+ const ids=()=>page.locator('#workspace-agent-list button').evaluateAll(rows=>rows.map(row=>row.dataset.agentId));
+ await expect.poll(ids).toEqual(['agent-0','agent-1']);
+ await expect(page.locator('#workspace-agent-collapse')).toContainText('我的 Agent');
  await expect(page.locator('#group-list-container .group-item')).toHaveCount(1);
+ await page.locator('[data-agent-id="agent-1"]').click();
+ await expect.poll(ids).toEqual(['agent-0','agent-1']);
+ await page.evaluate(()=>ConversationWorkspace.hide());
+ await page.locator('[data-chat-view="agents"]').click();
+ const allIds=await ids();
  await page.locator('[data-agent-id="agent-8"]').click();
- await expect(page.locator('#workspace-agent-list button').first()).toHaveAttribute('data-agent-id','agent-8');
+ await expect.poll(ids).toEqual(allIds);
+ await page.evaluate(()=>ConversationWorkspace.refresh(true));
+ await expect.poll(ids).toEqual(allIds);
+ await page.reload();await expect.poll(ids).toEqual(allIds);
+ await page.locator('[data-chat-view="all"]').click();
+ await expect.poll(ids).toEqual(['agent-0','agent-1']);
  expect(errors).toEqual([]);
 });
 

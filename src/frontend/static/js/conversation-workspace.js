@@ -4,15 +4,13 @@
   const text=key=>window.ClawCrossLocale?.text(...labels[key]) || labels[key][document.documentElement.lang.startsWith('zh')?0:1];
   const icon=name=>`<svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg?v=20261108-directory2#${name}"/></svg>`;
   let agents=[],selected='',frame,host,title,status,retry,revision=0,lastFetch=0,pending,previousFocus;
-  const recentLimit=4;
-  let chatView='all',agentsCollapsed=false,agentsExpanded=false,recentAgents={},studioSidebarOpen=false;
+  const shortcutLimit=2;
+  let chatView='all',agentsCollapsed=false,agentsExpanded=false,studioSidebarOpen=false;
   const storageKey=name=>'clawcross_'+name+':'+(window.__currentUser||'');
   const desktop=matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)');
   function localize(){
     document.querySelectorAll('[data-workspace-text]').forEach(el=>el.textContent=text(el.dataset.workspaceText));
     document.getElementById('contacts-list')?.setAttribute('data-center-title',text('center'));
-    const heading=document.querySelector('#workspace-agent-collapse [data-workspace-text]');
-    if(heading&&chatView==='all')heading.textContent=window.ClawCrossLocale?.lookup('studio_history',ClawCrossLocale.current())||text('agents');
     const manage=document.getElementById('workspace-open-agent-sidebar');
     if(manage){manage.textContent=text('manage');manage.title=text('manage');manage.setAttribute('aria-label',text('manage'));}
     for(const [key,id]of Object.entries({preferences:'workspace-rail-settings',language:'workspace-rail-language',account:'workspace-rail-account'})){
@@ -71,13 +69,12 @@
     const list=document.getElementById('workspace-agent-list');if(!list)return;
     const keyword=document.getElementById('chat-search-input')?.value.trim().toLowerCase()||'';
     const rows=agents.filter(a=>[a.name,a.platform,a.settings?.title].some(v=>String(v||'').toLowerCase().includes(keyword)))
-      .sort((a,b)=>(Number(recentAgents[b.agent_id])||0)-(Number(recentAgents[a.agent_id])||0)
-        ||(Number(a.created_at)||0)-(Number(b.created_at)||0)||a.agent_id.localeCompare(b.agent_id,undefined,{numeric:true}));
+      .sort((a,b)=>(Number(a.created_at)||0)-(Number(b.created_at)||0)||a.agent_id.localeCompare(b.agent_id,undefined,{numeric:true}));
     const section=document.getElementById('workspace-agent-section');section.hidden=chatView==='groups'||(!rows.length&&!keyword);
     const collapse=document.getElementById('workspace-agent-collapse');collapse?.setAttribute('aria-expanded',String(!agentsCollapsed));
     list.hidden=agentsCollapsed;list.replaceChildren();
     const limited=chatView==='all'&&!keyword;
-    const visible=limited&&!agentsExpanded?rows.slice(0,recentLimit):rows;
+    const visible=limited&&!agentsExpanded?rows.slice(0,shortcutLimit):rows;
     for(const a of agentsCollapsed?[]:visible){
       const row=document.createElement('button');row.type='button';row.className='workspace-agent-row'+(selected===a.agent_id&&host&&!host.hidden?' selected':'');row.dataset.agentId=a.agent_id;
       row.dataset.agentActivity=a.agent_id;
@@ -93,7 +90,7 @@
     }
     if(!rows.length&&keyword){const empty=document.createElement('p');empty.className='workspace-agent-empty';empty.textContent=text('empty');list.append(empty);}
     const more=document.getElementById('workspace-agents-more');
-    if(more){more.hidden=agentsCollapsed||!limited||rows.length<=recentLimit;more.textContent=agentsExpanded?text('less'):text('more')+' · '+rows.length;more.setAttribute('aria-expanded',String(agentsExpanded));}
+    if(more){more.hidden=agentsCollapsed||!limited||rows.length<=shortcutLimit;more.textContent=agentsExpanded?text('less'):text('more')+' · '+rows.length;more.setAttribute('aria-expanded',String(agentsExpanded));}
     localize();applyListView();
     // The first-agent guide is only needed when there are neither agents nor chats.
     const guide=document.querySelector('#group-list-container .first-chat-guide');if(guide&&agents.length)guide.hidden=true;
@@ -119,7 +116,6 @@
     if(command.view==='agent'){switchTab('chats');if(currentGroupId)goBack();}
     createFrame();const current=++revision;pending=command;
     selected=command.agent?.agent_id||'';
-    if(selected){recentAgents[selected]=Date.now()/1000;localStorage.setItem(storageKey('recent_agents'),JSON.stringify(recentAgents));}
     title.textContent=command.agent?.name||text(command.view==='group'?'teams':command.view==='orchestrate'?'workflows':'agents');
     document.getElementById('workspace-agent-settings').hidden=!selected;
     host.hidden=false;status.textContent=text('loading');status.hidden=false;retry.hidden=true;
@@ -174,7 +170,6 @@
       const button=document.createElement('button');button.type='button';button.id='workspace-open-agent-sidebar';button.textContent=text('manage');button.onclick=()=>void myAgents();agentHeading.append(button);
     }
     installFooter();
-    try{recentAgents=JSON.parse(localStorage.getItem(storageKey('recent_agents'))||'{}');}catch{recentAgents={};}
     const savedView=localStorage.getItem(storageKey('chat_view'));if(['all','agents','groups'].includes(savedView))chatView=savedView;
     await refresh(true);localize();
     const avatar=document.querySelector('#workspace-rail-account .tab-icon');
@@ -208,7 +203,7 @@
     if(event.data?.type==='clawcross:studio-selection'){
       const agent=agents.find(a=>a.agent_id===event.data.agentId);if(!agent)return;
       selected=agent.agent_id;title.textContent=agent.name;document.getElementById('workspace-agent-settings').hidden=false;
-      recentAgents[selected]=Date.now()/1000;localStorage.setItem(storageKey('recent_agents'),JSON.stringify(recentAgents));renderAgents();
+      renderAgents();
     }
   });
   visualViewport?.addEventListener('resize',syncViewport);visualViewport?.addEventListener('scroll',syncViewport);
