@@ -210,7 +210,7 @@ def test_installed_cli_joins_with_the_original_agent_and_returns_json(tmp_path):
     env.update(CLAWCROSS_HOME=str(home),CLAW_USER='alice')
     entry=os.environ.get('CLAWCROSS_TEST_ENTRY',str(root/'bin/clawcross.js'))
     try:
-        result=subprocess.run([node,entry,'join',LINK,'--agent','original','--json'],env=env,cwd=tmp_path,text=True,capture_output=True,timeout=25)
+        result=subprocess.run([node,entry,'join',LINK,'--agent','original','--json'],env=env,cwd=tmp_path,text=True,encoding='utf-8',capture_output=True,timeout=25)
         assert result.returncode==0,result.stderr
         assert json.loads(result.stdout)['agent_id']=='original'
         assert calls==[('/groups/join',{'invite':LINK,'agents':['original'],'name':''},'Bearer fixture-secret:alice')]

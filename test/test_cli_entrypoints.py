@@ -23,7 +23,7 @@ def env_for(home):
 
 def call(args, home, cwd=ROOT, **kwargs):
     return subprocess.run([NODE, ENTRY, *args], env=env_for(home),
-        cwd=cwd, text=True, capture_output=True, timeout=20, **kwargs)
+        cwd=cwd, text=True, encoding="utf-8", capture_output=True, timeout=20, **kwargs)
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ assert shell._public_front_url().startswith('http://127.0.0.1:')
 assert 'ClawCross' in '\\n'.join(shell._welcome_lines(shell._default_state()))
 '''
     result = subprocess.run([sys.executable, "-c", program], env=env_for(tmp_path / "clean"),
-        cwd=ROOT, text=True, capture_output=True, timeout=20)
+        cwd=ROOT, text=True, encoding="utf-8", capture_output=True, timeout=20)
     assert result.returncode == 0, result.stderr
 
 
@@ -105,13 +105,22 @@ def test_shell_api_cli_and_gateway_cancel_share_the_packaged_entry(backend, tmp_
 
 
 def test_stream_errors_are_not_reported_as_success_and_stdin_is_supported(backend):
-    home, _ = backend
+    home, requests = backend
     error = call(["chat", "error-case", "-s", "fixture"], home)
     assert error.returncode == 1
     assert "fixture API error" in error.stderr
-    success = call(["chat", "-", "-s", "fixture"], home, input="from stdin")
+    success = call(["chat", "-", "-s", "fixture"], home, input="来自 stdin：你好\nsecond line")
     assert success.returncode == 0, success.stderr
     assert "CLI_OK" in success.stdout
+    assert requests[-1][1]['messages'] == [{'role':'user','content':'来自 stdin：你好\nsecond line'}]
+
+
+@pytest.mark.parametrize('message', ['中文伙伴 😀', 'with spaces', 'a"quoted" value', "$env:NAME; $(echo unsafe) & <x>", 'line one\nline two'])
+def test_cli_arguments_reach_python_as_literal_values(backend, message):
+    home, requests = backend
+    result = call(['chat', message, '-s', 'fixture'], home)
+    assert result.returncode == 0, result.stderr
+    assert requests[-1][1]['messages'] == [{'role':'user','content':message}]
 
 
 def test_interactive_turns_keep_agent_and_apply_mode_changes(backend):
@@ -132,7 +141,7 @@ assert all(p['session_id'] == 'fixture' for p in seen)
 assert seen[1]['session_mode'] == 'readonly'
 '''
     result = subprocess.run([sys.executable, "-c", program], env=env_for(home), cwd=ROOT,
-        text=True, capture_output=True, timeout=20)
+        text=True, encoding="utf-8", capture_output=True, timeout=20)
     assert result.returncode == 0, result.stderr
 
 
@@ -168,6 +177,6 @@ assert resolutions[0]['remember'] is True
 assert resolutions[0]['session_id'] == 'fixture'
 '''
     result = subprocess.run([sys.executable, "-c", program], env=env_for(home), cwd=ROOT,
-        text=True, capture_output=True, timeout=20)
+        text=True, encoding="utf-8", capture_output=True, timeout=20)
     assert result.returncode == 0, result.stderr
     assert "APPROVED" in result.stdout

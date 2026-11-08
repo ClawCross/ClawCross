@@ -2,6 +2,16 @@ param(
     [string]$Command = "help"
 )
 $Rest = @($args)
+if ($Command -eq "clawcross" -and $env:CLAWCROSS_CLI_ARGS_JSON) {
+    # Pass CLI values as data. PowerShell -File otherwise parses a bare '-'
+    # and named-looking arguments before Python gets to read them.
+    $Rest = @(ConvertFrom-Json -InputObject $env:CLAWCROSS_CLI_ARGS_JSON)
+    Remove-Item Env:CLAWCROSS_CLI_ARGS_JSON
+}
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path

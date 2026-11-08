@@ -15,10 +15,11 @@ if (args.length === 1 && ["--version", "-V", "version"].includes(args[0])) {
 } else {
   const windows = process.platform === "win32";
   const child = spawn(windows ? "powershell.exe" : "bash", windows
-    ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(root, "launch/run.ps1"), "clawcross", ...args]
+    ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(root, "launch/run.ps1"), "clawcross"]
     : [path.join(root, "launch/run.sh"), "clawcross", ...args], {
     stdio: "inherit", cwd: process.cwd(),
-    env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },
+    env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8",
+      ...(windows ? {CLAWCROSS_CLI_ARGS_JSON: JSON.stringify(args)} : {}) },
   });
   // The terminal also delivers Ctrl+C to Python; let the REPL cancel a turn.
   process.on("SIGINT", () => {});
