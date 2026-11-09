@@ -7,31 +7,31 @@ plan:
     author: begin
     content: "Board review begins"
 - id: m1
-  agent: Board
+  expert: board#oasis#Board
 - id: m2
-  agent: CEO
+  expert: ceo#oasis#CEO
 - id: m3
-  agent: Product
+  expert: prod#oasis#Product
 - id: m4
-  agent: CTO
+  expert: cto#oasis#CTO
 - id: m5
-  agent: Engineering
+  expert: eng#oasis#Engineering
 - id: m6
-  agent: Quality
+  expert: qa#oasis#Quality
 - id: m7
-  agent: COO
+  expert: coo#oasis#COO
 - id: m8
-  agent: CFO
+  expert: cfo#oasis#CFO
 - id: m9
-  agent: CMO
+  expert: cmo#oasis#CMO
 - id: m10
-  agent: Sales
+  expert: sales#oasis#Sales
 - id: m11
-  agent: Customer Success
+  expert: cs#oasis#Customer Success
 - id: m12
-  agent: Legal
+  expert: legal#oasis#Legal
 - id: m13
-  agent: Data
+  expert: data#oasis#Data
 - id: m14
   manual:
     author: bend

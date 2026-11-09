@@ -1,86 +1,30 @@
 {
   "name": "clawcross",
-  "version": "0.0.29",
-  "description": "ClawCross multi-platform agent CLI with Python services and web interface.",
-  "license": "Apache-2.0",
+  "version": "0.0.27",
+  "description": "ClawCross multi-platform agent CLI shell with full project source.",
+  "license": "MIT",
   "engines": {
     "node": ">=18"
   },
   "bin": {
     "clawcross": "bin/clawcross.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ClawCross/ClawCross.git"
-  },
-  "files": [
-    "bin/clawcross.js",
-    "clawcross",
-    "clawcross.ps1",
-    "run.sh",
-    "run.ps1",
-    "launch/*.py",
-    "launch/run.sh",
-    "launch/run.ps1",
-    "launch/clawcross",
-    "launch/README.md",
-    "src/backend/**/*.py",
-    "src/backend/**/*.mjs",
-    "src/backend/common/model_catalog.json",
-    "src/cli/**/*.py",
-    "src/frontend/**/*.py",
-    "src/frontend/templates/**",
-    "src/frontend/static/**",
-    "config/.env.example",
-    "config/users.json.example",
-    "config/tinyfish_targets.example.json",
-    "config/channels.json",
-    "config/requirements.txt",
-    "config/acp-adapters.json",
-    "config/acp-launchers.json",
-    "config/requirements-channels.txt",
-    "data/prompts/**",
-    "data/team_presets/**",
-    "agents/**",
-    "docs/*.md",
-    "docs/*.py",
-    "docs/poster_en.png",
-    "docs/media/clawcross-demo-poster-en.png",
-    "examples/**/*.py",
-    "examples/**/*.md",
-    "tools/build/*.py",
-    "tools/build/*.js",
-    "tools/build/*.mjs",
-    "tools/build/*.cjs",
-    "tools/build/*.css",
-    "tools/maintenance/*.py",
-    "AGENTS.md",
-    "SKILL.md",
-    "README_CN.md",
-    "examples/space-apps/**",
-    "sdk/js/**",
-    "src/cli/help.txt"
-  ],
   "scripts": {
     "clawcross": "node bin/clawcross.js",
-    "pack:clawcross": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true})\" && npm pack --pack-destination dist",
-    "build:pretext-vendor": "node tools/build/build_pretext_vendor.mjs",
-    "build:oasis-town": "node tools/build/build_oasis_town.mjs",
+    "pack:clawcross": "npm pack",
+    "build:pretext-vendor": "node tools/build_pretext_vendor.mjs",
+    "build:oasis-town": "node tools/build_oasis_town.mjs",
     "test:node": "node test/test_tinyfish_live_shared.js && node test/test_pretext_text_core.js",
-    "test:browser-smoke": "playwright test --config playwright.config.mjs",
-    "build:css": "tailwindcss -c tools/build/tailwind.config.cjs -i tools/build/tailwind.input.css -o src/frontend/static/css/tailwind.css --minify",
-    "prepack": "node tools/build/verify_npm_package.cjs",
-    "check:package": "npm pack --dry-run --json --ignore-scripts | node tools/build/verify_npm_package.cjs --manifest"
+    "test:browser-smoke": "playwright test --config playwright.config.mjs"
   },
   "dependencies": {
-    "playwright": "^1.58.2"
-  },
-  "devDependencies": {
     "@chenglou/pretext": "^0.0.7",
     "easystarjs": "^0.4.4",
     "phaser": "^3.90.0",
+    "playwright": "^1.58.2"
+  },
+  "devDependencies": {
     "@playwright/test": "^1.55.0",
-    "esbuild": "^0.25.3",
-    "tailwindcss": "3.4.17"
+    "esbuild": "^0.25.3"
   }
 }

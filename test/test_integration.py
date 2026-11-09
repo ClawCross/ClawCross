@@ -7,14 +7,14 @@ from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src" / "backend"
+SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import frontend.server as front
-from channels.adapters.base import ChannelAdapter, MagicLink
-from src.cli.clawcross import chat_help_text, chat_welcome_text, handle_channel_input
-from common.env_settings import mask_all_sensitive, read_env_all, write_env_settings
+import front
+from chatbot.adapters.base import ChannelAdapter, MagicLink
+from scripts.clawcross import chat_help_text, chat_welcome_text, handle_chatbot_input
+from utils.env_settings import mask_all_sensitive, read_env_all, write_env_settings
 
 
 class _MockJsonResponse:
@@ -42,7 +42,7 @@ class EnvSettingsTests(unittest.TestCase):
             Path(path).unlink(missing_ok=True)
 
 
-class ChannelCommandTests(unittest.TestCase):
+class ChatbotCommandTests(unittest.TestCase):
     def test_front_command_matches_exact_command_or_arguments_only(self):
         self.assertTrue(ChannelAdapter.is_front_command("/front"))
         self.assertTrue(ChannelAdapter.is_front_command("  /Front   "))
@@ -75,7 +75,7 @@ class ChannelCommandTests(unittest.TestCase):
         self.assertNotIn("Switch agents with /use codex.", welcome)
 
     def test_cross_help_command_returns_chat_help(self):
-        _active, reply = handle_channel_input(
+        _active, reply = handle_chatbot_input(
             "/cross help",
             {"current": {"platform": "internal", "user": "default"}},
         )
@@ -89,7 +89,7 @@ class ChannelCommandTests(unittest.TestCase):
                 "__state_path": str(Path(tmpdir) / "state.json"),
                 "current": {"platform": "internal", "user": "default", "cwd": "/tmp/project"},
             }
-            _active, reply = handle_channel_input("/cross session review-1", state)
+            _active, reply = handle_chatbot_input("/cross session review-1", state)
 
             self.assertEqual(reply, "session: review-1")
             self.assertEqual(state["current"]["session"], "review-1")
@@ -106,8 +106,8 @@ class ChannelCommandTests(unittest.TestCase):
                 "__state_path": str(Path(tmpdir) / "state.json"),
                 "current": {"platform": "internal", "user": "default", "cwd": str(project_dir)},
             }
-            with mock.patch("src.cli.clawcross.os.getcwd", return_value=str(project_dir)):
-                _active, reply = handle_channel_input("/cross new session", state)
+            with mock.patch("scripts.clawcross.os.getcwd", return_value=str(project_dir)):
+                _active, reply = handle_chatbot_input("/cross new session", state)
 
             self.assertIn("session: project-", reply)
             self.assertTrue(state["current"]["session"].startswith("project-"))
@@ -137,19 +137,11 @@ class FrontendIntegrationTests(unittest.TestCase):
             session["user_id"] = "integration-user"
 
     def test_studio_page_renders_shell_and_settings_modal(self):
-        self.assertEqual(self.client.get("/").location, "/studio")
         response = self.client.get("/studio", environ_overrides={"REMOTE_ADDR": "127.0.0.1"})
         html = response.get_data(as_text=True)
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('id="tab-chats"', html)
-        self.assertIn('id="workspace-agent-list"', html)
-        self.assertIn('/static/js/conversation-workspace.js', html)
-        self.assertNotIn('class="mobile-studio-header-link"', html)
-        response = self.client.get('/studio?embedded=1')
-        self.assertEqual(response.status_code, 200)
-        html = response.get_data(as_text=True)
-        self.assertIn('id="tab-chat"', html)
+        self.assertIn('class="page-tab active" id="tab-chat"', html)
         self.assertIn('id="page-chat" class="chat-page" style="display:flex;"', html)
         self.assertIn('id="tab-orchestrate"', html)
         self.assertIn('id="settings-modal"', html)
@@ -158,11 +150,9 @@ class FrontendIntegrationTests(unittest.TestCase):
         self.assertIn('id="webot-subagent-panel"', html)
         self.assertIn('id="webot-subagent-list"', html)
         self.assertIn('id="webot-policy-panel"', html)
-        self.assertIn('id="studio-more-menu"', html)
-        self.assertIn('class="studio-conversation-switcher"', html)
         self.assertIn('id="webot-policy-editor"', html)
         self.assertIn("/static/js/orchestration.js", html)
-        self.assertIn("/static/js/studio-embedded.js", html)
+        self.assertIn("/static/js/tinyfish-live-shared.js", html)
 
     def test_proxy_check_session_missing_session_is_soft_false(self):
         with self.client.session_transaction() as session:
@@ -212,14 +202,14 @@ class FrontendIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
 
-    def test_proxy_channel_whitelist_get_forwards_user_context(self):
+    def test_proxy_chatbot_whitelist_get_forwards_user_context(self):
         payload = {"status": "success", "whitelist": {"telegram": {"entries": {}, "name_map": {}}}}
         with mock.patch.object(
             front.requests,
             "get",
             return_value=_MockJsonResponse(payload, 200),
         ) as mock_get:
-            response = self.client.get("/proxy_channel_whitelist")
+            response = self.client.get("/proxy_chatbot_whitelist")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), payload)
@@ -228,14 +218,14 @@ class FrontendIntegrationTests(unittest.TestCase):
         self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
         self.assertEqual(kwargs["timeout"], 10)
 
-    def test_proxy_channel_whitelist_post_merges_session_user_id(self):
+    def test_proxy_chatbot_whitelist_post_merges_session_user_id(self):
         whitelist = {"telegram": {"entries": {"123": {"username": "alice"}}, "name_map": {}}}
         with mock.patch.object(
             front.requests,
             "post",
             return_value=_MockJsonResponse({"status": "success", "whitelist": whitelist}, 200),
         ) as mock_post:
-            response = self.client.post("/proxy_channel_whitelist", json={"whitelist": whitelist})
+            response = self.client.post("/proxy_chatbot_whitelist", json={"whitelist": whitelist})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "success")
@@ -266,6 +256,21 @@ class FrontendIntegrationTests(unittest.TestCase):
         self.assertEqual(payload["status"], "pending")
         self.assertEqual(payload["qr"], "")
         self.assertIn("weclaw", payload["message"].lower())
+
+    def test_proxy_openclaw_sessions_forwards_filter_and_preserves_shape(self):
+        with mock.patch.object(
+            front.requests,
+            "get",
+            return_value=_MockJsonResponse({"available": True, "agents": []}, 200),
+        ) as mock_get:
+            response = self.client.get("/proxy_openclaw_sessions?filter=main")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"available": True, "agents": []})
+        mock_get.assert_called_once()
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"], {"filter": "main"})
+        self.assertEqual(kwargs["timeout"], 10)
 
     def test_proxy_webot_subagents_forwards_user_context(self):
         with mock.patch.object(
@@ -458,6 +463,61 @@ class FrontendIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
 
+    def test_proxy_webot_session_inbox_send_forwards_payload(self):
+        with mock.patch.object(
+            front.requests,
+            "post",
+            return_value=_MockJsonResponse({"status": "success", "created": 1}, 200),
+        ) as mock_post:
+            response = self.client.post(
+                "/proxy_webot_session_inbox_send",
+                json={
+                    "session_id": "default",
+                    "target_ref": "worker-1",
+                    "body": "Need a review pass",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["created"], 1)
+        _, kwargs = mock_post.call_args
+        self.assertEqual(
+            kwargs["json"],
+            {
+                "user_id": "integration-user",
+                "session_id": "default",
+                "target_ref": "worker-1",
+                "body": "Need a review pass",
+            },
+        )
+        self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
+
+    def test_proxy_webot_session_inbox_deliver_forwards_payload(self):
+        with mock.patch.object(
+            front.requests,
+            "post",
+            return_value=_MockJsonResponse({"status": "success", "delivered_total": 1}, 200),
+        ) as mock_post:
+            response = self.client.post(
+                "/proxy_webot_session_inbox_deliver",
+                json={"session_id": "default", "target_ref": "worker-1", "limit": 5, "force": True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["delivered_total"], 1)
+        _, kwargs = mock_post.call_args
+        self.assertEqual(
+            kwargs["json"],
+            {
+                "user_id": "integration-user",
+                "session_id": "default",
+                "target_ref": "worker-1",
+                "limit": 5,
+                "force": True,
+            },
+        )
+        self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
+
     def test_proxy_webot_runtime_controls_forward_payloads(self):
         with self.subTest("session mode"):
             with mock.patch.object(
@@ -503,6 +563,41 @@ class FrontendIntegrationTests(unittest.TestCase):
                 },
             )
 
+        with self.subTest("voice"):
+            with mock.patch.object(
+                front.requests,
+                "post",
+                return_value=_MockJsonResponse({"status": "success"}, 200),
+            ) as mock_post:
+                response = self.client.post(
+                    "/proxy_webot_voice",
+                    json={
+                        "session_id": "default",
+                        "enabled": True,
+                        "auto_read_aloud": True,
+                        "last_transcript": "ship it",
+                        "tts_model": "gpt-4o-mini-tts",
+                        "tts_voice": "alloy",
+                        "stt_model": "gpt-4o-mini-transcribe",
+                    },
+                )
+            self.assertEqual(response.status_code, 200)
+            _, kwargs = mock_post.call_args
+            self.assertEqual(
+                kwargs["json"],
+                {
+                    "user_id": "integration-user",
+                    "session_id": "default",
+                    "enabled": True,
+                    "auto_read_aloud": True,
+                    "last_transcript": "ship it",
+                    "tts_model": "gpt-4o-mini-tts",
+                    "tts_voice": "alloy",
+                    "stt_model": "gpt-4o-mini-transcribe",
+                },
+            )
+            self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
+
         with self.subTest("lsp diagnostics"):
             with mock.patch.object(
                 front.requests,
@@ -513,7 +608,7 @@ class FrontendIntegrationTests(unittest.TestCase):
                     "/proxy_webot_lsp",
                     json={
                         "session_id": "default",
-                        "file": "src/backend/webot/service.py",
+                        "file": "src/webot/service.py",
                         "op": "diagnostics",
                         "line": 12,
                         "col": 4,
@@ -529,7 +624,7 @@ class FrontendIntegrationTests(unittest.TestCase):
                 {
                     "user_id": "integration-user",
                     "session_id": "default",
-                    "file": "src/backend/webot/service.py",
+                    "file": "src/webot/service.py",
                     "op": "diagnostics",
                     "line": 12,
                     "col": 4,
@@ -577,7 +672,49 @@ class FrontendIntegrationTests(unittest.TestCase):
             self.assertEqual(kwargs["preset_id"], "modern-ceo")
             self.assertNotIn("project_root", kwargs)
 
-    def test_proxy_webot_memory_controls_forward_payloads(self):
+    def test_proxy_webot_bridge_memory_and_buddy_controls_forward_payloads(self):
+        with self.subTest("bridge attach"):
+            with mock.patch.object(
+                front.requests,
+                "post",
+                return_value=_MockJsonResponse({"status": "success"}, 200),
+            ) as mock_post:
+                response = self.client.post(
+                    "/proxy_webot_bridge_attach",
+                    json={"session_id": "default", "role": "viewer", "label": "browser"},
+                )
+            self.assertEqual(response.status_code, 200)
+            _, kwargs = mock_post.call_args
+            self.assertEqual(
+                kwargs["json"],
+                {
+                    "user_id": "integration-user",
+                    "session_id": "default",
+                    "role": "viewer",
+                    "label": "browser",
+                },
+            )
+
+        with self.subTest("bridge detach"):
+            with mock.patch.object(
+                front.requests,
+                "post",
+                return_value=_MockJsonResponse({"status": "success"}, 200),
+            ) as mock_post:
+                response = self.client.post(
+                    "/proxy_webot_bridge_detach",
+                    json={"bridge_id": "bridge-123"},
+                )
+            self.assertEqual(response.status_code, 200)
+            _, kwargs = mock_post.call_args
+            self.assertEqual(
+                kwargs["json"],
+                {
+                    "user_id": "integration-user",
+                    "bridge_id": "bridge-123",
+                },
+            )
+
         with self.subTest("kairos"):
             with mock.patch.object(
                 front.requests,
@@ -620,6 +757,28 @@ class FrontendIntegrationTests(unittest.TestCase):
                     "reason": "manual",
                 },
             )
+
+        with self.subTest("buddy"):
+            with mock.patch.object(
+                front.requests,
+                "post",
+                return_value=_MockJsonResponse({"status": "success"}, 200),
+            ) as mock_post:
+                response = self.client.post(
+                    "/proxy_webot_buddy",
+                    json={"session_id": "default", "action": "pet"},
+                )
+            self.assertEqual(response.status_code, 200)
+            _, kwargs = mock_post.call_args
+            self.assertEqual(
+                kwargs["json"],
+                {
+                    "user_id": "integration-user",
+                    "session_id": "default",
+                    "action": "pet",
+                },
+            )
+            self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
 
     def test_proxy_webot_tool_approval_resolve_forwards_resolution_payload(self):
         with mock.patch.object(
@@ -686,6 +845,66 @@ class FrontendIntegrationTests(unittest.TestCase):
             recent_run_limit=5,
             latest_site_limit=3,
             snapshots_per_site=2,
+        )
+
+    def test_export_openclaw_config_falls_back_to_saved_masked_values(self):
+        stub_module = types.SimpleNamespace(
+            export_llm_config_to_openclaw=mock.Mock(
+                return_value={"ok": True, "model_ref": "openai/gpt-5.4"}
+            )
+        )
+        payload = {
+            "api_key": "****masked****",
+            "base_url": "",
+            "model": "",
+            "provider": "",
+        }
+        saved = {
+            "api_key": "saved-key",
+            "base_url": "https://api.openai.com",
+            "model": "gpt-5.4",
+            "provider": "openai",
+        }
+
+        with mock.patch("shutil.which", return_value="/usr/local/bin/openclaw"), mock.patch.object(
+            front, "_read_saved_clawcross_llm_config", return_value=saved
+        ), mock.patch.dict(sys.modules, {"configure_openclaw": stub_module}):
+            response = self.client.post("/api/export_openclaw_config", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["ok"])
+        stub_module.export_llm_config_to_openclaw.assert_called_once_with(
+            api_key="saved-key",
+            base_url="https://api.openai.com",
+            model="gpt-5.4",
+            provider="openai",
+        )
+
+    def test_export_openclaw_config_allows_keyless_ollama(self):
+        stub_module = types.SimpleNamespace(
+            export_llm_config_to_openclaw=mock.Mock(
+                return_value={"ok": True, "model_ref": "ollama/llama3.2:latest"}
+            )
+        )
+        payload = {
+            "api_key": "",
+            "base_url": "http://127.0.0.1:11434",
+            "model": "llama3.2:latest",
+            "provider": "ollama",
+        }
+
+        with mock.patch("shutil.which", return_value="/usr/local/bin/openclaw"), mock.patch.dict(
+            sys.modules, {"configure_openclaw": stub_module}
+        ):
+            response = self.client.post("/api/export_openclaw_config", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["ok"])
+        stub_module.export_llm_config_to_openclaw.assert_called_once_with(
+            api_key="",
+            base_url="http://127.0.0.1:11434",
+            model="llama3.2:latest",
+            provider="ollama",
         )
 
     def test_save_current_user_password_persists_hashed_credential(self):

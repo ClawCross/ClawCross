@@ -19,7 +19,6 @@ metadata:
 
 1. After you have read this file (or the sections needed for the user’s task), you **must ask the user** whether they want to **start Clawcross** now (background `start` or foreground `start-foreground`), and **wait for their answer** before running those commands.
 2. **Exception:** if the user already clearly asked to start in the same turn (e.g. “帮我启动 Clawcross”“run start”“执行 start”), you may run `start` / `start-foreground` without asking again.
-   An explicitly requested `join --prepare` authorizes preparing and starting forwarding mode (`--bridge`) as part of joining. Honor existing session authorization; do not ask a second time. This mode has no local web UI, login link or main-model setup wizard.
 3. When Clawcross **is** started, copy the **local URL**, Magic link lines, and (if present) **remote** Tunnel URL from the terminal output into your reply — see [`AGENTS.md`](./AGENTS.md) Zero-Question Install Flow.
 
 ### Self-Evolution Protocol
@@ -28,10 +27,10 @@ This `SKILL.md` is now **self-evolving**. When you hit a real execution failure 
 
 ```bash
 # Linux / macOS
-bash launch/run.sh evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
+bash selfskill/scripts/run.sh evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
 
 # Windows PowerShell
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
 ```
 
 Rules:
@@ -48,65 +47,51 @@ Rules:
 
 ### Quick Start (Zero Questions)
 
-The simplest path is `start`. It creates the runtime `.env` when needed. An empty `LLM_MODEL` allows the web UI to start, but LLM requests need a model configured in the first-login wizard. Set `CLAWCROSS_REQUIRE_LLM_MODEL=1` if strict startup validation is wanted.
+The simplest path: create `config/.env`, choose an `LLM_MODEL`, then run `start`. A missing LLM API key does not block startup if a local OpenClaw import can fill it, but **an empty `LLM_MODEL` now stops startup early** so the stack does not appear healthy while agents cannot answer. If you are intentionally bringing up only the shell services, set `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1` for that one run.
 
 **How many commands?**
 
 | Situation | Typical commands |
 |---|---|
-| **Fresh machine / first clone** | **One:** **`start`** only. It prepares Python 3.11, a venv, and core Python dependencies when needed. |
-| **Fresh machine with empty `LLM_MODEL`** | **One:** `start`, then configure the model in the first-login wizard. |
+| **Fresh machine / first clone with `LLM_MODEL` already set/importable** | **One:** **`start`** only (`start` / `start-foreground` 会按需运行与 `setup` 相同的 `setup_env`：venv、依赖、Linux 下 acpx 等). |
+| **Fresh machine with empty `LLM_MODEL`** | **Two:** configure a model first, then `start`. Use `auto-model` if you need to list available models after setting provider/key values. |
 | **Optional** | `setup` — 仅当你想**单独**重装/检查环境时；日常不必先跑。 |
 
 `start` automatically runs the equivalent of `configure --init` when `config/.env` is missing, so you **do not** need a separate `configure --init` unless you want to create or inspect `.env` before launching.
 
 ```bash
 # Linux / macOS
-bash launch/run.sh start          # 准备 Python/venv/核心依赖，初始化 .env，启动服务
+bash selfskill/scripts/run.sh start          # 按需 setup_env + 创建 .env + 启动服务、Tunnel、Magic links
 # Optional flags (same semantics as Windows run.ps1):
-#   --tunnel         Connect to ClawCross Hub for a persistent public device subdomain.
-#   --with-openclaw  Import LLM settings from an existing OpenClaw install when ClawCross has no key.
-bash launch/run.sh start --tunnel --with-openclaw   # explicit integrations
+#   --no-tunnel      Do not start Cloudflare Tunnel (local-only; Magic link output has no “remote” URL).
+#   --no-openclaw    Do not import LLM from OpenClaw; launcher skips OpenClaw gateway warm / OPENCLAW_* refresh.
+bash selfskill/scripts/run.sh start --no-tunnel --no-openclaw   # example: both
 # → Open http://127.0.0.1:51209 (or use the printed Magic link; remote/HTTPS needs the remote link)
 # → First login: Magic link or passwordless localhost
 # → Setup wizard appears if LLM is not yet configured in Clawcross
 ```
 
 ```powershell
-# Windows PowerShell（入口脚本只负责准备 Python；后续交给共享 Python 控制器）
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 start
-# The same opt-in flags work on Windows. Foreground mode does not start a tunnel.
-powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 start --tunnel --with-openclaw
+# Windows PowerShell（入口脚本会先自检 uv/venv/依赖；`start` 内若仍缺 venv 或依赖会再跑 setup_env.ps1）
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 start
+# Same flags: --no-tunnel --no-openclaw (any order). start-foreground accepts --no-openclaw; --no-tunnel is ignored there (no tunnel in that mode).
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start --no-tunnel --no-openclaw
 ```
 
 The `setup` command (optional standalone) automatically:
 1. Installs `uv` package manager if missing
 2. Creates a Python 3.11+ virtual environment
 3. Installs Python dependencies from `config/requirements.txt`
-4. Reports optional integrations with `components`; none are downloaded by `setup`.
-
-Install external integrations explicitly, only when the feature is needed:
-
-```bash
-bash launch/run.sh components
-bash launch/run.sh install-component acp-codex
-bash launch/run.sh install-component nonebot --adapter telegram
-bash launch/run.sh install-component channels
-bash launch/run.sh install-component weclaw
-bash launch/run.sh install-component cloudflared
-bash launch/run.sh install-component srt          # optional command sandbox
-```
-
-Use the same subcommands with `launch/run.ps1` on Windows. `channels` installs legacy QQ/Telegram and media packages; NoneBot adapters are installed separately. `acpx`, WeClaw, and cloudflared are placed under `CLAWCROSS_BIN_DIR` when installed through this interface. Hub is the default public provider and needs no extra binary. Explicit Cloudflare selection uses an existing binary and never downloads it at startup.
-SRT is also explicit and stays off until a session selects `command_sandbox=srt`. On Linux it needs `bwrap`, `socat`, and `rg`; on macOS it needs `rg`. Windows additionally requires the separately elevated `srt windows-install` setup.
+4. **Installs `acpx` (ACP exchange plugin) via `npm install -g acpx@latest`** — used for external AI agent communication
 
 The `start` command automatically:
-1. **When needed**, creates the Python environment through the platform wrapper, then installs only `config/requirements.txt` from Python. Optional integrations are installed only through `install-component`.
+1. **When needed**, runs the same environment bootstrap as `setup` (`scripts/setup_env.sh` on Linux/macOS, or `setup_env.ps1` on Windows if venv/deps are still incomplete after the script’s built-in checks; on Linux/macOS, **acpx** is also installed when `npm` is present — Windows `setup_env.ps1` mirrors that)
 2. Creates `config/.env` from template if missing
-3. Imports LLM fields from an existing OpenClaw installation (read-only) only with `--with-openclaw` and only when the local key is empty or placeholder.
-4. Warns if `LLM_MODEL` is missing; set `CLAWCROSS_REQUIRE_LLM_MODEL=1` to require one before launching services
+3. **Optionally** tries to copy LLM fields from local OpenClaw into `config/.env` when the key is still empty or placeholder — failure is OK if you will configure the key later — **skipped entirely** if you pass **`--no-openclaw`**
+4. Verifies `LLM_MODEL` is set before launching services; override only for shell-only diagnostics with `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1`
 5. Starts all services after the model check passes
-6. Prints a local Magic link. With `--tunnel`, it connects to ClawCross Hub and prints the device HTTPS link when available. Select `TUNNEL_PROVIDER=cloudflare` to use an installed cloudflared binary instead.
+6. Warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values in `.env` (does not overwrite a **real** user-set `LLM_API_KEY`) — **skipped** if **`--no-openclaw`** (or env `CLAWCROSS_NO_OPENCLAW=1` for the launcher process)
+7. Starts **Cloudflare Tunnel** via `scripts/tunnel.py`, then prints **`🔗 Magic link`**: **local** and **remote** (when `PUBLIC_DOMAIN` is set). Operators and AI agents **must** pass these links to the user after install/start — **skipped** if **`--no-tunnel`** (Magic link text will state that no Tunnel was started).
 
 After startup, the frontend setup wizard handles remaining LLM configuration via the web UI. The wizard detects local OpenClaw and Antigravity-Manager and offers one-click import buttons.
 
@@ -114,46 +99,116 @@ After startup, the frontend setup wizard handles remaining LLM configuration via
 
 | Flag | When to use | Behavior |
 |------|-------------|----------|
-| **`--tunnel`** | Public access is explicitly requested. | Background `start` uses Hub by default; Cloudflare is selectable through `TUNNEL_PROVIDER`. Foreground mode remains local. |
-| **`--with-openclaw`** | The user wants ClawCross to reuse OpenClaw's LLM settings. | Reads OpenClaw's config into `config/.env` while ClawCross has no key; never writes OpenClaw. |
-| **`--no-tunnel`, `--no-openclaw`** | Older scripts or automation still pass these flags. | Accepted for compatibility; they preserve the local-only default. |
+| **`--no-tunnel`** | User wants **no** quick public URL (no Cloudflare Tunnel for this run). | Background `start` does **not** run `tunnel.py` or wait on `PUBLIC_DOMAIN`. **`start-foreground`**: tunnel is never started anyway; the flag is **ignored** (a short note is printed). |
+| **`--no-openclaw`** | User does **not** want Clawcross to tie into OpenClaw for this run (no shared LLM import on start, no gateway warm). | Skips `configure_openclaw.py --import-clawcross-llm-from-openclaw` when the key is still placeholder. Sets **`CLAWCROSS_NO_OPENCLAW`** for **`scripts/launcher.py`**, which **skips** `ensure_openclaw_gateway_running()` (no `OPENCLAW_*` refresh on startup; restart loop respects the same flag). |
 
-Environment variable (for advanced/manual launcher runs): **`CLAWCROSS_NO_TUNNEL`** may be set to `1` / `true` / `yes` / `on` where documented; scripts set them when the flags above are used.
+Environment variables (for advanced/manual launcher runs): **`CLAWCROSS_NO_OPENCLAW`** and **`CLAWCROSS_NO_TUNNEL`** may be set to `1` / `true` / `yes` / `on` where documented; scripts set them when the flags above are used.
 
 ### For agents using this SKILL (settings are documented — startup does not enforce them)
 
-Follow **[For AI agents that read this SKILL](#for-ai-agents-that-read-this-skill)** before running `start`. Use the rest of this file when the user **wants** to configure something: **OpenClaw**, **Advanced: Manual CLI Configuration** (`configure`, `auto-model`), **Magic link** / `add-user`, provider tables, etc. **None of that blocks `start`:** the stack comes up with a template `.env`; the human signs in and finishes LLM/account choices in the UI or CLI when ready.
+Follow **[For AI agents that read this SKILL](#for-ai-agents-that-read-this-skill)** before running `start`. Use the rest of this file when the user **wants** to configure something: **OpenClaw Integration**, **Advanced: Manual CLI Configuration** (`configure`, `auto-model`, `sync-openclaw-llm`), **Magic link** / `add-user`, provider tables, etc. **None of that blocks `start`:** the stack comes up with a template `.env`; the human signs in and finishes LLM/account choices in the UI or CLI when ready.
 
 ### Optional: auto-import OpenClaw LLM at startup
 
-With `--with-openclaw`, startup may import provider/model/key from an existing OpenClaw installation when ClawCross has no real `LLM_API_KEY`. Ordinary startup does not probe OpenClaw.
+During `start` / `start-foreground`, if `config/.env` has no real `LLM_API_KEY` (missing or placeholder `your_api_key_here`), the scripts **try** to import provider/model/key from OpenClaw into Clawcross `.env` — **unless** **`--no-openclaw`** was passed. If OpenClaw is missing or has no LLM config, startup **continues** anyway. If you already set a real `LLM_API_KEY`, startup does not overwrite it.
 
 ### Magic Prompts for AI Code CLI
 
 After the first login, users can send these prompts to their AI code CLI agent:
 
-- `阅读SKILL帮我安装并配置AntiGravity`
+- `阅读SKILL帮我安装并配置OpenClaw/AntiGravity`
 - `帮我自动选择目前能用的最好的LLM模型`
+- `帮OpenClaw安装微信插件并绑定`
 
 ---
 
-## OpenClaw (Optional)
+## OpenClaw Integration (Optional)
 
-OpenClaw is an ACP agent like Codex: ClawCross reaches it through its built-in ACP client (`openclaw acp`) and never changes OpenClaw's own configuration. It needs an installed `openclaw` CLI whose gateway runs; install or configure OpenClaw itself only when the user explicitly asks, with OpenClaw's own documentation. See [docs/openclaw-commands.md](./docs/openclaw-commands.md).
+Only install OpenClaw when the user explicitly asks for it.
+
+Check whether OpenClaw exists:
+
+- Linux / macOS: `command -v openclaw >/dev/null 2>&1`
+- Windows PowerShell: `Get-Command openclaw -ErrorAction SilentlyContinue`
+
+If the user explicitly wants OpenClaw integration and it is missing, use this flow:
+
+1. Ensure `Node.js >= 22`
+2. Install CLI: `npm install -g openclaw@latest --ignore-scripts`
+3. Run onboarding:
+   - Windows / automation: `openclaw onboard --non-interactive --accept-risk --install-daemon`
+   - If you want OpenClaw to reuse an existing OpenAI key: append `--openai-api-key <LLM_API_KEY>`
+   - Linux / macOS local interactive flow: `openclaw onboard --install-daemon`
+4. Enable HTTP compatibility: `openclaw config set gateway.http.endpoints.chatCompletions.enabled true`
+5. Restart gateway: `openclaw gateway restart`
+6. Web entry points after the gateway is up:
+   - OpenClaw dashboard / Control UI: `http://127.0.0.1:18789/`
+   - OpenClaw OpenAI-compatible HTTP API: `http://127.0.0.1:18789/v1/chat/completions`
+7. Sync Clawcross integration:
+   - Linux / macOS: `bash selfskill/scripts/run.sh check-openclaw`
+   - Windows: `powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 check-openclaw`
+8. If the OpenClaw dashboard shows `gateway token missing`, either:
+   - paste `OPENCLAW_GATEWAY_TOKEN` into Control UI settings, or
+   - for loopback-only local development, switch to no-auth:
+     - `openclaw config set gateway.auth.mode none`
+     - `openclaw config unset gateway.auth.token`
+     - `openclaw gateway restart`
+9. If Clawcross was already running before OpenClaw was installed or reconfigured, restart Clawcross so OASIS reloads the `openclaw` CLI.
 
 ### Provider Switching Notes
 
-- **DeepSeek**: Update Clawcross `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_PROVIDER` together. Tested stable pair: Clawcross `LLM_BASE_URL=https://api.deepseek.com`, `LLM_MODEL=deepseek-chat`, `LLM_PROVIDER=deepseek`.
-- **Antigravity-Manager** (local reverse proxy, free 67+ models via Google One Pro): `LLM_BASE_URL=http://127.0.0.1:8045`, `LLM_API_KEY=sk-antigravity`, `LLM_MODEL=gemini-3.1-pro`, `LLM_PROVIDER=antigravity`.
-- **MiniMax** (1M context): `LLM_BASE_URL=https://api.minimaxi.com`, `LLM_MODEL=MiniMax-M2.7`, `LLM_PROVIDER=minimax`.
+- **DeepSeek**: Update Clawcross `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_PROVIDER` together. For OpenClaw, define a DeepSeek custom provider in `~/.openclaw/openclaw.json`. See [docs/openclaw-commands.md § 4](./docs/openclaw-commands.md) for the full JSON snippet. Tested stable pair: Clawcross `LLM_BASE_URL=https://api.deepseek.com`, `LLM_MODEL=deepseek-chat`, `LLM_PROVIDER=deepseek`.
+- **Antigravity-Manager** (local reverse proxy, free 67+ models via Google One Pro): `LLM_BASE_URL=http://127.0.0.1:8045`, `LLM_API_KEY=sk-antigravity`, `LLM_MODEL=gemini-3.1-pro`, `LLM_PROVIDER=antigravity`. See [docs/openclaw-commands.md § 4.1](./docs/openclaw-commands.md).
+- **MiniMax** (1M context): `LLM_BASE_URL=https://api.minimaxi.com`, `LLM_MODEL=MiniMax-M2.7`, `LLM_PROVIDER=minimax`. See [docs/openclaw-commands.md § 4.2](./docs/openclaw-commands.md).
+
+### OpenClaw Weixin Channel
+
+Use this only when the user explicitly wants Weixin / 微信 integration.
+
+Windows-specific notes:
+
+1. In PowerShell, use `openclaw.cmd`, not bare `openclaw`, if script execution policy blocks `openclaw.ps1`.
+2. The official installer may fail on Windows PowerShell (`npx -y @tencent-weixin/openclaw-weixin-cli@latest install`) because it shells out to `which openclaw`.
+3. If that happens, use the manual Windows flow:
+
+```powershell
+openclaw.cmd plugins install "@tencent-weixin/openclaw-weixin"
+openclaw.cmd config set plugins.entries.openclaw-weixin.enabled true
+openclaw.cmd channels login --channel openclaw-weixin
+openclaw.cmd channels list --json
+openclaw.cmd gateway restart
+```
+
+4. `openclaw status` showing `openclaw-weixin | ON | SETUP | no token` means the plugin is installed but login hasn't completed.
+5. After QR login succeeds, bind the Weixin account:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 bind-openclaw-channel main openclaw-weixin:<account_id>
+```
+
+Or via Clawcross CLI:
+
+```bash
+uv run scripts/cli.py openclaw channels
+uv run scripts/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-weixin:<account_id>"}'
+```
+
+6. After binding, verify: `uv run scripts/cli.py openclaw bindings --agent main`
 
 ---
 
 ## ACP Tools Integration (Optional)
 
-ClawCross communicates through its **built-in ACP client**, using the pinned official Python SDK. No acpx installation is needed for local or SSH Agents, native session imports or CLI forwarding. Install only the platforms requested by the user. Codex and Claude adapters are explicitly prepared with `install-component acp-codex` and `install-component acp-claude` (Node.js 22.13+); other platforms use installed native ACP programs. DeepSeek Harness additionally requires Node.js 24.9+.
+Clawcross communicates with external AI coding agents via **acpx** (ACP exchange). `acpx` is installed automatically during `start` / `setup`. Each tool below is an independent CLI agent that acpx can bridge — install only the ones the user wants.
 
-Existing `~/.acpx` data is read only to recover native IDs and launch aliases; it is not executable infrastructure. Migration preserves Agent IDs, owner, cwd, group membership and history, and stops if the old controller still owns the session. See [docs/agent-join.md](./docs/agent-join.md).
+**Prerequisite for all:** `acpx` must be installed (`npm install -g acpx@latest`; done automatically by `start`).
+
+After installing any tool below, **restart Clawcross** so the switcher bar picks it up. Verify with:
+
+```bash
+acpx --help          # lists all discovered tools
+# or in browser: the switcher bar in ClawCross Studio shows available ACP tabs
+```
 
 ### Codex (OpenAI)
 
@@ -318,19 +373,27 @@ For users who prefer CLI over the web UI, or for automation scripts:
 
 ```bash
 # Linux / macOS
-bash launch/run.sh configure LLM_API_KEY sk-xxx
-bash launch/run.sh configure LLM_BASE_URL https://api.example.com
-bash launch/run.sh auto-model
-bash launch/run.sh configure LLM_MODEL <model>
+bash selfskill/scripts/run.sh configure LLM_API_KEY sk-xxx
+bash selfskill/scripts/run.sh configure LLM_BASE_URL https://api.example.com
+bash selfskill/scripts/run.sh auto-model
+bash selfskill/scripts/run.sh configure LLM_MODEL <model>
 ```
 
 ```powershell
 # Windows PowerShell
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure LLM_API_KEY sk-xxx
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure LLM_BASE_URL https://api.example.com
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 auto-model
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure LLM_MODEL <model>
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 configure LLM_API_KEY sk-xxx
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 configure LLM_BASE_URL https://api.example.com
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 auto-model
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 configure LLM_MODEL <model>
 ```
+
+Reverse sync to OpenClaw:
+
+```bash
+bash selfskill/scripts/run.sh sync-openclaw-llm
+```
+
+`configure` auto-syncs safe LLM updates when the Clawcross config is complete. Partial edits intentionally stop short of rewriting OpenClaw.
 
 For managed terminals, CI, or agent runners that clean up child processes, use `start-foreground` instead of `start`.
 
@@ -383,7 +446,7 @@ After `start`, these services should come up:
 
 Useful checks:
 
-- `bash launch/run.sh status` / `run.ps1 status`
+- `bash selfskill/scripts/run.sh status` / `run.ps1 status`
 - `GET http://127.0.0.1:<PORT_AGENT>/v1/models`
 - Open `http://127.0.0.1:<PORT_FRONTEND>`
 
@@ -392,7 +455,7 @@ Notes:
 - On Windows, default ports may be auto-remapped; always trust `config/.env` or `status`.
 - Local `127.0.0.1` access supports passwordless login; **non-localhost / HTTPS** access uses the **magic link** from `start`, `status`, `tunnel-status`, or `start-tunnel` (not `cli.py status` alone).
 - Clawcross starts even without LLM configured. The setup wizard prompts on first login.
-- `src/backend/chatbot/setup.py` requires an interactive terminal. In non-interactive contexts, `launcher.py` automatically skips the chatbot menu. Force with `WEBOT_HEADLESS=1`.
+- `chatbot/setup.py` requires an interactive terminal. In non-interactive contexts, `launcher.py` automatically skips the chatbot menu. Force with `WEBOT_HEADLESS=1`.
 
 **Mandatory for anyone guiding a user after `start`:** Reproduce or summarize the **Magic link** block (local + remote when available). Do not end the handoff with only “open localhost” if the user needs phone or HTTPS access.
 
@@ -403,29 +466,30 @@ Notes:
 ### Runtime
 
 ```bash
-bash launch/run.sh status
-bash launch/run.sh stop
-bash launch/run.sh configure --show
+bash selfskill/scripts/run.sh status
+bash selfskill/scripts/run.sh stop
+bash selfskill/scripts/run.sh configure --show
 ```
 
-**Magic link** (local + remote when Tunnel is ready) is printed by **`run.sh` / `run.ps1`** after `start` (once Tunnel has run), and again by **`status`**, **`tunnel-status`**, and **`start-tunnel`** — each uses `cli.py token generate` so the HMAC token is correct. It is **not** part of `uv run src/cli/cli.py status`. Those commands also print a line **directed at AI assistants** asking them to copy the URLs into the user reply.
+**Magic link** (local + remote when Tunnel is ready) is printed by **`run.sh` / `run.ps1`** after `start` (once Tunnel has run), and again by **`status`**, **`tunnel-status`**, and **`start-tunnel`** — each uses `cli.py token generate` so the HMAC token is correct. It is **not** part of `uv run scripts/cli.py status`. Those commands also print a line **directed at AI assistants** asking them to copy the URLs into the user reply.
 
 **Magic link user id** defaults to **`default`** (the `user_id` in `?user=` and in `token generate -u`). To generate links for another user, set **`CLAWCROSS_MAGIC_LINK_USER`** before running the script (Linux/macOS: `export CLAWCROSS_MAGIC_LINK_USER=admin`). Note: CLI chat defaults to `admin` for `-u`; magic link scripts intentionally used `default` unless you override.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 status
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 stop
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure --show
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 status
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 stop
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 configure --show
 ```
 
 ### CLI
 
 ```bash
-uv run src/cli/cli.py --help
-uv run src/cli/cli.py teams --help
-uv run src/cli/cli.py workflows --help
-uv run src/cli/cli.py skill --help   # managed 技能 list/show/new/edit/delete
-uv run src/cli/cli.py cron --help    # 定时任务 list/new/delete
+uv run scripts/cli.py --help
+uv run scripts/cli.py teams --help
+uv run scripts/cli.py workflows --help
+uv run scripts/cli.py openclaw --help
+uv run scripts/cli.py skill --help   # managed 技能 list/show/new/edit/delete
+uv run scripts/cli.py cron --help    # 定时任务 list/new/delete
 ```
 
 ### Workflow Monitoring
@@ -433,7 +497,7 @@ uv run src/cli/cli.py cron --help    # 定时任务 list/new/delete
 Prefer non-blocking checks:
 
 ```bash
-uv run src/cli/cli.py topics show --topic-id <ID>
+uv run scripts/cli.py topics show --topic-id <ID>
 ```
 
 Avoid `topics watch` or `workflows conclusion` when you need a quick status snapshot.
@@ -455,7 +519,7 @@ See [docs/repo-index.md](./docs/repo-index.md) and [docs/example_team.md](./docs
 When a startup/test/CLI command fails while following this guide, refresh the managed self-evolution block first:
 
 ```bash
-bash launch/run.sh evolve-skill --skill SKILL.md --command "<failing command>"
+bash selfskill/scripts/run.sh evolve-skill --skill SKILL.md --command "<failing command>"
 ```
 
 ### Python 2 vs Python 3
@@ -466,21 +530,42 @@ On macOS, the system `python` may point to **Python 2.7**. Clawcross requires **
 
 **Fix** (in order of preference):
 
-1. Always use the canonical startup: `bash launch/run.sh start`
-2. Activate the venv first: `source .venv/bin/activate && python launch/launcher.py`
-3. Use the venv python directly: `.venv/bin/python launch/launcher.py`
+1. Always use the canonical startup: `bash selfskill/scripts/run.sh start`
+2. Activate the venv first: `source .venv/bin/activate && python scripts/launcher.py`
+3. Use the venv python directly: `.venv/bin/python scripts/launcher.py`
 
-**Never** run `python3 src/frontend/server.py` directly.
+**Never** run `cd src && python front.py` or `python3 src/front.py` directly.
 
 Safety guards: `launcher.py` includes a Python version check and `run.sh` verifies after venv activation.
 
 ### EOFError on Startup
 
-**Symptom**: `EOFError: EOF when reading a line` from `src/backend/chatbot/setup.py`
+**Symptom**: `EOFError: EOF when reading a line` from `chatbot/setup.py`
 
 **Cause**: Non-interactive terminal (agent runners, CI, piped scripts).
 
-**Fix**: Use `launch/run.sh start` (which backgrounds `launcher.py` correctly), or set `WEBOT_HEADLESS=1`.
+**Fix**: Use `selfskill/scripts/run.sh start` (which backgrounds `launcher.py` correctly), or set `WEBOT_HEADLESS=1`.
+
+### OpenClaw Gateway Warnings
+
+**Symptom**: `openclaw gateway status` prints RPC probe warning even when things work.
+
+**Fix**: Confirm real health via:
+- Browser: `http://127.0.0.1:18789/`
+- API: `http://127.0.0.1:18789/v1/chat/completions`
+- CLI: `openclaw.cmd channels list --json`
+
+### OpenClaw 401 After Provider Switch
+
+**Symptom**: HTTP 401 from OpenClaw after switching to Antigravity or another provider.
+
+**Fix**: Check `openclaw config get gateway.auth`. If mode is `token`, switch to no-auth for local use:
+
+```bash
+openclaw config set gateway.auth.mode none
+openclaw config unset gateway.auth.token
+openclaw gateway restart
+```
 
 ### Clawcross API Returns "认证失败"
 
@@ -505,6 +590,28 @@ print(extract_text(resp.content))
 
 **Fix**: On Windows, ports may auto-remap. Always trust `config/.env` or `status` output, not hardcoded ports. See [docs/ports.md](./docs/ports.md) for the complete service map.
 
+### OpenClaw onboard Overwrites Config
+
+**Symptom**: Re-running `openclaw onboard` changes gateway auth, default model, or provider.
+
+**Fix**: After every `onboard`, re-check:
+
+```bash
+openclaw.cmd gateway status
+openclaw.cmd models status --json
+uv run scripts/cli.py openclaw bindings --agent main
+```
+
+### Windows PowerShell Execution Policy
+
+**Symptom**: `openclaw` commands fail with `PSSecurityException`.
+
+**Fix**: Use `openclaw.cmd` instead of bare `openclaw`:
+
+```powershell
+openclaw.cmd channels login --channel openclaw-weixin
+```
+
 ---
 
 ## Reference Docs
@@ -513,7 +620,7 @@ print(extract_text(resp.content))
 - [docs/index.md](./docs/index.md) — canonical task-based docs map
 - [docs/repo-index.md](./docs/repo-index.md) — codebase and file index
 - [docs/overview.md](./docs/overview.md) — product overview
-- [docs/team-management.md](./docs/team-management.md) — main-Agent Team management
+- [docs/team-creator.md](./docs/team-creator.md) — ClawCross Creator flow
 - [docs/oasis-reference.md](./docs/oasis-reference.md) — OASIS runtime and orchestration
 - [docs/runtime-reference.md](./docs/runtime-reference.md) — architecture and auth
 - [docs/webot-agent-runtime.md](./docs/webot-agent-runtime.md) — WeBot subagents and profiles
@@ -521,7 +628,7 @@ print(extract_text(resp.content))
 - [docs/build_team.md](./docs/build_team.md) — Team creation and member config
 - [docs/create_workflow.md](./docs/create_workflow.md) — workflow YAML format
 - [docs/example_team.md](./docs/example_team.md) — example Team files
-- [docs/openclaw-commands.md](./docs/openclaw-commands.md) — OpenClaw as an ACP agent
+- [docs/openclaw-commands.md](./docs/openclaw-commands.md) — OpenClaw commands
 - [docs/tinyfish-monitor.md](./docs/tinyfish-monitor.md) — TinyFish monitor
 - [docs/ports.md](./docs/ports.md) — service map and ports
 
@@ -529,61 +636,80 @@ print(extract_text(resp.content))
 ## Self-Evolution Loop
 
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
-Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
+Prefer `skill_evolution_report` / `skill_evolution_apply` or `selfskill/scripts/evolve_skill.py` over manual edits here.
 
-- Updated at: `2026-11-08T16:06:42.982323+00:00`
-- Strategy: `repair-only`
-- Heuristic candidate: `verification-loop-1`
-- Heuristic score: `0.886`
+- Updated at: `2026-04-11T11:50:44.173193+00:00`
+- Heuristic candidate: `blended-structured-output-workspace-preflight`
+- Heuristic score: `0.707`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: MCP 0.2.1 actual Agent startup. Signals: verification-loop. stderr carried the strongest failure evidence.
-
-### Strategy Rationale
-
-- Intent mix: repair `0.8`, optimize `0.2`, innovate `0.0`
-- Emergency mode for repeated failures where repair guidance must dominate.
+Command exited with code 1. Command: python -m py_compile src/webot/skill_evolution.py selfskill/scripts/evolve_skill.py src/mcp_servers/skills.py src/webot/trajectory.py src/webot/skills.py src/core/agent.py src/core/streaming_tool_executor.py. Signals: structured-output, workspace-preflight. stderr carried the strongest failure evidence.
 
 ### Latest Trigger Command
 
-`MCP 0.2.1 actual Agent startup`
+`python -m py_compile src/webot/skill_evolution.py selfskill/scripts/evolve_skill.py src/mcp_servers/skills.py src/webot/trajectory.py src/webot/skills.py src/core/agent.py src/core/streaming_tool_executor.py`
 
 ### Latest Error Excerpt
 
 ```text
-The unpinned langchain-mcp-adapters dependency allowed 0.2.1, which has neither MultiServerMCPClient.handle_tool_errors nor that converter keyword. The original loader failed with AttributeError before the Agent service listened. Reproduced with the official 0.2.1 wheel on Linux; this is not an OS-specific attribute. Pass the error policy only when the converter supports it, pin new installs to verified 0.3.2, and run actual isolated server lifespan/health checks on Windows and Linux with both versions. Both local version checks now pass without model calls.
+File "src/webot/skill_evolution.py", line 69
+    _SIGNAL_LIBRARY: list[dict[str, Any]] = [
+                   ^
+SyntaxError: invalid syntax
+
+  File "selfskill/scripts/evolve_skill.py", line 26
+    def _parse_args() -> argparse.Namespace:
+                      ^
+SyntaxError: invalid syntax
+
+  File "src/mcp_servers/skills.py", line 31
+    async def skill_manage(
+        ^
+SyntaxError: invalid syntax
+
+  File "src/webot/trajectory.py", line 25
+    def _ensure_dir() -> Path:
+                      ^
+SyntaxError: invalid syntax
+
+  File "src/webot/skills.py", line 32
+    _DANGEROUS_PATTERNS: list[tuple[str, str]] = [
+                       ^
+SyntaxError: invalid syntax
+
+  File "src/core/agent.py", line 198
+    SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
+                                ^
+SyntaxError: invalid syntax
+
+  File "src/core/streaming_tool_executor.py", line 33
+    _TOOL_ACCESS_MODES: dict[str, ToolAccessMode] = {
+                      ^
+SyntaxError: invalid syntax
 ```
-
-### Governance Snapshot
-
-- Suppressed signals: (none)
-- Consecutive repair cycles: `0`
-- Consecutive empty cycles: `0`
-- Recent failure ratio: `1.0`
 
 ### Operating Adjustments
 
-1. State the exact failure mode before editing anything.
-2. Choose the narrowest reproducer first, then a broader regression command.
-3. Record pass/fail status immediately after each attempted fix.
+1. Start from the narrowest reproducible failure before broad retries.
+2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
+3. End every fix attempt with an explicit verifier command and observed result.
 
 ### Validation Loop
 
-1. Rerun the minimal reproducer before any broad test suite.
-2. When a fix passes, note the exact verifier command in the skill.
+1. Run the minimal reproducer first, then the broader regression command.
+2. Persist the command and result summary in the evolution report.
 
 ### Recent Evidence
 
-- `2026-11-08T16:06:42.982323+00:00` `repo-skill` — The unpinned langchain-mcp-adapters dependency allowed 0.2.1, which has neither MultiServerMCPClient.handle_tool_errors nor that converter key ...[truncated]
+- `2026-04-11T11:50:44.173193+00:00` `repo-skill` — File "src/webot/skill_evolution.py", line 69
+    _SIGNAL_LIBRARY: list[dict[str, Any]] = [
+                   ^
+SyntaxError: invalid syntax ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `verification-loop-1` score `0.886` — Tighten verification loops (intent `repair`)
-
-### Local State Snapshot
-
-- Python/platform: `3.11.16` / `Linux-7.0.0-14-generic-x86_64-with-glibc2.43`
-- Feedback history entries: `0`
-- Runtime failure entries: `0`
+- `blended-structured-output-workspace-preflight` score `0.707` — Blend the strongest recent failure patterns
+- `structured-output-2` score `0.657` — Harden structured-output handling
+- `workspace-preflight-1` score `0.523` — Add repo/workspace preflight checks
 <!-- clawcross:self-evolution:end -->

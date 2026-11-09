@@ -6,11 +6,11 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src" / "backend"
+SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from webot.engine.agent_runtime_state import TaskRegistry, ThreadStateRegistry
+from core.agent_runtime_state import TaskRegistry, ThreadStateRegistry
 
 
 class TaskRegistryTests(unittest.IsolatedAsyncioTestCase):
@@ -63,16 +63,6 @@ class TaskRegistryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ThreadStateRegistryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_reset_clears_old_usage_without_replacing_lock(self):
-        registry = ThreadStateRegistry()
-        lock = await registry.get_lock('alice#s')
-        registry.set_thread_context_usage('alice#s', 100, 200)
-        registry.add_pending_system_message('alice#s')
-        registry.forget('alice#s')
-        self.assertIs(await registry.get_lock('alice#s'), lock)
-        self.assertFalse(registry.has_pending_system_messages('alice#s'))
-        self.assertEqual(registry.get_thread_context_usage('alice#s')['tokens'], 0)
-
     async def test_pending_messages_and_busy_state_are_reported(self):
         registry = ThreadStateRegistry()
         thread_id = "thread-42"

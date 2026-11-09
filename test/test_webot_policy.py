@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from webot.policy import (
+from src.webot.policy import (
     WeBotToolPolicy,
     ToolPolicyDecision,
     ToolPolicyRule,

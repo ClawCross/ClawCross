@@ -8,13 +8,13 @@ plan:
     author: begin
     content: "请提出你的问题或议题，各位专家将依次给出分析。"
 - id: m1
-  agent: 户晨风
+  expert: hu_chenfeng#oasis#户晨风
 - id: m2
-  agent: 童锦程
+  expert: tong_jincheng#oasis#童锦程
 - id: m3
-  agent: 峰哥
+  expert: fengge#oasis#峰哥
 - id: m4
-  agent: 陈震
+  expert: zhen_ge#oasis#陈震
 - id: m5
   manual:
     author: bend

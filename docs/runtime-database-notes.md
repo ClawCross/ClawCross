@@ -4,44 +4,18 @@ This document summarizes the runtime-related databases used by Clawcross, what t
 
 ## Database Roles
 
-- `data/agents.db`
-  - One `agents` row per owner and Agent ID for every runtime.
-  - External ACP, HTTP, and OpenClaw sessions persist negotiation in `runtime_json`:
-    `negotiation_sent`, `negotiation_session`, latest delivered `identity_prompt`,
-    `identity_sections`, `identity_version`, `negotiated_at`, and `dynamic_context`.
-  - The first successful turn delivers fixed rules/persona and the latest user input.
-    Later turns deliver only new user input, changed team/skill/tool/format blocks,
-    and patches for changed identity/rules/profile/SOUL sections.
-    Replies remain in the external runtime's memory and are never replayed as input.
-  - Prompt sources are read each turn. Identity patches replace or revoke only
-    changed sections in the existing external session; they never reset it.
-    Old rows with only `identity_prompt` use a line patch. Rows with no recorded
-    identity adopt a baseline on the next successful turn without replaying it.
-    Explicit user-requested reset remains available. Generic HTTP reset rotates
-    the remote session ID; ACP/OpenClaw use their native reset commands.
-  - A failed delivery is not marked successful. After an ambiguous remote timeout,
-    exact delivery cannot be inferred without an acknowledgement from the provider.
-
 - `data/agent_checkpoints/*.db`
-  - Primary append-only conversation context store.
+  - Primary LangGraph checkpoint store.
   - One SQLite file per `thread_id` / session.
-  - Main table: `context_messages` (one row per message); legacy `agent_state`,
-    `checkpoints`, and `writes` tables may remain after an upgrade.
-  - Purpose: persist conversation context without forcing all sessions
+  - Main tables: `checkpoints`, `writes`.
+  - Purpose: persist graph state/checkpoint history without forcing all sessions
     to contend on one shared SQLite writer.
-  - Internal WeBot reads templates, Agent persona, user profile and SOUL and
-    assembles a fresh system message before every provider request (including
-    repair retries and terminal structured decoding). Legacy persisted system
-    prompts are not used for inference. Unchanged sources keep identical bytes.
 
-- `data/webot_agents/<user>#<agent>.db`
-  - One SQLite file per Agent for its inbox, approvals, execution permits, runs,
-    run events, artifacts, mode, plans, todos, verifications, memory, voice,
-    and Claude keepalive state.
-  - A sender writes an inbox message to the recipient Agent's file. Cross-Agent
-    listings scan Agent files and deduplicate records by ID.
+- `data/webot_runtime.db`
+  - WeBot runtime control-plane store (not full chat transcript storage).
+  - Stores run lifecycle, runtime artifacts index, session state, approvals, memory/bridge/voice/buddy runtime state.
 
-## Per-Agent Runtime Tables
+## `webot_runtime.db` Core Tables
 
 - `webot_runs`
   - One record per runtime task execution (`run_id`), including status, timeout, worker lease/heartbeat, result/error.
@@ -58,8 +32,8 @@ This document summarizes the runtime-related databases used by Clawcross, what t
 
 - Other state tables
   - `webot_session_state`, `webot_session_plans`, `webot_session_todos`
-  - `webot_verifications`, `webot_tool_approvals`, `webot_execution_permits`
-  - `webot_memory_state`, `webot_claude_keepalive`
+  - `webot_verifications`, `webot_tool_approvals`
+  - `webot_memory_state`, `webot_bridge_sessions`, `webot_voice_state`, `webot_buddy_state`
 
 ## Runtime Artifacts: What Is Stored
 

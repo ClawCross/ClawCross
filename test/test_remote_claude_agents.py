@@ -7,12 +7,12 @@ from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src" / "backend"
+SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from fleet import remote_claude_agents as rca  # noqa: E402
-from frontend.proxies.groups import _merge_review_fleet_sessions  # noqa: E402
+from integrations import remote_claude_agents as rca  # noqa: E402
+from routes.front_group_routes import _merge_review_harness_sessions  # noqa: E402
 
 
 class RemoteClaudeParserTests(unittest.TestCase):
@@ -251,7 +251,7 @@ class RemoteClaudeParserTests(unittest.TestCase):
 
 class RemoteClaudeRouteTests(unittest.TestCase):
     def setUp(self):
-        import frontend.server as front  # noqa: E402
+        import front  # noqa: E402
 
         self.front = front
         front.app.config["TESTING"] = True
@@ -270,18 +270,18 @@ class RemoteClaudeRouteTests(unittest.TestCase):
         client = self.front.app.test_client()
         self._login(client)
         payload = {"ok": True, "remote": {"host": "h", "user": "u"}, "sessions": []}
-        with mock.patch("frontend.proxies.groups.list_remote_claude_sessions", return_value=payload):
+        with mock.patch("routes.front_group_routes.list_remote_claude_sessions", return_value=payload):
             resp = client.get("/proxy_remote_claude_sessions?limit=3")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), payload)
 
-    def test_merge_review_fleet_sessions_keeps_settled_review_worker_visible(self):
+    def test_merge_review_harness_sessions_keeps_settled_review_worker_visible(self):
         data = {
             "ok": True,
             "remote": {"host": "192.0.2.1", "user": "primaryuser"},
             "sessions": [{"display_id": "session_live"}],
         }
-        fleet_state = {
+        harness_state = {
             "tasks": [
                 {
                     "task_id": "task_review",
@@ -303,7 +303,7 @@ class RemoteClaudeRouteTests(unittest.TestCase):
             ],
         }
 
-        merged = _merge_review_fleet_sessions(data, fleet_state)
+        merged = _merge_review_harness_sessions(data, harness_state)
 
         self.assertEqual(len(merged["sessions"]), 2)
         review = merged["sessions"][1]
@@ -311,13 +311,13 @@ class RemoteClaudeRouteTests(unittest.TestCase):
         self.assertEqual(review["status"], "review")
         self.assertEqual(review["remote_user"], "primaryuser")
         self.assertEqual(review["remote_host"], "192.0.2.1")
-        self.assertTrue(review["fleet_review_placeholder"])
+        self.assertTrue(review["harness_review_placeholder"])
 
     def test_messages_route_returns_remote_payload(self):
         client = self.front.app.test_client()
         self._login(client)
         payload = {"ok": True, "messages": [{"role": "assistant", "content": "ok"}]}
-        with mock.patch("frontend.proxies.groups.read_remote_claude_messages", return_value=payload):
+        with mock.patch("routes.front_group_routes.read_remote_claude_messages", return_value=payload):
             resp = client.get("/proxy_remote_claude_sessions/session_abc/messages")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), payload)
@@ -326,7 +326,7 @@ class RemoteClaudeRouteTests(unittest.TestCase):
         client = self.front.app.test_client()
         self._login(client)
         payload = {"ok": True, "response": {"ok": True, "op": "reply"}}
-        with mock.patch("frontend.proxies.groups.send_remote_claude_message", return_value=payload) as send_mock:
+        with mock.patch("routes.front_group_routes.send_remote_claude_message", return_value=payload) as send_mock:
             resp = client.post("/proxy_remote_claude_sessions/session_abc/messages", json={"text": "hello"})
 
         self.assertEqual(resp.status_code, 200)

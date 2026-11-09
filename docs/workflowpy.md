@@ -84,7 +84,7 @@ The decorator triggers `SystemExit` immediately, so anything below an
 The project root is derived from the `oasis` package location, so once
 `import oasis` works, the venv and config are found automatically.
 
-Source: [`src/backend/oasis/workflow.py`](../src/backend/oasis/workflow.py).
+Source: [`oasis/workflow.py`](../oasis/workflow.py).
 
 ---
 
@@ -93,7 +93,7 @@ Source: [`src/backend/oasis/workflow.py`](../src/backend/oasis/workflow.py).
 `from oasis.workflow import ...` requires that the `oasis` package is on the
 import path. Two practical ways:
 
-- **OASIS auto-launch** (the orchestration page, mobile, `src/frontend/server.py`): the
+- **OASIS auto-launch** (the orchestration page, mobile, `front.py`): the
   runner already injects `CLAWCROSS_PYTHONPATH` and `CLAWCROSS_PROJECT_ROOT`
   into the subprocess environment. No setup needed.
 - **Plain CLI from any folder**: install ClawCross once with
@@ -137,7 +137,6 @@ Helper methods:
 - `await ctx.send_agent(...)`
 - `await ctx.send_agent_once(...)`
 - `await ctx.send_persona(...)`
-- `ctx.temporary_agent(...)` (an async context manager)
 - `await ctx.call_llm(...)`
 - `await ctx.publish(...)`
 - `await ctx.create_empty_topic(...)`
@@ -167,53 +166,15 @@ Not:
 agents = await ctx.list_agents()
 ```
 
-### 2. Name agents by role or id
+### 2. Prefer unique agent ids
 
-Agent bindings are runtime inputs. Write the workflow using internal names:
+Do not assume tags like `creative` are unique.
 
-```python
-from oasis.workflow import Context, workflow
-
-@workflow
-async def main(ctx: Context):
-    reply = await ctx.send_agent("writer", ctx.question)
-    if not reply.ok:
-        raise RuntimeError(reply.error)
-    ctx.set_result({"text": reply.content, "bindings": ctx.agent_map})
-```
-
-Pass a table when launching, without editing the script:
-
-```bash
-python my_workflow.py --user-id alice --question "Draft a plan" \
-  --agent-map '{"writer":"ag_writer_id"}'
-```
-
-Or supply `--agent-map-file agents.yaml` (JSON is also supported). That runtime
-input file contains a plain name/ID mapping or an `agent_map` block. These flags
-also work with `src/backend/oasis/run_python_workflow.py`.
-
-`start_new_oasis(python_file="my_workflow.py", question="...", agent_map={...})`
-and the frontend's `/proxy_visual/run-python-workflow` request forward the same
-run input. `ctx.agent_map` exposes the effective table: current Team roles plus
-this run's overrides. Legacy injected Python workflows receive the same table
-as `agent_map` and `ctx.agent_map` through `POST /topics`.
-
-The runner does not read module-level `AGENT_MAP` definitions. It never rewrites
-the workflow script. Bindings are scoped to each run, validated for the current
-user, and recorded in the run result. Two runs can use different Agent IDs
-with exactly the same source.
-
-`ctx.list_agents()` returns the team's members (outside a team: all of your
-agents) as agent cards with their `role`: `agent_id`, `name`, `platform`,
-`settings`. `ctx.send_agent(target, …)` accepts a member's name in the team, an
-agent id or `<team>.<name>`; an id not seen before is a new agent. Do not
-assume persona tags like `creative` are unique among agents.
+Safer pattern:
 
 ```python
 agents = ctx.list_agents()
-reviewer = next((a for a in agents if a["role"] == "Reviewer"), None)
-reply = await ctx.send_agent(reviewer["agent_id"], prompt)
+target = next((a for a in agents if a.get("id") == "internal:创意专家"), None)
 ```
 
 If you only need a persona-style one-shot response, prefer:
@@ -229,52 +190,7 @@ single-argument one-shot form:
 reply = await ctx.send_agent_once("Analyze this task as an independent agent:\n" + ctx.question)
 ```
 
-### Temporary Agents with tools
-
-A one-task helper can use the normal WeBot tool loop, then delete its Agent and
-conversation automatically:
-
-```python
-reply = await ctx.send_agent_once(
-    "Researcher", ctx.question,
-    tools=["web_search", "web_fetch"],
-)
-if not reply.ok:
-    raise RuntimeError(reply.error)
-await ctx.publish(reply.content, author="Researcher")
-```
-
-Use an explicit scope to keep the same temporary Agent's memory across tasks:
-
-```python
-async with ctx.temporary_agent(
-    "Reviewer", persona_tag="critical", tools=["read_file", "list_files"],
-) as reviewer:
-    first = await reviewer.send(ctx.question)
-    if not first.ok:
-        raise RuntimeError(first.error)
-    second = await reviewer.send("Review your findings and give the final answer.")
-    if not second.ok:
-        raise RuntimeError(second.error)
-    ctx.set_result({"review": second.content})
-```
-
-`tools` accepts `"none"` (default), `"all"`, or a tool-name list. Tool access is
-registered on this Agent, so the normal tool checks still apply. The default
-`creation_template="personal"` uses AI approval, the command sandbox and a private
-companion workspace. Use `creation_template="group"` for strict isolation, or
-provide `workspaces={...}` and `llm={...}` for this Agent's workspace and model.
-
-Normal completion, exceptions and cancellation all close temporary Agents in
-both CLI/decorator and OASIS Python runners. Handles used without `async with`
-are also closed when the workflow ends. A forcibly killed process or machine
-failure cannot run `finally`; it may need later cleanup. Existing Agents and
-generated files are retained; save replies in workflow results or posts before
-closing their temporary conversations. Python workflow scripts run as trusted
-server-side code; these settings constrain the Agent's tools, not the workflow
-script itself.
-
-### 3. `send_agent(...)` returns an `AgentReply`
+### 3. `send_agent(...)` returns `SendToAgentResult`
 
 Use attribute access:
 
@@ -286,6 +202,12 @@ err = reply.error
 ```
 
 Do not rely on dict-style response parsing for new code.
+
+For an existing concrete agent without persistent memory, use:
+
+```python
+reply = await ctx.send_agent_once(agent_id, prompt)
+```
 
 ### 4. Do not depend on implicit history for correctness
 
@@ -398,11 +320,11 @@ If the content is not valid OASIS reply JSON, it is posted as normal text.
 
 ### Sequential discussion
 
-See: [`src/backend/oasis/workflow_templates/team_all_agents_sequential.py`](../src/backend/oasis/workflow_templates/team_all_agents_sequential.py)
+See: [`oasis/workflow_templates/team_all_agents_sequential.py`](../oasis/workflow_templates/team_all_agents_sequential.py)
 
 ### Parallel discussion
 
-See: [`src/backend/oasis/workflow_templates/team_all_agents_parallel.py`](../src/backend/oasis/workflow_templates/team_all_agents_parallel.py)
+See: [`oasis/workflow_templates/team_all_agents_parallel.py`](../oasis/workflow_templates/team_all_agents_parallel.py)
 
 ### Hybrid fan-out then synthesis
 
@@ -445,7 +367,7 @@ If an AI agent is asked to generate a Python workflow, it should follow these ru
 - prefer the `@workflow` decorator; use the explicit `if __name__ == "__main__"`
   form only when other top-level code must run after `main`
 - prefer `ctx.send_persona(...)` for persona-only speaking roles
-- use a bound name or unique `agent["agent_id"]` with `ctx.send_agent(...)`
+- prefer unique `agent["id"]` when using `ctx.send_agent(...)`
 - do not assume implicit memory is enough
 - store structured outputs in `ctx.set_result(...)`
 - use `ctx.set_conclusion(...)` for a short final summary
@@ -468,23 +390,23 @@ block still works, but new files should use `oasis.workflow` instead.
 
 Relevant files:
 
-- [`src/backend/oasis/workflow.py`](../src/backend/oasis/workflow.py) — single-import entry point
+- [`oasis/workflow.py`](../oasis/workflow.py) — single-import entry point
 - [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py) — underlying runtime
-- [`src/backend/oasis/run_python_workflow.py`](../src/backend/oasis/run_python_workflow.py)
-- [`src/frontend/server.py`](../src/frontend/server.py)
-- [`src/backend/oasis/server.py`](../src/backend/oasis/server.py)
+- [`scripts/run_python_workflow.py`](../scripts/run_python_workflow.py)
+- [`src/front.py`](../src/front.py)
+- [`oasis/server.py`](../oasis/server.py)
 
 ---
 
 ## Related Files
 
-- [`src/backend/oasis/workflow.py`](../src/backend/oasis/workflow.py)
+- [`oasis/workflow.py`](../oasis/workflow.py)
 - [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py)
 - [`oasis/python_workflow.py`](../oasis/python_workflow.py)
-- [`src/backend/oasis/agent_center.py`](../src/backend/oasis/agent_center.py)
-- [`src/backend/oasis/forum_client.py`](../src/backend/oasis/forum_client.py)
-- [`src/backend/oasis/workflow_templates/team_all_agents_sequential.py`](../src/backend/oasis/workflow_templates/team_all_agents_sequential.py)
-- [`src/backend/oasis/workflow_templates/team_all_agents_parallel.py`](../src/backend/oasis/workflow_templates/team_all_agents_parallel.py)
+- [`oasis/agent_center.py`](../oasis/agent_center.py)
+- [`oasis/forum_client.py`](../oasis/forum_client.py)
+- [`oasis/workflow_templates/team_all_agents_sequential.py`](../oasis/workflow_templates/team_all_agents_sequential.py)
+- [`oasis/workflow_templates/team_all_agents_parallel.py`](../oasis/workflow_templates/team_all_agents_parallel.py)
 - [`workflowpy_example.py`](./workflowpy_example.py)
 - [`create_workflow.md`](./create_workflow.md)
 - [`oasis-reference.md`](./oasis-reference.md)

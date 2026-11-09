@@ -7,13 +7,12 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src" / "backend"
+SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from agents import openai
-from agents.openai import ChatMessage
-from webot.api.openai_protocol import OpenAIProtocolHelper
+from api.openai_models import ChatMessage
+from api.openai_protocol import OpenAIProtocolHelper
 
 
 class OpenAIProtocolHelperTests(unittest.TestCase):
@@ -72,7 +71,7 @@ class OpenAIProtocolHelperTests(unittest.TestCase):
         )
 
     def test_make_openai_response_sets_tool_calls_finish_reason(self):
-        response = openai.response(
+        response = self.helper.make_openai_response(
             "done",
             model="gpt-5.4",
             tool_calls=[{"id": "call_1", "type": "function", "function": {"name": "search", "arguments": "{}"}}],
@@ -84,8 +83,8 @@ class OpenAIProtocolHelperTests(unittest.TestCase):
         self.assertEqual(response["choices"][0]["message"]["tool_calls"][0]["function"]["name"], "search")
 
     def test_make_openai_chunk_serializes_role_content_and_meta(self):
-        role_chunk = openai.chunk(completion_id="chatcmpl-test", model="gpt-5.4")
-        content_chunk = openai.chunk(
+        role_chunk = self.helper.make_openai_chunk(completion_id="chatcmpl-test", model="gpt-5.4")
+        content_chunk = self.helper.make_openai_chunk(
             completion_id="chatcmpl-test",
             content="hello",
             model="gpt-5.4",
@@ -127,6 +126,11 @@ class OpenAIProtocolHelperTests(unittest.TestCase):
         self.assertEqual(formatted[0]["function"]["arguments"], json.dumps({"q": "clawcross"}, ensure_ascii=False))
         self.assertEqual(parsed_chunk["choices"][0]["finish_reason"], "tool_calls")
 
+    def test_list_models_payload_matches_openai_shape(self):
+        payload = self.helper.list_models_payload()
+        self.assertEqual(payload["object"], "list")
+        self.assertEqual(payload["data"][0]["id"], "webot")
+        self.assertEqual(payload["data"][0]["object"], "model")
 
 
 if __name__ == "__main__":

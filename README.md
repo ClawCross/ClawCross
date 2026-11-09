@@ -16,15 +16,14 @@ Clawcross turns a single chatbot into a **programmable multi-expert system**. Yo
 
 | Term | Meaning |
 |------|---------|
-| **Agent** | Any agent on your machine — WeBot, Codex, Claude Code, Gemini, OpenClaw, or an OpenAI-compatible service — behind one interface (`/v1/agents`) |
-| **Team** | A named set of agents, each playing a role (one may lead), plus the team's personas, workflows and skills |
+| **Team** | A group of internal agents, external agents, and personas that work together |
 | **OASIS** | The visual workflow engine that orchestrates multi-expert discussions (sequential, parallel, branching, DAG) |
 | **OASIS Town** | A pixel-town visualization in the Studio sidebar where you watch live discussions and inspect the swarm graph |
 | **WeBot** | A Claude-Code-style delegated runtime with role-based subagents, plan/todo/verification, and approval-aware tool policies |
 | **GraphRAG** | A living knowledge graph built from each discussion, stored locally in SQLite (optionally mirrored to Zep) |
 | **Team Presets** | 15 ready-to-use expert teams — strategists, content creators, tech titans, and more — installable in one click |
-| **ACP** | Agent Client Protocol for communicating with external AI agents (OpenClaw, Codex, Claude, Gemini, Aider) |
-| **OpenClaw** | An agent runtime whose agents join Teams, group chats and workflows like any other agent |
+| **ACP (acpx)** | Agent Client Protocol for communicating with external AI agents (OpenClaw, Codex, Claude, Gemini, Aider) |
+| **OpenClaw** | An external agent runtime that can be integrated into Teams alongside internal agents |
 
 ## Product Video
 
@@ -42,8 +41,8 @@ Clawcross turns a single chatbot into a **programmable multi-expert system**. Yo
 
 ### Prerequisites
 
-- **Python 3.11+**, prepared by the startup wrapper through `uv` if absent
-- **Node.js 18+** only for optional acpx and frontend builds
+- **Python 3.11+**
+- **Node.js 18+** (for acpx and frontend builds)
 - **Git**
 - macOS / Linux / Windows (WSL or PowerShell)
 
@@ -86,22 +85,22 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1 stop
 
 **Notes**
 
-- `run.sh` / `run.ps1` are root-level wrappers around the canonical scripts under `launch/`.
-- `start` prepares Python 3.11, a virtual environment, core dependencies, `.env`, and services. Use `install-component` only for optional integrations; see [SKILL.md](./SKILL.md).
-- If `LLM_MODEL` is missing, the web UI still starts; configure a model in the first-login wizard before sending LLM requests. Set `CLAWCROSS_REQUIRE_LLM_MODEL=1` to make startup strict.
+- `run.sh` / `run.ps1` are root-level wrappers around the canonical scripts under `selfskill/scripts/`.
+- `start` still handles venv, dependencies, `acpx`, `.env` init, and service startup automatically.
+- If `LLM_MODEL` is missing, startup now stops early and tells you to configure it instead of starting a half-usable stack.
 
-**Canonical launch commands**
+**Legacy full-path commands still work**
 
 ```bash
-bash launch/run.sh start
-bash launch/run.sh status
-bash launch/run.sh stop
+bash selfskill/scripts/run.sh start
+bash selfskill/scripts/run.sh status
+bash selfskill/scripts/run.sh stop
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 start
-powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 status
-powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 stop
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 status
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 stop
 ```
 
 </details>
@@ -112,9 +111,9 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 
 ### Multi-Expert Collaboration, Not Just Chat
 
-- **Team-based orchestration** — combine WeBot, Codex, Claude Code, OpenClaw and API agents into a single Team with one-click import/export
+- **Team-based orchestration** — combine internal agents, OpenClaw agents, and external API agents into a single Team with one-click import/export
 - **16 built-in Team Presets** — LLM Council, Nuwa All-Stars, Content Empire, Strategists, Tech Titans, and more — install and run immediately
-- **Teams through conversation** — Ask your main Agent to manage members, personas, workflows and schedules with optional management tools
+- **AI team builder** — ClawCross Creator discovers SOP pages, extracts roles with TinyFish, and generates editable personas plus a DAG workflow
 - **Visual orchestration** — design workflows in OASIS with sequential, parallel, branching, or DAG-style expert coordination
 
 ### Claude-Code-Style Delegation with WeBot
@@ -122,6 +121,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 - **Role-based subagents** — profiles for general, research, planner, coder, reviewer, and verifier modes
 - **Persisted state** — run/task lifecycle, plan/todo/verification primitives, context compression, and artifact logging
 - **Approval-aware tool policies** — configure which tools require human approval, with event logging and hooks
+- **Bridge sessions** — real-time WebSocket connections between WeBot runtime and the UI
 
 ### Living Memory and Observability
 
@@ -136,7 +136,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 - **Multimodal I/O** — images, files, voice input, TTS, provider-aware audio defaults
 - **Automation** — scheduled tasks and long-running workflow execution
 - **TinyFish** — internet search agent powered by TinyFish Web Agent API
-- **Remote access** — Hub device subdomains with login-token / password flows; optional Cloudflare
+- **Remote access** — Cloudflare Tunnel with login-token / password flows
 - **Flow distribution** — browse and share workflows on [ClawcrossHub](https://clawcross.net)
 
 ## What You Can Do Today
@@ -146,10 +146,10 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 | **OpenAI-compatible API** | Local chat completions endpoint for apps, tools, and clients |
 | **Web UI** | Chat, settings, OASIS panel, group chat, tunnel control, WeBot runtime panel |
 | **Team Presets** | 15 ready-to-use expert teams — install and start collaborating immediately |
-| **Conversational Team management** | Let the main Agent create Teams and configure members, workflows and schedules |
+| **ClawCross Creator** | Turn a task description or SOP pages into roles, personas, and an OASIS workflow |
 | **OASIS workflows** | Sequential, parallel, branching, and DAG-style expert orchestration |
 | **OASIS Town** | Pixel-town visualization with live residents, nudges, and swarm graph |
-| **WeBot runtime** | Claude-Code-style delegation with profiles, modes, tool policies, and per-Agent runtime state |
+| **WeBot runtime** | Claude-Code-style delegation with profiles, modes, tool policies, and bridge sessions |
 | **GraphRAG memory** | Persist each topic as a living graph in local SQLite, with optional Zep mirroring |
 | **ReportAgent** | Graph-backed evidence for predictions and decisions |
 | **MCP tools** | Built-in tools for commands, files, sessions, search, scheduler, OASIS, WeBot, and LLM API |
@@ -160,7 +160,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 | **Automation** | Scheduled tasks and long-running workflow execution |
 | **TinyFish** | Internet search agent for web crawling and structured data extraction |
 | **Flow distribution** | Browse and share flows on [ClawcrossHub](https://clawcross.net) |
-| **Remote access** | Hub device subdomains plus login-token / password flows; optional Cloudflare |
+| **Remote access** | Cloudflare Tunnel plus login-token / password flows |
 
 ## Flow Distribution Platform
 

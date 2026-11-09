@@ -5,40 +5,18 @@ from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src" / "backend"
+SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import frontend.server as front
+from integrations.agent_sender import SendToAgentResult
+import front
 
 
 class ProxyLoginI18nTests(unittest.TestCase):
 
     def setUp(self):
         self.client = front.app.test_client()
-
-    def test_account_picker_is_local_only_and_does_not_leak_remote_accounts(self):
-        with mock.patch('common.local_accounts.default_account',return_value='alice'), \
-             mock.patch('common.local_accounts.accounts',return_value=['alice','bob']):
-            local=self.client.get('/proxy_local_accounts',environ_overrides={'REMOTE_ADDR':'127.0.0.1'})
-            self.assertEqual(local.status_code,200)
-            self.assertEqual(local.get_json()['default'],'alice')
-            remote=self.client.get('/proxy_local_accounts',base_url='https://clawcross.example',environ_overrides={'REMOTE_ADDR':'203.0.113.10'})
-            self.assertIn(remote.status_code,(401,403))
-            self.assertNotIn('bob',remote.get_data(as_text=True))
-            proxied=self.client.get('/proxy_local_accounts',base_url='https://clawcross.example',headers={'X-Forwarded-For':'203.0.113.10'},
-                environ_overrides={'REMOTE_ADDR':'127.0.0.1'})
-            self.assertIn(proxied.status_code,(401,403))
-
-    def test_space_app_pages_are_public_but_host_sdk_control_is_not(self):
-        # Public members may open signed pages. The app SDK poll/control endpoint
-        # is host-only, even if an arbitrary public request claims a bearer key.
-        reply = mock.Mock(status_code=200, content=b'{}', headers={'Content-Type': 'application/json'})
-        with mock.patch('frontend.proxies.group_guests.requests.Session.request', return_value=reply) as forward:
-            response = self.client.get('/relay/app/site/abc.def/state?after=0')
-            poll = self.client.post('/relay/app/poll', json={}, headers={'Authorization': 'Bearer app_key'})
-        self.assertEqual((response.status_code, poll.status_code), (200, 403))
-        self.assertEqual(forward.call_count, 1)
 
     def test_local_login_without_username_returns_bilingual_error(self):
         response = self.client.post(
@@ -60,7 +38,6 @@ class ProxyLoginI18nTests(unittest.TestCase):
         response = self.client.post(
             "/proxy_login",
             json={"user_id": "alice", "password": ""},
-            base_url="https://clawcross.example",
             environ_overrides={"REMOTE_ADDR": "203.0.113.10"},
         )
 
@@ -77,7 +54,6 @@ class ProxyLoginI18nTests(unittest.TestCase):
         response = self.client.post(
             "/proxy_login",
             json={"user_id": "", "password": ""},
-            base_url="https://clawcross.example",
             environ_overrides={"REMOTE_ADDR": "203.0.113.10"},
         )
 
@@ -114,7 +90,6 @@ class ProxyLoginI18nTests(unittest.TestCase):
         response = self.client.post(
             "/proxy_login",
             json={"user_id": "alice", "password": "secret"},
-            base_url="https://clawcross.example",
             environ_overrides={"REMOTE_ADDR": "203.0.113.10"},
         )
 
@@ -299,6 +274,40 @@ class ProxyLoginI18nTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"models": ["gemini-2.0-flash"]})
         self.assertNotIn("Authorization", seen_headers)
+
+    @mock.patch.object(front, "read_env_all")
+    @mock.patch.object(front, "send_to_agent")
+    def test_proxy_openclaw_chat_reads_latest_runtime_values_from_env_file(self, mock_send_to_agent, mock_read_env_all):
+        mock_read_env_all.return_value = {
+            "OPENCLAW_API_URL": "http://127.0.0.1:19001/v1/chat/completions",
+            "OPENCLAW_GATEWAY_TOKEN": "fresh-gateway-token",
+        }
+        mock_send_to_agent.return_value = SendToAgentResult(
+            ok=True,
+            content="",
+            raw_response={"ok": True},
+        )
+
+        with mock.patch.dict(
+            front.os.environ,
+            {
+                "OPENCLAW_API_URL": "http://127.0.0.1:19999/v1/chat/completions",
+                "OPENCLAW_GATEWAY_TOKEN": "stale-token",
+            },
+            clear=False,
+        ):
+            response = self.client.post(
+                "/proxy_openclaw_chat",
+                json={"model": "agent:main", "messages": [{"role": "user", "content": "hi"}], "stream": False},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_data(as_text=True).strip(), '{"ok":true}')
+
+        args, kwargs = mock_send_to_agent.call_args
+        self.assertEqual(args[0].options["api_url"], "http://127.0.0.1:19001/v1/chat/completions")
+        self.assertEqual(args[0].options["api_key"], "fresh-gateway-token")
+
 
 if __name__ == "__main__":
     unittest.main()

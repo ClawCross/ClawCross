@@ -7,27 +7,27 @@ plan:
     author: begin
     content: "政令起草与审核开始"
 - id: r1
-  agent: 中书省
+  expert: zhongshu#oasis#中书省
 - id: r2
-  agent: 门下省
+  expert: menxia#oasis#门下省
 - id: r3
-  agent: 尚书省
+  expert: shangshu#oasis#尚书省
 - id: r4
-  agent: 兵部
+  expert: bingbu#oasis#兵部
 - id: r5
-  agent: 户部
+  expert: hubu#oasis#户部
 - id: r6
-  agent: 礼部
+  expert: libu#oasis#礼部
 - id: r7
-  agent: 工部
+  expert: gongbu#oasis#工部
 - id: r8
-  agent: 刑部
+  expert: xingbu#oasis#刑部
 - id: r9
-  agent: 吏部
+  expert: libu2#oasis#吏部
 - id: r10
-  agent: 御史台
+  expert: yushitai#oasis#御史台
 - id: r11
-  agent: 史馆
+  expert: shiguan#oasis#史馆
 - id: r12
   manual:
     author: bend

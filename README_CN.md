@@ -16,15 +16,14 @@ Clawcross 把一个单聊机器人变成**可编程的多专家系统**。你创
 
 | 术语 | 含义 |
 |------|------|
-| **Agent** | 本机上的任何 agent——WeBot、Codex、Claude Code、Gemini、OpenClaw 或 OpenAI 兼容服务——一套接口（`/v1/agents`） |
-| **Team** | 一组扮演不同角色的 agent（可有一个 lead），加上团队的人设、工作流和技能 |
+| **Team** | 一组内部 Agent、外部 Agent 和人设的协作组合 |
 | **OASIS** | 可视化工作流引擎，编排多专家讨论（顺序、并行、分支、DAG） |
 | **OASIS Town** | Studio 侧栏的像素小镇可视化，实时观看讨论、查看 swarm 图谱 |
 | **WeBot** | 类 Claude Code 的委托运行时：角色化子 Agent、计划/待办/验证、审批感知工具策略 |
 | **GraphRAG** | 从每次讨论中构建的活知识图谱，本地 SQLite 存储（可选镜像到 Zep） |
 | **Team 预设** | 15 个开箱即用的专家团队——战略分析、内容创作、科技领袖等——一键安装 |
-| **ACP** | Agent 客户端协议，用于与外部 AI Agent 通信（OpenClaw、Codex、Claude、Gemini、Aider） |
-| **OpenClaw** | 一种 agent 运行时，它的 agent 和其他 agent 一样加入 Team、群聊和工作流 |
+| **ACP (acpx)** | Agent 客户端协议，用于与外部 AI Agent 通信（OpenClaw、Codex、Claude、Gemini、Aider） |
+| **OpenClaw** | 可集成到 Team 中的外部 Agent 运行时 |
 
 ## 产品视频
 
@@ -42,8 +41,8 @@ Clawcross 把一个单聊机器人变成**可编程的多专家系统**。你创
 
 ### 环境要求
 
-- **Python 3.11+**（没有时由启动脚本通过 `uv` 准备）
-- **Node.js 18+**（用于前端构建；Codex / Claude ACP 适配器需 Node 22.13+）
+- **Python 3.11+**
+- **Node.js 18+**（用于 acpx 和前端构建）
 - **Git**
 - macOS / Linux / Windows（WSL 或 PowerShell）
 
@@ -86,22 +85,22 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1 stop
 
 **说明**
 
-- `run.sh` / `run.ps1` 是项目根目录下的转发入口，实际仍调用 `launch/` 里的正式脚本。
-- `start` 自动准备 Python 3.11、虚拟环境、核心依赖、`.env` 和服务。官方 ACP 适配器、NoneBot、WeClaw、cloudflared 等外部集成需显式执行 `install-component`；具体命令见 [SKILL.md](./SKILL.md)。
+- `run.sh` / `run.ps1` 是项目根目录下的转发入口，实际仍调用 `selfskill/scripts/` 里的正式脚本。
+- `start` 依然会自动处理 venv、依赖、`acpx`、`.env` 初始化和服务启动。
 - 如果 `LLM_MODEL` 为空，启动现在会提前停止并提示你先配置，而不是拉起一个看似在线但 Agent 不工作的服务。
 
 **原有完整路径命令仍然可用**
 
 ```bash
-bash launch/run.sh start
-bash launch/run.sh status
-bash launch/run.sh stop
+bash selfskill/scripts/run.sh start
+bash selfskill/scripts/run.sh status
+bash selfskill/scripts/run.sh stop
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 start
-powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 status
-powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 stop
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 status
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 stop
 ```
 
 </details>
@@ -112,9 +111,9 @@ powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 stop
 
 ### 多专家协作，不只是聊天
 
-- **Team 统一编排** — 把 WeBot、Codex、Claude Code、OpenClaw、API agent 组合成单一 Team，支持一键导入导出
+- **Team 统一编排** — 将内部 Agent、OpenClaw Agent、外部 API Agent 组合成单一 Team，支持一键导入导出
 - **16 个内置 Team 预设** — LLM 顾问团、女娲全明星、内容帝国、战略分析团、科技巨头等——安装即用
-- **在对话里管理团队** — 主 Agent 使用可选管理工具配置成员、人设、工作流与定时任务
+- **自带 AI 团队构建器** — ClawCross Creator 发现 SOP 页面、用 TinyFish 抽取角色，生成可编辑的人设和 DAG 工作流
 - **可视化编排** — 在 OASIS 中设计顺序、并行、分支或 DAG 风格的专家协作工作流
 
 ### 类 Claude Code 的委托能力：WeBot
@@ -147,7 +146,7 @@ powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 stop
 | **OpenAI 兼容 API** | 给应用、脚本、客户端提供本地模型入口 |
 | **Web UI** | 聊天、设置、OASIS 面板、群聊、隧道控制、WeBot 运行面板 |
 | **Team 预设** | 15 个开箱即用的专家团队——安装即可开始协作 |
-| **对话式团队管理** | 由主 Agent 创建团队、配置成员、管理工作流和定时任务 |
+| **ClawCross Creator** | 把任务描述或 SOP 页面转换成角色、人设和 OASIS 工作流 |
 | **OASIS 工作流** | 顺序、并行、分支、DAG 风格的专家编排 |
 | **OASIS Town** | 像素小镇可视化 + swarm 图谱 + 实时 nudge |
 | **WeBot 运行时** | 类 Claude Code 委托：角色、模式、工具策略、桥接会话 |

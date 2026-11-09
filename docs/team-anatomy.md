@@ -1,8 +1,8 @@
 # Team Anatomy (Runtime Reference)
 
-A single concrete example of what a running ClawCross team is made of. We use **`paper-review-council`** as the case study because it touches everything a team can have: member agents, persona prompts, a YAML workflow, a Python workflow, team-scoped SKILLs, and preset stamps.
+A single concrete example of what a running ClawCross team looks like on disk. We use **`paper-review-council`** as the case study because it touches every file kind a team can have: internal agents, persona prompts, a YAML workflow, a Python workflow, team-scoped SKILLs, and preset stamps.
 
-> If you want command-line creation, read [`build_team.md`](./build_team.md). For Team management through conversation, read [`team-management.md`](./team-management.md). For the full YAML grammar see [`create_workflow.md`](./create_workflow.md). This document is just "what is a team made of."
+> If you want command-line creation, read [`build_team.md`](./build_team.md). If you want the browser flow, read [`team-creator.md`](./team-creator.md). For the full YAML grammar see [`create_workflow.md`](./create_workflow.md). This document is just "what is a team made of."
 
 ---
 
@@ -22,7 +22,10 @@ For the example below: `~/.clawcross/data/user_files/default/teams/paper-review-
 
 ```
 paper-review-council/
+├── internal_agents.json              # role bindings (required)
 ├── oasis_experts.json                # persona prompts (required)
+├── external_agents.json              # external / OpenClaw agents (optional)
+├── team_settings.json                # team-level settings (optional)
 ├── clawcross_preset_manifest.json    # preset stamp (optional)
 ├── clawcross_preset_source_map.json  # preset stamp (optional)
 ├── oasis/
@@ -30,75 +33,48 @@ paper-review-council/
 │   │   └── paper_review_council.yaml      # YAML workflow plan
 │   └── python/
 │       └── paper_survey_workflow.py       # Python workflow
-└── members.json                     # runtime membership references
+└── skills/
+    ├── SKILLS_INDEX.md
+    └── paper-survey/
+        ├── SKILL.md
+        ├── run.sh
+        ├── run.py
+        ├── pyproject.toml
+        └── runtime_config.example.json
 ```
 
-Team SKILL files live separately under `<CLAWCROSS_WORKSPACE_DIR>/users/<user_id>/teams/<team_name>/skills/`; the workspace defaults to `<CLAWCROSS_HOME>/workspace`. Snapshot ZIPs include these files under `skills/clawcross_team/`.
+The minimum to be a usable team is `internal_agents.json` + `oasis_experts.json` + at least one workflow under `oasis/yaml/` or `oasis/python/`.
 
-The team's **members** are agents from ClawCross's table of agents (`<DATA_DIR>/agents.db`); the team folder's `members.json` records which agents belong to it, under which name, and which one leads. See §3.
-
-The minimum to be a usable team is: members + `oasis_experts.json` + at least one workflow under `oasis/yaml/` or `oasis/python/`.
-
-Cron / alarm storage is **not** in the team folder either — tasks live in `<DATA_DIR>/timeset/tasks.json` and each one targets an agent by id (§10).
+Cron / alarm storage is **not** in the team folder — internal alarms live in `<DATA_DIR>/timeset/tasks.json` and join to teams by `session_id`.
 
 ---
 
-## 3. Members — agents with a role
+## 3. `internal_agents.json` — role bindings
 
-Every agent on the machine — WeBot, Codex, Claude Code, Gemini, OpenClaw, any OpenAI-compatible HTTP service — is one kind of thing: a session, known by its number (the agent id), with a name, a platform and its settings. See [`architecture.md`](./architecture.md).
-
-A team is a **namespace**: it gathers agents, personas, skills, cron and workflows in one folder; it does not own the agents. Each membership (in `members.json`) has:
-
-| Field | Meaning |
-|---|---|
-| name | the member's name in this team — `<team>.<name>` reaches it wherever an agent id is accepted, and `agent: <name>` names it in a team workflow |
-| lead | at most one member, marked in the package format as `is_primary` |
-
-One agent can be a member of several teams under different names. Removing a member, or deleting the team, leaves the agent as it is.
-
-```bash
-clawcross team "paper-review-council" members        # name, platform, agent id of each member
-curl -s localhost:51200/v1/teams/paper-review-council -H "Authorization: Bearer <user>:<password>"
-```
-
-### 3.1 The import format: `internal_agents.json` / `external_agents.json`
-
-A team *package* — a preset, a snapshot zip, or a folder written by hand or by team-builder — declares its members in two files. `internal_agents.json` lists WeBot members:
+A flat list. Each entry is a long-lived participant ("internal agent") inside the team. `session` is its runtime id; `tag` says which persona prompt it speaks with.
 
 ```json
 [
-  { "name": "搜索指挥者",  "tag": "search_commander", "is_primary": true },
-  { "name": "论文汇报者",  "tag": "paper_reporter" }
+  { "name": "搜索指挥者",  "tag": "search_commander" },
+  { "name": "论文汇报者",  "tag": "paper_reporter"   }
 ]
 ```
 
-`external_agents.json` lists members on other platforms:
+When this file is loaded into a running team, each entry gains a `session` field stamped automatically:
 
 ```json
-[
-  { "name": "Codex Reviewer", "tag": "critical", "platform": "codex", "global_name": "codex_reviewer" },
-  { "name": "Researcher", "tag": "analyst", "platform": "openclaw", "global_name": "paper_researcher" }
-]
+{ "name": "搜索指挥者", "tag": "search_commander", "session": "mp9u8ywjl405" }
 ```
 
-- `name` — the role name; `tag` — the persona the agent wears; `is_primary` — the lead.
-- `platform` — `codex` / `claude-code` / `gemini-cli` / `openclaw` / any HTTP service name; `meta` — `api_url`, `model`, `headers` (never an `api_key` in a package).
-- `session` (internal) and `global_name` (external) are the agent's id on this machine.
-- An entry whose name is already a member of the team is that member; one naming an existing agent id is that agent; any other entry creates a new agent.
-
-Importing (`clawcross team import "<team>"`, `POST /v1/teams/<team>/import`, installing a preset, uploading a snapshot) turns the entries into agents and memberships and removes the two files from the team folder. Exporting a snapshot writes them again in the same shape, leaving out this machine's agent ids and any secrets so that importing elsewhere creates fresh agents.
-
-Both member files must contain JSON arrays with non-empty, unique role names. Invalid manifests are rejected before changing memberships. The CLI folder-import bootstrap leaves the team unchanged when its member files have already been consumed.
-
-Frontend ZIP and Hub imports create a new team. A name conflict returns HTTP 409 (`team_exists`); confirming replacement sends `replace=true` and rebuilds the team from the package, with fresh member sessions. Old team workflows and team-scoped skills are removed, and the team's old scheduled tasks are deleted through the scheduler. Scheduler failures are reported in `cron_errors`. Previous agents and their histories remain in Agent Center, following team deletion semantics. Team assets, memberships and team skills are restored if installation fails. A package without member manifests creates a team with no members; it never merges into the old team. User-global skills remain independent of team replacement.
-
-Portable exports omit structured credential fields (including API keys, authentication headers and persona credentials), agent ids and conversation history. Credentials embedded in arbitrary workflow code or prompt text are not automatically redacted.
+- `name` — display name shown in chat / `/team … members`. Also used by `expert: <tag>#oasis#<name>` refs in YAML workflows.
+- `tag` — must match a `tag` in `oasis_experts.json` (or in the public persona pool).
+- `session` — runtime-only. Stripped on snapshot export, regenerated on import.
 
 ---
 
 ## 4. `oasis_experts.json` — persona prompts
 
-A flat list of **prompts**, not agents. Several members may wear the same `tag`, and every `persona: <tag>` step in a workflow uses the same prompt entry.
+A flat list of **prompts**, not agents. Multiple internal agents with the same `tag` share one prompt; multiple `#temp#` references in a workflow also reuse the same prompt entry.
 
 ```json
 [
@@ -128,13 +104,35 @@ A flat list of **prompts**, not agents. Several members may wear the same `tag`,
 | `category`, `description` | no | Free-form, used by listing UIs. |
 | `model`, `api_key`, `base_url`, `provider` | no | Per-persona LLM override; falls back to global `LLM_*` env vars when omitted. |
 
-> **Lookup rule:** a persona is found by `tag` — the team's `oasis_experts.json` first, then your custom personas, then the public and agency pools. Get the tag wrong and the agent silently falls back to a public-pool persona of that tag, or speaks with no persona at all.
+> **Lookup rule:** when the runtime resolves an `expert:` ref, it matches by `tag` first, then by `name`. Get the tag wrong and the agent silently falls back to a public-pool persona of that tag, or fails to find one.
 
 ---
 
-## 5. Members on other platforms
+## 5. `external_agents.json` — external / OpenClaw agents
 
-A Codex, Claude Code, Gemini or OpenClaw member runs through `acpx` in the session named by its `global_name`; an HTTP member is called at its `api_url`. Nothing else about them differs from a WeBot member — same commands, same workflow syntax, same group chat. An OpenClaw member talks to OpenClaw's `main` agent; ClawCross never changes OpenClaw's own configuration.
+Empty `[]` or missing means "no externals". This team's file is currently empty; here is the shape from `demo_team`:
+
+```json
+[
+  {
+    "name": "my_new_agent",
+    "tag": "openclaw",
+    "global_name": "my_new_agent",
+    "meta": {
+      "api_url": "",
+      "api_key": "",
+      "model": "",
+      "headers": {}
+    }
+  }
+]
+```
+
+- `tag` — ACP routing key. `"openclaw"` for OpenClaw agents (recommended); `codex` / `claude` / `gemini` / `aider` also valid.
+- `global_name` — runtime-only globally-unique id. Stripped on export, regenerated on import.
+- `meta` — backend connection skeleton. For OpenClaw agents the real config lives in the OpenClaw session and must be synced into JSON via `openclaw snapshot export`.
+
+A workflow references one as `expert: openclaw#ext#<name>`.
 
 ---
 
@@ -150,17 +148,17 @@ plan:
   manual: { author: begin, content: "请提供要审读的论文信息…" }
 
 - id: p1
-  agent: 搜索指挥者                                   # a team member, by role name
+  expert: search_commander#oasis#搜索指挥者          # <tag>#oasis#<name> → stateful internal agent
   instruction: "请根据论文信息…输出应选择的专家 tag。"
 
 - id: p2
-  persona: ml_reviewer                                # a temporary expert wearing a persona
+  expert: ml_reviewer#temp#1                          # <tag>#temp#<seed> → stateless persona
 - id: p3
-  persona: systems_reviewer
+  expert: systems_reviewer#temp#1
 # … p4..p8 are sibling domain reviewers …
 
 - id: p9
-  agent: 论文汇报者
+  expert: paper_reporter#oasis#论文汇报者
 
 - id: p10
   manual: { author: bend, content: "论文审读汇报已完成。" }
@@ -189,8 +187,9 @@ Node forms (see `create_workflow.md` for the full grammar):
 | Form | Meaning |
 |---|---|
 | `manual: { author, content }` | No LLM call; injects fixed text. `begin` / `bend` are the conventional book-ends. |
-| `agent: <role>` | A team member speaks, with its own memory and runtime (any platform). |
-| `persona: <tag>` | A temporary expert wearing that persona speaks; `tools: none` (default) / `all` / `[names]`; removed when the topic ends. |
+| `expert: "<tag>#oasis#<name>"` | LLM call by a **stateful** internal agent (must exist in `internal_agents.json`). |
+| `expert: "<tag>#temp#<seed>"` | LLM call by a **stateless** persona lookup; `<seed>` is a temperature/seed hint. |
+| `expert: "openclaw#ext#<name>"` | Delegates to an external agent (must exist in `external_agents.json`). |
 | Add `selector: true` | The node's output is treated as a routing key, consumed by `selector_edges:`. |
 
 `edges` are unconditional fan-out / fan-in. Selector nodes use `selector_edges:` instead.
@@ -250,7 +249,7 @@ async def main(ctx: Context):
 |---|---|
 | `await ctx.publish(content, author="…")` | Push a message to the user-visible topic. Use this for progress updates and final reports. |
 | `await ctx.send_persona(tag, prompt)` | Invoke a persona by `tag`. Returns a result object with `.content`, `.ok`, `.error`. |
-| `await ctx.send_agent(target, prompt, ...)` | Ask a team member (its name in the team) or any of your agents (its id, or `<team>.<name>`). |
+| `await ctx.send_agent(target, prompt, ...)` | Invoke a specific agent (by session) — used when you have a session id from `list_agents()`. |
 | `await ctx.create_empty_topic(question=...)` | Start a fresh topic (only needed when `auto_topic=False`). |
 | `await ctx.publish_to_topic(topic_id=..., author=..., content=...)` | Direct topic write. |
 | `await ctx.conclude_topic(topic_id=..., conclusion=...)` | Close a topic. |
@@ -259,9 +258,9 @@ async def main(ctx: Context):
 
 | Method | Purpose |
 |---|---|
-| `ctx.list_agents()` | The team's members: role, agent id, address, platform, persona. |
+| `ctx.list_agents()` | List `internal_agents.json` entries (with sessions). |
 | `ctx.list_personas()` | List `oasis_experts.json` entries. |
-| `ctx.get_agent(target)` / `ctx.get_persona(tag)` | Look up a member / agent, or a persona by tag. |
+| `ctx.get_agent(target)` / `ctx.get_persona(target)` | Lookup by name or tag. |
 | `ctx.set_result(value)` | Store the structured final result (becomes the workflow's return payload). |
 | `ctx.set_conclusion(text)` | Store the human-readable one-liner shown at the end. |
 
@@ -338,7 +337,7 @@ async def main(ctx: Context):
         expert_reviews.append({"tag": tag, "content": rep.content, "ok": rep.ok})
         await ctx.publish(rep.content, author=tag)
 
-    # ── 7. Final report by the reporter persona ─────────────────────
+    # ── 7. Final report by the internal reporter agent ──────────────
     reporter_reply = await ctx.send_persona(
         "paper_reporter",
         f"领域专家补充：\n{json.dumps(expert_reviews, ensure_ascii=False)}\n\n"
@@ -384,7 +383,7 @@ clawcross workflow run paper_survey_workflow team paper-review-council question 
 # spawns it with `python -m oasis.python_workflow_runner --workflow … --question …`
 ```
 
-Or from a chat channel: `/cross workflow run paper_survey_workflow team paper-review-council question 审 attention is all you need`.
+Or from the chatbot: `/cross workflow run paper_survey_workflow team paper-review-council question 审 attention is all you need`.
 
 The runner sets up `ctx`, awaits `main(ctx)`, captures the result, and posts the conclusion back to the topic.
 
@@ -406,7 +405,7 @@ A SKILL is a small instruction pack (`SKILL.md` + optional scripts) that an agen
 ### 8.1 User-global skills
 
 ```
-<CLAWCROSS_WORKSPACE_DIR>/users/<user_id>/skills/
+<CLAWCROSS_HOME>/data/user_files/<user_id>/skills/
 ├── SKILLS_INDEX.md
 ├── docx/SKILL.md
 ├── xlsx/SKILL.md
@@ -417,12 +416,12 @@ A SKILL is a small instruction pack (`SKILL.md` + optional scripts) that an agen
 
 Every team that user owns can use these. This is where general-purpose skills go — file format helpers (docx / xlsx / pdf / pptx), self-improvement loggers, doc co-authoring, etc.
 
-For the `default` user on this machine: `~/.clawcross/workspace/users/default/skills/`.
+For the `default` user on this machine: `~/.clawcross/data/user_files/default/skills/`.
 
 ### 8.2 Team-scoped skills
 
 ```
-<CLAWCROSS_WORKSPACE_DIR>/users/<user_id>/teams/<team_name>/skills/
+<CLAWCROSS_HOME>/data/user_files/<user_id>/teams/<team_name>/skills/
 ├── SKILLS_INDEX.md                     # auto-regenerated; don't edit by hand
 └── paper-survey/
     ├── SKILL.md
@@ -436,11 +435,11 @@ Only that one team sees these. Use this scope when the SKILL is meaningless outs
 
 ### 8.3 Lookup order
 
-When the runtime (`src/backend/webot/skills.py::_scope_skills_dir`) builds the SKILL list for an agent in team T, it merges:
+When the runtime (`src/webot/skills.py::_scope_skills_dir`) builds the SKILL list for an agent in team T, it merges:
 
 ```
-team scope:     <workspace>/users/<user>/teams/<T>/skills/
-personal scope: <workspace>/users/<user>/skills/
+team scope:     <user_files>/<user>/teams/<T>/skills/
+personal scope: <user_files>/<user>/skills/
 ```
 
 Team-scoped wins on name collision. `SKILLS_INDEX.md` in each scope is regenerated when a SKILL is added/removed.
@@ -500,68 +499,83 @@ Alarms (cron-scheduled or one-shot) live **outside** the team folder, in a globa
 <CLAWCROSS_DATA_DIR>/timeset/tasks.json
 ```
 
-Each task targets one agent by its `ag_…` id, and remembers the team it was created in. When a team is exported as a snapshot its tasks are exported with the member's role name; on import they are restored against the new members.
+A task joins back to a team via `session_id`: `internal` targets store the internal agent's `session` from `internal_agents.json`; `external` targets store `ext:<global_name>` from `external_agents.json`. When a team is exported as a snapshot, its alarm rows are *extracted* from `tasks.json` via `export_team_alarms()`; on import they are *restored* with `restore_team_alarms()` after fresh sessions are stamped.
 
 ### 10.1 Create a cron alarm
 
-**CLI** (in a terminal, pickers fill in any missing field):
+**CLI** (interactive prompts fill in any missing field):
 
 ```bash
-clawcross cron add team "<team>" target "<role>" cron "0 9 * * 1" text "周一 9 点提醒整理论文进展"
-clawcross cron add team "<team>" target "<role>" once "2026-06-01T09:00:00" text "..."
+clawcross cron new \
+  team   "<team>" \
+  target "<internal agent name | external alias>" \
+  type   internal|external \
+  cron   "0 9 * * 1"           # OR  once  "2026-06-01T09:00:00"
+  text   "周一 9 点提醒整理论文进展"
 ```
 
-`target` is a member's role name (or any agent's id / address outside a team).
+`target` matches the `name` of an internal agent (resolved to `session_id` automatically) or the `name` of an external agent (resolved to `ext:<global_name>`). Get it wrong and the API returns `Internal/External target not found`.
 
 **HTTP** (session-authenticated):
 
 ```
-GET  /teams/<team>/alarms            → {"targets": [{"agent": "ag_…", "target_name": "<role>", "label": …}], "alarms": [...]}
 POST /teams/<team>/alarms
+Content-Type: application/json
+
 {
-  "agent":         "ag_…",                           # a member's id, from "targets"
-  "schedule_type": "cron",                           # "cron" | "once"
-  "cron":          "0 9 * * 1",                      # required when schedule_type=cron
-  "run_at":        "2026-06-01T09:00:00",            # required when schedule_type=once
+  "target_type":   "internal",                      # "internal" | "external"
+  "target_name":   "搜索指挥者",                    # resolved by name → session
+  "schedule_type": "cron",                          # "cron" | "once"
+  "cron":          "0 9 * * 1",                     # required when schedule_type=cron
+  "run_at":        "2026-06-01T09:00:00",           # required when schedule_type=once
   "text":          "周一 9 点提醒整理论文进展"
 }
 ```
 
+The front server resolves `target_name` against the team's `internal_agents.json` / `external_agents.json`, forwards the payload to the Scheduler service (`POST <SCHEDULER>/tasks`), and returns the scheduler's reply with `task_id`.
+
 ### 10.2 List & delete
 
 ```bash
-clawcross cron                            # all of your tasks
+clawcross cron                            # all teams + personal
 clawcross cron "<team>"                   # one team
-clawcross cron delete <task_id> team "<team>"
 ```
 
 ```
-GET    /teams/<team>/alarms
-DELETE /teams/<team>/alarms/<task_id>
+GET    /teams/<team>/alarms               # team alarms + valid targets
+DELETE /teams/<team>/alarms/<task_id>     # delete by id (only within this team)
 ```
 
-The mobile UI uses the same handler under `/mobile_alarms` (all agents, or one team's members).
+The mobile UI uses the same handler under `/mobile_alarms`.
 
 ### 10.3 What an alarm does at fire time
 
-When the scheduler ticks, it delivers `text` to the target agent in the team's context, as a message from you. The agent answers in its own conversation — a WeBot agent in its session, a Codex / Claude Code / OpenClaw agent in its runtime session — so its memory carries over from one run to the next.
+When the scheduler ticks, it posts `text` into the topic system as if the user sent it, addressed to the resolved `session_id` (internal) or external agent. Internal targets resume their existing session (memory preserved); external targets receive a fresh delegation. Either way the message lands in the agent's normal message flow.
 
 ---
 
-## 11. DIY: build or edit a team with `write_file` / `run_command`
+## 11. DIY: edit a team directly with `write_file` / `run_command`
 
-Personas, workflows and skills are plain files; members are registered through one import. If you have shell access (or the `write_file` / `read_file` / `run_command` MCP tools), you can build a team without the UI.
+The CLI and Creator UI are convenience — under the hood a team is just files. If you have shell access (or the `write_file` / `read_file` / `run_command` MCP tools), you can build or edit a team entirely by writing those files yourself. Two valid styles:
 
-### 11.1 Build from scratch
+### 11.1 Build from scratch by writing files
 
 ```bash
-clawcross team new quick-demo
 TEAM=~/.clawcross/data/user_files/default/teams/quick-demo
-mkdir -p "$TEAM/oasis/yaml"
+mkdir -p "$TEAM/oasis/yaml"  "$TEAM/oasis/python"  "$TEAM/skills"
 ```
 
+Then write the four core files. Minimum to be loadable:
+
 ```bash
-# oasis_experts.json — the persona prompt
+# internal_agents.json — one stateful agent
+cat > "$TEAM/internal_agents.json" <<'JSON'
+[
+  { "name": "Coordinator", "tag": "coordinator" }
+]
+JSON
+
+# oasis_experts.json — the matching persona prompt
 cat > "$TEAM/oasis_experts.json" <<'JSON'
 [
   {
@@ -573,13 +587,6 @@ cat > "$TEAM/oasis_experts.json" <<'JSON'
 ]
 JSON
 
-# internal_agents.json — one member, wearing that persona, leading the team
-cat > "$TEAM/internal_agents.json" <<'JSON'
-[
-  { "name": "Coordinator", "tag": "coordinator", "is_primary": true }
-]
-JSON
-
 # oasis/yaml/quick.yaml — a 3-node workflow
 cat > "$TEAM/oasis/yaml/quick.yaml" <<'YAML'
 version: 2
@@ -588,80 +595,99 @@ plan:
 - id: q0
   manual: { author: begin, content: "请描述任务。" }
 - id: q1
-  agent: Coordinator
+  expert: coordinator#oasis#Coordinator
 - id: q2
   manual: { author: bend,  content: "已规划。" }
 edges:
 - [q0, q1]
 - [q1, q2]
 YAML
-
-clawcross team import quick-demo          # registers the member; internal_agents.json is consumed
-clawcross team quick-demo members
 ```
 
-From inside an MCP agent the same writes go through the file tool, then the import through `run_command`:
+`session` ids are stamped automatically on first load — you don't need to write them yourself, but doing so is fine (just keep them unique within the file).
+
+When run from inside an MCP agent, the same writes go through the file tool:
 
 ```
-write_file(filename="teams/quick-demo/oasis_experts.json",   content="[ … ]")
 write_file(filename="teams/quick-demo/internal_agents.json", content="[ … ]")
+write_file(filename="teams/quick-demo/oasis_experts.json",   content="[ … ]")
 write_file(filename="teams/quick-demo/oasis/yaml/quick.yaml", content="version: 2\n…")
-run_command(command='clawcross team import "quick-demo"')
 ```
 
 `filename` is the **required** parameter — not `path` / `name`. Paths are relative to the user's sandbox root, which contains the `teams/` subtree.
 
-### 11.2 Edit an existing team
+### 11.2 Edit an existing team in place
 
-Files are re-read on every workflow run, so edits take effect immediately. Members change through commands:
+The same trick works to surgically change one file: read it, edit the JSON / YAML, write it back. The runtime re-reads files on every workflow run, so changes take effect immediately (no service restart, no re-install).
 
-| Change | How |
+Typical edits:
+
+| Change | Touch this file |
 |---|---|
-| Add a persona / change a prompt / tune temperature | edit `oasis_experts.json` |
-| Add a member | `clawcross team member add <team> agent <ref> [role <r>] [lead]`, or a new agent: `… name <n> platform <p> [global <g>] [persona <tag>]` — or write `internal_agents.json` / `external_agents.json` and `clawcross team import <team>` |
-| Rename a member / make it lead | the team panel, or `PATCH /v1/teams/<team>/members/<agent>` with `{role?, is_lead?}`; `src/cli/cli.py teams set-lead` |
-| Change a member's persona or endpoint | `clawcross team member edit <team> <agent> [persona <tag>] [api_url <u>] [model <m>]` |
-| Remove a member | `clawcross team member remove <team> <agent>` (the agent stays) |
-| Reroute the workflow / add a parallel branch | edit `oasis/yaml/<wf>.yaml` |
-| Rewrite the dynamic orchestration | edit `oasis/python/<wf>.py` |
+| Add a new persona / change a prompt / tune temperature | `oasis_experts.json` |
+| Add a new role / rename a session | `internal_agents.json` |
+| Wire in an OpenClaw agent | `external_agents.json` |
+| Reroute the workflow / add a parallel branch | `oasis/yaml/<wf>.yaml` |
+| Rewrite the dynamic orchestration | `oasis/python/<wf>.py` |
+| Change the team-wide fallback agent | `team_settings.json` |
 
-### 11.3 Things to keep consistent
+### 11.3 Things to keep consistent when DIY-editing
 
-1. Every member's persona `tag` exists in `oasis_experts.json` (or in the public persona pool).
-2. Every `agent: <role>` in a workflow is a member's role name; every `persona: <tag>` exists in the persona library.
-3. Role names are unique within the team; at most one lead.
-4. YAML graph: every `edges` endpoint is a declared `id`; selectors use `selector_edges:`, not `edges:`.
-5. Python workflow: derive paths from `Path(__file__).resolve().parents[2]`, not hardcoded strings.
+The checklist below saves debugging time. Same items as §12 "binding picture," repeated here so you don't have to scroll:
+
+1. Every `tag` in `internal_agents.json` has a matching `tag` in `oasis_experts.json` (or in the public persona pool).
+2. Every `<tag>#oasis#<name>` in a YAML workflow exists in `internal_agents.json` with that exact `tag` + `name`.
+3. Every `openclaw#ext#<name>` in a YAML workflow exists in `external_agents.json`.
+4. `session` ids are unique within `internal_agents.json`; `global_name` unique within `external_agents.json`.
+5. YAML graph: every `edges` endpoint is a declared `id`; selectors use `selector_edges:`, not `edges:`.
+6. Python workflow: derive paths from `Path(__file__).resolve().parents[2]`, not hardcoded strings.
 
 ### 11.4 When CLI / Creator is still better
 
-- A **ZIP snapshot** should come from `teams snapshot-download` / the Creator, which write the import format with runtime fields and secrets left out.
+- You need to **provision an OpenClaw backend** — `openclaw sessions add` + `openclaw snapshot export` is the only way to get the real backend config into `external_agents.json`. Hand-editing the JSON leaves the actual OpenClaw side empty.
+- You need a **fresh `session_id`** stamped — pass through `install_team_preset()` or the Creator; or just leave the field off and the loader will stamp one on first load.
+- You want a **ZIP snapshot** with runtime fields properly stripped — use `POST /api/team-creator/download`, not zip the folder by hand.
+
+For everything else, file editing is the shortest path.
 
 ---
 
-## 12. How the pieces bind (one picture)
+## 12. Cross-file binding (one picture)
 
 ```
-oasis_experts.json            members (ClawCross)                 oasis/yaml/<wf>.yaml
-  tag: "search_commander" ◄──  role "搜索指挥者" wears tag  ◄──────  agent: 搜索指挥者
-  persona: "你是…"             agent ag_… (WeBot / Codex / …)
-        ▲
-        └──────────────────────────────────────────────────────────  persona: ml_reviewer
+oasis_experts.json   ◄── matched by tag ──   internal_agents.json
+   tag: "search_commander"                       tag: "search_commander"
+   name: "搜索指挥者"                            name: "搜索指挥者"
+   persona: "你是…"                              session: "mp9u…"  ← runtime
+                  ▲                                    ▲
+                  │ used by name+tag                   │ session binds identity
+                  │                                    │
+                  └──── oasis/yaml/<wf>.yaml ──────────┘
+                        expert: search_commander#oasis#搜索指挥者
+                                  ▲                ▲
+                                  tag              name
 
-oasis/python/<wf>.py  ── ctx.send_agent("<role>", prompt)     → a member
-                      ── ctx.send_persona("<tag>", prompt)    → a temporary expert
-                      ── ctx.list_agents() / ctx.list_personas()
+
+external_agents.json  ◄── matched by name ──  oasis/yaml/<wf>.yaml
+   name: "my_new_agent"                         expert: openclaw#ext#my_new_agent
+   tag: "openclaw"
+   global_name: "..."  ← runtime
+
+
+oasis/python/<wf>.py  ── calls ──►  ctx.send_persona("<tag>", prompt)
+                                     ctx.send_agent("<session_or_name>", prompt)
+                                     ctx.list_personas() / ctx.list_agents()
 ```
 
 **When something looks wrong:**
 
 | Symptom | Likely cause |
 |---|---|
-| Workflow runs but the agent has the wrong personality | the member's persona tag is missing from `oasis_experts.json` → fallback to a public-pool persona. |
-| "agent '<x>' not found; skipping" in the topic log | `agent: <x>` is not a member's role name (check `clawcross team "<team>" members`). |
-| `internal_agents.json` still in the team folder | it was never imported — run `clawcross team import "<team>"`. |
-| An OpenClaw member does not answer | acpx is not installed, or the `openclaw` CLI or its gateway is not running. |
+| Workflow runs but the agent has the wrong personality | `oasis_experts.json` missing the tag → silent fallback to public-pool persona. |
+| Workflow halts with "unknown expert" | `expert: <tag>#oasis#<name>` references a `name` with no matching `internal_agents.json` entry. |
+| External node returns "agent not found" | `external_agents.json` lacks the `name`, or OpenClaw `snapshot export` never ran. |
 | Python workflow crashes before `main` | venv missing a package, or `from oasis.workflow import …` couldn't reach the project root. |
+| Agents have stale context after re-install | `session` ids changed on install — sessions are runtime-only and don't survive a fresh install. |
 
 ---
 
@@ -669,7 +695,7 @@ oasis/python/<wf>.py  ── ctx.send_agent("<role>", prompt)     → a member
 
 ```bash
 clawcross team "<team>"               # overview (members + alarm count)
-clawcross team "<team>" members       # the team's agents (any platform)
+clawcross team "<team>" members       # internal + external
 clawcross team "<team>" personas      # oasis_experts.json
 clawcross team "<team>" workflows     # yaml + python workflows
 clawcross team "<team>" skills        # team-scoped SKILLs
@@ -683,7 +709,7 @@ Raw inspection:
 
 ```bash
 cd ~/.clawcross/data/user_files/<user>/teams/<team>/
-cat oasis_experts.json
+cat internal_agents.json oasis_experts.json external_agents.json
 ls oasis/yaml/  oasis/python/  skills/
 ```
 
@@ -692,10 +718,10 @@ ls oasis/yaml/  oasis/python/  skills/
 ## 14. Related docs
 
 - [`build_team.md`](./build_team.md) — CLI to create / edit teams and add members.
-- [`team-management.md`](./team-management.md) — main-Agent Team management, members, workflows and schedules.
+- [`team-creator.md`](./team-creator.md) — browser-based Creator (discovery, smart-select, ZIP export).
 - [`create_workflow.md`](./create_workflow.md) — full YAML grammar: selectors, conditional edges, dispatchers.
 - [`workflowpy.md`](./workflowpy.md) — Python-script workflow mode in more depth (Agent Center, forum helpers).
 - [`oasis-reference.md`](./oasis-reference.md) — OASIS runtime model (Town Mode, GraphRAG, ReportAgent).
 - [`example_team.md`](./example_team.md) — alternative case study: `demo_team` with a selector-based workflow.
-- [`openclaw-commands.md`](./openclaw-commands.md) — OpenClaw as an ACP agent.
+- [`openclaw-commands.md`](./openclaw-commands.md) — OpenClaw config that populates `external_agents.json`.
 - [`repo-index.md`](./repo-index.md) — where the runtime code that reads each file lives.

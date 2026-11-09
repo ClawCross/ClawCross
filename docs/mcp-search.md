@@ -1,9 +1,9 @@
 # MCP Web Search
 
-ClawCross exposes web search through `src/backend/webot/mcp/search.py`.
+ClawCross exposes web search through `src/mcp_servers/search.py`.
 
 The MCP server is started by the main agent as `search_service` and provides
-two research tools.
+three unified research tools.
 
 The default provider mode is `auto`: ClawCross first tries the lightweight
 DDGS path, then falls back to a local Playwright browser when the search fails,
@@ -14,11 +14,9 @@ the feature free and registration-free while still supporting JS-rendered pages.
 
 | Tool | Use For | Return |
 |---|---|---|
-| `web_search` | Search the web or news, optionally with page text of the top results | Markdown or JSON string |
+| `web_search` | Search the web or news; pick markdown or JSON | Markdown or JSON string |
 | `web_fetch` | Fetch cleaned text from a public URL | JSON string |
-
-Provider, DDGS backend, and browser engine are deployment settings (see
-Environment Variables), not tool arguments: the model never picks them.
+| `web_research_brief` | Search plus cleaned text from top results | JSON string |
 
 ### `web_search`
 
@@ -30,8 +28,9 @@ web_search(
     max_results=5,
     region, safesearch, freshness,
     include_domains, exclude_domains,
-    fetch_top=0,
-    max_chars_per_page=4000,
+    provider="auto"|"ddgs"|"browser",
+    browser_engine="duckduckgo"|"bing",
+    backend,
 )
 ```
 
@@ -39,18 +38,22 @@ web_search(
   markdown variant uses a 📰 icon.
 - `format="markdown"` (default) caps `max_results` at 10 for chat readability.
   `format="json"` caps at 25.
-- `fetch_top=N` (capped at 5) also fetches cleaned text from the top N results
-  into a `fetched_pages` list, and always returns JSON.
+- `provider="browser"` forces the local Playwright runner (no DDGS attempt).
 
 ### `web_fetch`
 
 ```
-web_fetch(url, max_chars=12000, timeout=15)
+web_fetch(url, max_chars=12000, timeout=15, provider="auto"|"http"|"browser")
 ```
 
-With `WEB_SEARCH_PROVIDER=auto`, `web_fetch` does a direct HTTP fetch first, then renders the page in
+`provider="auto"` does a direct HTTP fetch first, then renders the page in
 the local Playwright browser if the direct fetch fails or returns too little
 text. Private/local hosts are always blocked (see Fetch Safety below).
+
+### `web_research_brief`
+
+Runs `web_search(format="json")` and then fetches cleaned text from the top
+`fetch_top` results (capped at 5).
 
 ## Structured Result Shape
 
@@ -105,11 +108,14 @@ Common parameters:
 - `freshness`: `d`, `w`, `m`, or `y`.
 - `include_domains`: comma-separated domains. The query is rewritten with `site:`.
 - `exclude_domains`: comma-separated domains. The query is rewritten with `-site:`.
+- `backend`: DDGS backend selector. Defaults to `WEB_SEARCH_BACKEND` or `auto`.
+- `provider`: `auto`, `ddgs`, or `browser`. `auto` is the recommended default.
+- `browser_engine`: `duckduckgo` or `bing` for browser-backed search.
 
 ## Local Browser Provider
 
-`WEB_SEARCH_PROVIDER=browser` (for both `web_search` and `web_fetch`) uses
-`src/backend/webot/mcp/browser_search_runner.mjs`. The runner opens a headless Chromium
+`provider=browser` (for both `web_search` and `web_fetch`) uses
+`scripts/browser_search_runner.mjs`. The runner opens a headless Chromium
 browser through Playwright, extracts visible search result links or page text,
 and returns JSON to the Python MCP server.
 

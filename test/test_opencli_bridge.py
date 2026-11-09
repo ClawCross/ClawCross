@@ -6,20 +6,20 @@ from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src" / "backend"
+SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from fleet.routes import create_fleet_router  # noqa: E402
-from fleet.opencli_bridge import get_opencli_status, run_opencli_command  # noqa: E402
+from api.harness_routes import create_harness_router  # noqa: E402
+from harness.opencli_bridge import get_opencli_status, run_opencli_command  # noqa: E402
 
 
 class OpenCliBridgeTests(unittest.TestCase):
     def test_status_exposes_wechat_and_mail_capabilities_without_opencli(self):
-        with patch("fleet.opencli_bridge.shutil.which", return_value=""):
+        with patch("harness.opencli_bridge.shutil.which", return_value=""):
             status = get_opencli_status(query="wechat")
 
         self.assertFalse(status["opencli_installed"])
@@ -43,8 +43,8 @@ class OpenCliBridgeTests(unittest.TestCase):
             calls.append((command, kwargs))
             return Completed()
 
-        with patch("fleet.opencli_bridge.shutil.which", return_value="/usr/local/bin/opencli"):
-            with patch("fleet.opencli_bridge.subprocess.run", side_effect=fake_run):
+        with patch("harness.opencli_bridge.shutil.which", return_value="/usr/local/bin/opencli"):
+            with patch("harness.opencli_bridge.subprocess.run", side_effect=fake_run):
                 result = run_opencli_command(["external", "list", "-f", "json"], timeout_seconds=5)
 
         self.assertTrue(result["ok"])
@@ -53,7 +53,7 @@ class OpenCliBridgeTests(unittest.TestCase):
         self.assertFalse(calls[0][1].get("shell", False))
 
     def test_run_rejects_mutating_opencli_registry_by_default(self):
-        with patch("fleet.opencli_bridge.shutil.which", return_value="/usr/local/bin/opencli"):
+        with patch("harness.opencli_bridge.shutil.which", return_value="/usr/local/bin/opencli"):
             with self.assertRaises(PermissionError):
                 run_opencli_command(["external", "register", "custom"])
 
@@ -63,30 +63,30 @@ class OpenCliBridgeTests(unittest.TestCase):
             stdout = "x" * 1200
             stderr = ""
 
-        with patch("fleet.opencli_bridge.shutil.which", return_value="/usr/local/bin/opencli"):
-            with patch("fleet.opencli_bridge.subprocess.run", return_value=Completed()):
+        with patch("harness.opencli_bridge.shutil.which", return_value="/usr/local/bin/opencli"):
+            with patch("harness.opencli_bridge.subprocess.run", return_value=Completed()):
                 result = run_opencli_command(["browser", "gmail", "state"], max_output_chars=1000)
 
         self.assertTrue(result["ok"])
         self.assertTrue(result["truncated"])
         self.assertIn("truncated", result["stdout"])
 
-    def test_fleet_opencli_routes(self):
+    def test_harness_opencli_routes(self):
         app = FastAPI()
         app.include_router(
-            create_fleet_router(
+            create_harness_router(
                 verify_auth_or_token=lambda user_id, password, token: None,
             )
         )
 
         with TestClient(app) as client:
-            status = client.get("/fleet/opencli/status", params={"user_id": "alice", "query": "wx"})
+            status = client.get("/harness/opencli/status", params={"user_id": "alice", "query": "wx"})
             self.assertEqual(status.status_code, 200)
             self.assertIn("external_clis", status.json()["capabilities"])
 
-            with patch("fleet.routes.run_opencli_command", return_value={"ok": True, "stdout": "done"}):
+            with patch("api.harness_routes.run_opencli_command", return_value={"ok": True, "stdout": "done"}):
                 run = client.post(
-                    "/fleet/opencli/run",
+                    "/harness/opencli/run",
                     json={"user_id": "alice", "args": ["wx", "search", "TODO"]},
                 )
             self.assertEqual(run.status_code, 200)

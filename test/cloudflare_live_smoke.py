@@ -1,7 +1,7 @@
 """
-Opt-in live smoke test for Cloudflare quick tunnels via launch/tunnel.py.
+Opt-in live smoke test for Cloudflare quick tunnels via scripts/tunnel.py.
 
-The test starts a tiny local HTTP server, launches launch/tunnel.py, waits for
+The test starts a tiny local HTTP server, launches scripts/tunnel.py, waits for
 the trycloudflare URL, fetches that public URL, verifies the response body, and
 then restores config/.env.
 """
@@ -18,7 +18,7 @@ import subprocess
 import sys
 import threading
 import time
-import scheduler.service
+import utils.scheduler_service
 from collections import deque
 from pathlib import Path
 
@@ -27,7 +27,7 @@ import requests
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = PROJECT_ROOT / "config" / ".env"
-TUNNEL_SCRIPT = PROJECT_ROOT / "launch" / "tunnel.py"
+TUNNEL_SCRIPT = PROJECT_ROOT / "scripts" / "tunnel.py"
 URL_PATTERN = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
 
 

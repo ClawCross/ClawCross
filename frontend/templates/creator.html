@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="creator_page_title">ClawCross Creator</title>
+    <link rel="stylesheet" href="/static/css/creator.css">
+    <script src="/static/js/tinyfish-live-shared.js"></script>
+</head>
+<body>
+    <div class="creator-shell">
+        <header class="creator-header">
+            <a class="creator-link" href="/mobile_group_chat" data-i18n="creator_nav_msgcenter">← 消息中心</a>
+            <div class="creator-title-wrap">
+                <div class="creator-kicker">ClawCross Creator</div>
+                <h1 class="creator-title">ClawCross Creator</h1>
+            </div>
+            <div class="creator-header-actions">
+                <button
+                    id="creator-lang-toggle"
+                    class="creator-link creator-link-secondary creator-lang-toggle"
+                    type="button"
+                    onclick="window.ClawcrossCreatorI18n && window.ClawcrossCreatorI18n.toggleLanguage()"
+                >
+                    <span class="creator-lang-toggle-label" data-i18n="creator_lang_label">语言</span>
+                    <span id="creator-lang-toggle-text" class="creator-lang-toggle-text">EN</span>
+                </button>
+                <a class="creator-link creator-link-secondary" href="/studio" data-i18n="creator_nav_studio">ClawCross Studio</a>
+            </div>
+        </header>
+
+        <main class="creator-main">
+
+            <!-- Hero -->
+            <section class="creator-hero">
+                <div class="creator-hero-copy">
+                    <div class="creator-badge" data-i18n="creator_badge">ClawCross Creator · AI + TinyFish Powered</div>
+                    <p class="creator-hero-text" data-i18n="creator_hero_text">
+                        描述你的业务场景或任务目标，ClawCross Creator 通过 AI Agent 发现相关 SOP/组织架构 URL，
+                        由 TinyFish 深度提取角色数据，再由 AI 智能构建 DAG 工作流
+                        — 自动生成包含 Persona、工作流和依赖图的多 Agent 协作团队。
+                    </p>
+                </div>
+                <div class="creator-hero-meta">
+                    <div id="builder-status-pill" class="creator-pill" data-i18n="creator_status_ready">就绪</div>
+                    <div id="builder-status-text" class="creator-page-status" data-i18n="creator_status_ready_hint">输入任务描述开始构建团队</div>
+                </div>
+            </section>
+
+            <section class="creator-grid">
+                <!-- Main Column -->
+                <div class="builder-main-col">
+
+                    <!-- Step 1: Task Input -->
+                    <section class="creator-card builder-step" id="builder-step-input">
+                        <div class="creator-card-head">
+                            <div>
+                                <div class="creator-card-kicker">Step 1</div>
+                                <h2 data-i18n="creator_step1_title">描述你的团队目标</h2>
+                            </div>
+                            <div class="builder-step-badge">1</div>
+                        </div>
+                        <div class="builder-input-group">
+                            <label class="creator-field">
+                                <span data-i18n="creator_team_name_label">团队名称</span>
+                                <input id="builder-team-name" class="builder-input" type="text" data-i18n-placeholder="creator_team_name_placeholder" placeholder="例如: SaaS增长团队" value="" autocomplete="off">
+                            </label>
+                            <label class="creator-field">
+                                <span data-i18n="creator_task_desc_label">任务/业务描述</span>
+                                <textarea id="builder-task-desc" class="builder-textarea" rows="3" data-i18n-placeholder="creator_task_desc_placeholder" placeholder="例如: 负责一个 B2B SaaS 产品从用户增长到续费的全链路运营"></textarea>
+                            </label>
+                        </div>
+                        <div class="builder-example-row">
+                            <button id="builder-example-btn" class="creator-btn creator-btn-secondary builder-example-btn" type="button" data-i18n="creator_example_btn">💡 使用示例指令</button>
+                        </div>
+                        <div class="builder-mode-switch">
+                            <button id="builder-mode-direct" class="creator-btn builder-mode-btn builder-mode-active" type="button" data-i18n="creator_mode_direct">✏️ 直接定义角色</button>
+                            <button id="builder-mode-discover" class="creator-btn builder-mode-btn" type="button" data-i18n="creator_mode_discover">🔍 AI 智能发现</button>
+                            <button id="builder-mode-import-colleague" class="creator-btn builder-mode-btn" type="button" data-i18n="creator_mode_import_colleague">👥 从同事导入</button>
+                            <button id="builder-mode-import-mentor" class="creator-btn builder-mode-btn" type="button" data-i18n="creator_mode_import_mentor">🎓 从导师导入</button>
+                        </div>
+                    </section>
+
+                    <!-- Step 2c: Import Colleague Skill -->
+                    <section class="creator-card builder-step builder-hidden" id="builder-step-import-colleague">
+                        <div class="creator-item-kicker">Step 2 · Import</div>
+                        <h3 class="creator-card-title" data-i18n="creator_import_colleague_title">导入同事 Skill</h3>
+                        <p class="creator-item-subtitle" data-i18n="creator_import_colleague_hint">可以直接从飞书采集并生成同事，或者导入 colleague-skill 已生成的文件。</p>
+                        <div class="builder-import-guide">
+                            <div class="creator-card-kicker" data-i18n="creator_generate_colleague_kicker">🪶 Direct Generate</div>
+                            <p class="builder-import-steps" data-i18n="creator_generate_colleague_hint">填写飞书应用信息和同事基本资料，ClawCross Creator 会采集消息、自动蒸馏 persona/work，并直接导入为团队角色。</p>
+                        </div>
+                        <div class="builder-import-form">
+                            <div class="builder-import-grid">
+                                <label class="creator-field">
+                                    <span data-i18n="creator_feishu_app_id_label">飞书 App ID</span>
+                                    <input id="feishu-app-id" class="builder-input" type="text" data-i18n-placeholder="creator_feishu_app_id_placeholder" placeholder="例如: cli_xxx" autocomplete="off">
+                                </label>
+                                <label class="creator-field">
+                                    <span data-i18n="creator_feishu_app_secret_label">飞书 App Secret</span>
+                                    <input id="feishu-app-secret" class="builder-input" type="password" data-i18n-placeholder="creator_feishu_app_secret_placeholder" placeholder="例如: xxxxx" autocomplete="off">
+                                </label>
+                                <label class="creator-field">
+                                    <span data-i18n="creator_feishu_target_name_label">同事姓名</span>
+                                    <input id="feishu-target-name" class="builder-input" type="text" data-i18n-placeholder="creator_feishu_target_name_placeholder" placeholder="例如: 张三" autocomplete="off">
+                                </label>
+                                <label class="creator-field">
+                                    <span data-i18n="creator_feishu_role_label">岗位</span>
+                                    <input id="feishu-role" class="builder-input" type="text" data-i18n-placeholder="creator_feishu_role_placeholder" placeholder="例如: 后端工程师" autocomplete="off">
+                                </label>
+                                <label class="creator-field">
+                                    <span data-i18n="creator_feishu_company_label">公司 / 团队</span>
+                                    <input id="feishu-company" class="builder-input" type="text" data-i18n-placeholder="creator_feishu_company_placeholder" placeholder="例如: Clawcross" autocomplete="off">
+                                </label>
+                                <label class="creator-field">
+                                    <span data-i18n="creator_feishu_level_label">层级</span>
+                                    <input id="feishu-level" class="builder-input" type="text" data-i18n-placeholder="creator_feishu_level_placeholder" placeholder="例如: L4 / P6" autocomplete="off">
+                                </label>
+                                <label class="creator-field">
+                                    <span data-i18n="creator_feishu_personality_tags_label">性格标签（逗号分隔）</span>
+                                    <input id="feishu-personality-tags" class="builder-input" type="text" data-i18n-placeholder="creator_feishu_personality_tags_placeholder" placeholder="例如: 直接, 数据驱动" autocomplete="off">
+                                </label>
+                                <label class="creator-field">
+                                    <span data-i18n="creator_feishu_msg_limit_label">消息上限</span>
+                                    <input id="feishu-msg-limit" class="builder-input" type="number" min="50" max="5000" value="500" autocomplete="off">
+                                </label>
+                            </div>
+                            <button id="generate-colleague-btn" class="creator-btn creator-btn-primary" type="button" data-i18n="creator_generate_colleague_btn">🪶 采集并生成同事</button>
+                        </div>
+                        <div class="builder-import-divider"></div>
+                        <div class="builder-import-guide">
+                            <a href="https://github.com/titanwings/colleague-skill" target="_blank" rel="noopener" class="builder-import-repo-link">
+                                <span data-i18n="creator_import_colleague_repo">📦 仓库地址</span>
+                                <code>github.com/titanwings/colleague-skill</code>
+                            </a>
+                            <p class="builder-import-steps" data-i18n="creator_import_colleague_steps">生成步骤：① 克隆仓库 → ② 在 Claude Code / Cursor 中运行 /create-colleague → ③ 按提示填写同事信息并提供原材料 → ④ 生成的文件在 colleagues/{slug}/ 目录下</p>
+                        </div>
+                        <div class="builder-import-form">
+                            <p class="builder-import-files-label" data-i18n="creator_import_colleague_files">上传以下文件（位于 colleagues/{slug}/ 目录中）：</p>
+                            <label class="builder-import-label" data-i18n="creator_import_meta_json">meta.json — 同事基础信息（必需）</label>
+                            <input type="file" id="import-colleague-meta" accept=".json" class="builder-import-file" />
+                            <label class="builder-import-label" data-i18n="creator_import_persona_md">persona.md — 5 层性格画像（必需）</label>
+                            <input type="file" id="import-colleague-persona" accept=".md,.txt" class="builder-import-file" />
+                            <label class="builder-import-label" data-i18n="creator_import_work_md">work.md — 工作能力（可选，推荐上传）</label>
+                            <input type="file" id="import-colleague-work" accept=".md,.txt" class="builder-import-file" />
+                            <p class="builder-import-files-label" data-i18n="creator_import_or_local_path">或者填写本机路径：</p>
+                            <label class="builder-import-label" data-i18n="creator_import_colleague_dir">colleagues/{slug} 目录路径（自动读取 meta.json / persona.md / work.md）</label>
+                            <input type="text" id="import-colleague-dir" class="builder-input" data-i18n-placeholder="creator_import_colleague_dir_placeholder" placeholder="例如: ~/.claude/skills/create-colleague/colleagues/zhangsan" autocomplete="off" />
+                            <button id="import-colleague-btn" class="creator-btn creator-btn-primary" type="button" data-i18n="creator_import_btn">📥 导入到 ClawCross Creator</button>
+                        </div>
+                        <div id="import-colleague-status" class="builder-status-bar"></div>
+                    </section>
+
+                    <!-- Step 2d: Import Mentor Skill -->
+                    <section class="creator-card builder-step builder-hidden" id="builder-step-import-mentor">
+                        <div class="creator-item-kicker">Step 2 · Import</div>
+                        <h3 class="creator-card-title" data-i18n="creator_import_mentor_title">导入导师 Skill</h3>
+                        <p class="creator-item-subtitle" data-i18n="creator_import_mentor_hint">可以直接从 ArXiv 搜索生成导师，或者导入 supervisor 已生成的文件。</p>
+                        <div class="builder-import-guide">
+                            <div class="creator-card-kicker" data-i18n="creator_generate_mentor_kicker">📚 Direct Generate</div>
+                            <p class="builder-import-steps" data-i18n="creator_generate_mentor_hint">输入导师姓名后，ClawCross Creator 会搜索 ArXiv、生成导师档案，并直接导入为团队角色。</p>
+                        </div>
+                        <div class="builder-import-form">
+                            <div class="builder-import-grid">
+                                <label class="creator-field">
+                                    <span data-i18n="creator_arxiv_author_name_label">导师姓名</span>
+                                    <input id="mentor-arxiv-name" class="builder-input" type="text" data-i18n-placeholder="creator_arxiv_author_name_placeholder" placeholder="例如: Geoffrey Hinton" autocomplete="off">
+                                </label>
+                                <label class="creator-field">
+                                    <span data-i18n="creator_arxiv_affiliation_label">机构（可选）</span>
+                                    <input id="mentor-arxiv-affiliation" class="builder-input" type="text" data-i18n-placeholder="creator_arxiv_affiliation_placeholder" placeholder="例如: University of Toronto" autocomplete="off">
+                                </label>
+                                <label class="creator-field">
+                                    <span data-i18n="creator_arxiv_max_results_label">论文上限</span>
+                                    <input id="mentor-arxiv-max-results" class="builder-input" type="number" min="5" max="100" value="20" autocomplete="off">
+                                </label>
+                            </div>
+                            <button id="generate-mentor-btn" class="creator-btn creator-btn-primary" type="button" data-i18n="creator_generate_mentor_btn">📚 搜索 ArXiv 并生成导师</button>
+                        </div>
+                        <div class="builder-import-divider"></div>
+                        <div class="builder-import-guide">
+                            <a href="https://github.com/ybq22/supervisor" target="_blank" rel="noopener" class="builder-import-repo-link">
+                                <span data-i18n="creator_import_mentor_repo">📦 仓库地址</span>
+                                <code>github.com/ybq22/supervisor</code>
+                            </a>
+                            <p class="builder-import-steps" data-i18n="creator_import_mentor_steps">生成步骤：① 克隆仓库 → ② 在 Claude Code / Cursor 中运行 /distill-mentor &lt;导师名&gt; → ③ 自动搜索 ArXiv 论文并分析风格 → ④ 生成的文件在 ~/.claude/mentors/ 和 ~/.claude/skills/ 下</p>
+                        </div>
+                        <div class="builder-import-form">
+                            <p class="builder-import-files-label" data-i18n="creator_import_mentor_files">上传以下文件：</p>
+                            <label class="builder-import-label" data-i18n="creator_import_mentor_json">{name}.json — 导师档案 JSON（必需）</label>
+                            <input type="file" id="import-mentor-json" accept=".json" class="builder-import-file" />
+                            <label class="builder-import-label" data-i18n="creator_import_skill_md">SKILL.md — 导师完整 Skill（可选，推荐上传）</label>
+                            <input type="file" id="import-mentor-skill" accept=".md,.txt" class="builder-import-file" />
+                            <p class="builder-import-files-label" data-i18n="creator_import_or_local_path">或者填写本机路径：</p>
+                            <label class="builder-import-label" data-i18n="creator_import_mentor_json_path">{name}.json 路径（未上传时必需）</label>
+                            <input type="text" id="import-mentor-json-path" class="builder-input" data-i18n-placeholder="creator_import_mentor_json_path_placeholder" placeholder="例如: ~/.claude/mentors/Geoffrey_Hinton.json" autocomplete="off" />
+                            <label class="builder-import-label" data-i18n="creator_import_skill_md_path">SKILL.md 路径（可选）</label>
+                            <input type="text" id="import-mentor-skill-path" class="builder-input" data-i18n-placeholder="creator_import_skill_md_path_placeholder" placeholder="例如: ~/.claude/skills/geoffrey-hinton/SKILL.md" autocomplete="off" />
+                            <button id="import-mentor-btn" class="creator-btn creator-btn-primary" type="button" data-i18n="creator_import_btn">📥 导入到 ClawCross Creator</button>
+                        </div>
+                        <div id="import-mentor-status" class="builder-status-bar"></div>
+                    </section>
+
+                    <!-- Step 2a: Direct Role Editor -->
+                    <section class="creator-card builder-step" id="builder-step-roles">
+                        <div class="creator-card-head">
+                            <div>
+                                <div class="creator-card-kicker" data-i18n="creator_step2_manual_kicker">Step 2 · 手动定义</div>
+                                <h2 data-i18n="creator_step2_manual_title">定义团队角色</h2>
+                            </div>
+                            <div class="builder-step-badge">2</div>
+                        </div>
+                        <p class="builder-hint" data-i18n="creator_roles_hint">添加你的团队角色。每个角色包含名称、职责和依赖关系。</p>
+                        <div id="builder-roles-list" class="builder-roles-list">
+                            <!-- Roles will be dynamically injected -->
+                        </div>
+                        <div class="builder-roles-actions">
+                            <button id="builder-add-role" class="creator-btn creator-btn-secondary" type="button" data-i18n="creator_add_role_btn">+ 添加角色</button>
+                            <button id="builder-paste-json" class="creator-btn creator-btn-secondary" type="button" data-i18n="creator_paste_json_btn">粘贴 JSON</button>
+                        </div>
+                    </section>
+
+                    <!-- Step 2b: TinyFish Discovery (unified live crawl + extraction) -->
+                    <section class="creator-card builder-step builder-hidden" id="builder-step-discover">
+                        <div class="creator-card-head">
+                            <div>
+                                <div class="creator-card-kicker" data-i18n="creator_step2_discovery_kicker">Step 2 · AI + TinyFish Discovery</div>
+                                <h2 data-i18n="creator_step2_discovery_title">🔍 AI 智能发现</h2>
+                            </div>
+                            <div class="builder-step-badge">2</div>
+                        </div>
+
+                        <!-- Discovery Description -->
+                        <p class="builder-hint" data-i18n="creator_discovery_hint">
+                            AI Agent 首先搜索发现与你任务相关的 SOP 和组织架构 URL，
+                            然后 TinyFish 深度爬取这些页面提取角色数据。你可以在提取阶段观看浏览器操作。
+                        </p>
+
+                        <!-- Discovery Controls -->
+                        <div class="discovery-controls">
+                            <div class="discovery-controls-row">
+                                <button id="builder-discover-btn" class="creator-btn" type="button" data-i18n="creator_discover_btn">🚀 开始智能发现</button>
+                                <button id="builder-discover-stop" class="creator-btn creator-btn-secondary" type="button" disabled data-i18n="creator_discover_stop_btn">⏹ 停止</button>
+                            </div>
+                            <div class="discovery-phase-indicator">
+                                <div class="discovery-phase" id="phase-discovery">
+                                    <span class="phase-num">①</span>
+                                    <span class="phase-label" data-i18n="creator_phase_discovery">AI 发现 URL</span>
+                                </div>
+                                <div class="discovery-phase-arrow">→</div>
+                                <div class="discovery-phase" id="phase-extraction">
+                                    <span class="phase-num">②</span>
+                                    <span class="phase-label" data-i18n="creator_phase_extraction">🐟 TinyFish 提取角色</span>
+                                </div>
+                                <div class="discovery-phase-arrow">→</div>
+                                <div class="discovery-phase" id="phase-confirm">
+                                    <span class="phase-num">③</span>
+                                    <span class="phase-label" data-i18n="creator_phase_confirm">确认角色</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Phase 1: AI Discovery Log -->
+                        <div id="discovery-log-section" class="discovery-log-section" style="display:none;">
+                            <div class="creator-card-kicker" style="margin-bottom:6px;" data-i18n="creator_discovery_log_title">🔍 AI URL 发现日志</div>
+                            <div id="discovery-live-log" class="extraction-discovery-log" data-i18n="creator_discovery_log_idle">等待启动发现流程...</div>
+                        </div>
+
+                        <!-- Parallel Extraction Sessions (Tab-based) -->
+                        <div class="discovery-live-section" id="discovery-live-section" style="display:none;">
+                            <!-- Tab bar for parallel sessions -->
+                            <div class="extraction-tabs-wrap">
+                                <div class="creator-card-kicker" style="margin-bottom:6px;" data-i18n="creator_extraction_tabs_title">🐟 TinyFish 并行提取</div>
+                                <div id="extraction-tab-bar" class="extraction-tab-bar">
+                                    <!-- Tab buttons injected by JS, e.g. [Page 1] [Page 2] [Summary] -->
+                                </div>
+                            </div>
+
+                            <!-- Tab panels container — one per session + summary -->
+                            <div id="extraction-panels" class="extraction-panels">
+                                <!-- Panels injected by JS dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Discovered Pages -->
+                        <div id="builder-discover-pages" class="builder-discover-pages"></div>
+
+                        <!-- Extraction summary progress (shown above review) -->
+                        <div id="discovery-extraction-progress" class="discovery-extraction-progress" style="display:none;">
+                            <div class="creator-card-kicker" data-i18n="creator_extraction_summary_title">📊 提取汇总</div>
+                            <div id="discovery-extraction-log" class="extraction-summary-log"></div>
+                        </div>
+
+                        <!-- Discovered Roles Review (dual-mode: LLM auto / manual) -->
+                        <div id="discovery-roles-review" class="discovery-roles-review" style="display:none;">
+                            <div class="discovery-review-head">
+                                <div class="creator-card-kicker" data-i18n="creator_discovered_roles_title">✅ 发现的角色</div>
+                                <span id="discovery-roles-count" class="creator-pill" style="font-size:12px;" data-i18n="creator_roles_count_zero">0 个角色</span>
+                            </div>
+
+                            <!-- Selection Mode Controls -->
+                            <div class="discovery-select-controls">
+                                <div class="discovery-select-mode">
+                                    <button id="discovery-mode-llm" class="discovery-mode-btn discovery-mode-active" type="button" data-i18n="creator_discovery_mode_llm">🤖 LLM 智能选择</button>
+                                    <button id="discovery-mode-manual" class="discovery-mode-btn" type="button" data-i18n="creator_discovery_mode_manual">✋ 手动选择</button>
+                                </div>
+                                <div id="discovery-llm-controls" class="discovery-llm-controls">
+                                    <label class="discovery-max-roles-label">
+                                        <span data-i18n="creator_max_roles_label">最大角色数</span>
+                                        <input id="builder-max-roles" class="builder-input discovery-max-roles-input" type="number" min="1" max="30" value="8" autocomplete="off">
+                                    </label>
+                                    <button id="discovery-llm-select-btn" class="creator-btn discovery-llm-select-btn" type="button" data-i18n="creator_discovery_smart_select_btn">🤖 开始智能筛选</button>
+                                    <span class="discovery-max-roles-hint" data-i18n="creator_max_roles_hint">LLM 将选出最重要的 N 个角色，并自动匹配预设专家池</span>
+                                </div>
+                                <div id="discovery-manual-hint" class="discovery-manual-hint" style="display:none;">
+                                    <span data-i18n="creator_discovery_manual_hint">💡 点击角色卡片的复选框来选择你需要的角色，不受数量限制</span>
+                                </div>
+                            </div>
+
+                            <!-- LLM selection status -->
+                            <div id="discovery-llm-status" class="discovery-llm-status" style="display:none;"></div>
+
+                            <!-- Selectable role cards -->
+                            <div class="discovery-select-summary" id="discovery-select-summary" style="display:none;">
+                                <span id="discovery-selected-count" data-i18n="creator_selected_count_zero">已选 0 个</span>
+                                <button id="discovery-select-all" class="discovery-select-action" type="button" data-i18n="creator_select_all">全选</button>
+                                <button id="discovery-deselect-all" class="discovery-select-action" type="button" data-i18n="creator_deselect_all">全不选</button>
+                            </div>
+                            <div id="discovery-roles-list" class="builder-roles-list"></div>
+                            <div class="builder-roles-actions">
+                                <button id="discovery-use-roles" class="creator-btn" type="button" data-i18n="creator_use_selected_roles">✅ 使用已选角色</button>
+                                <button id="discovery-add-role" class="creator-btn creator-btn-secondary" type="button" data-i18n="creator_add_discovered_role">+ 补充角色</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Step 3: Build & Preview -->
+                    <section class="creator-card builder-step" id="builder-step-preview">
+                        <div class="creator-card-head">
+                            <div>
+                                <div class="creator-card-kicker">Step 3</div>
+                                <h2 data-i18n="creator_step3_title">团队预览</h2>
+                            </div>
+                            <div class="builder-step-badge">3</div>
+                        </div>
+                        <div class="builder-build-actions">
+                            <button id="builder-build-btn" class="creator-btn" type="button" data-i18n="creator_build_btn">🔨 构建团队</button>
+                            <button id="builder-download-btn" class="creator-btn creator-btn-secondary" type="button" disabled data-i18n="creator_download_btn">📦 下载 ZIP</button>
+                            <button id="builder-import-btn" class="creator-btn creator-btn-secondary" type="button" disabled data-i18n="creator_import_btn">📥 导入到 Clawcross</button>
+                        </div>
+                        <div id="builder-preview-status" class="builder-preview-status"></div>
+
+                        <!-- Summary -->
+                        <div id="builder-summary" class="builder-summary builder-hidden"></div>
+
+                        <!-- Persona Cards -->
+                        <div id="builder-persona-grid" class="builder-persona-grid"></div>
+
+                        <!-- Workflow DAG -->
+                        <div id="builder-workflow" class="builder-workflow builder-hidden">
+                            <div class="builder-workflow-head">
+                                <div class="creator-card-kicker" data-i18n="creator_workflow_dag_title">OASIS Workflow DAG</div>
+                            </div>
+                            <div id="builder-dag-canvas" class="builder-dag-canvas">
+                                <div id="builder-dag-inner" class="builder-dag-inner">
+                                    <!-- SVG edges + nodes injected by JS -->
+                                </div>
+                                <div class="builder-dag-nav">
+                                    <button data-fg-action="zoom-out" data-i18n-title="creator_zoom_out" title="缩小">−</button>
+                                    <span class="fg-zoom-label">100%</span>
+                                    <button data-fg-action="zoom-in" data-i18n-title="creator_zoom_in" title="放大">+</button>
+                                    <button data-fg-action="reset" data-i18n-title="creator_reset_view" title="重置视图">⟲</button>
+                                </div>
+                            </div>
+                            <div style="padding:0 18px 16px;">
+                                <details class="builder-yaml-details">
+                                    <summary data-i18n="creator_view_yaml">查看 YAML 源码</summary>
+                                    <pre id="builder-yaml-code" class="builder-yaml-code"></pre>
+                                </details>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Sidebar -->
+                <aside class="creator-side">
+                    <!-- TinyFish Status (always visible) -->
+                    <section class="creator-card" id="tinyfish-config-card">
+                        <div class="creator-card-kicker">🐟 TinyFish</div>
+                        <h2 data-i18n="creator_tinyfish_status_title">爬取引擎状态</h2>
+                        <div id="tinyfish-status-content" class="creator-stack">
+                            <div class="creator-item">
+                                <div class="creator-item-subtitle" data-i18n="creator_tinyfish_status_loading">正在检查 TinyFish 配置...</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="creator-card" id="expert-pool-card">
+                        <div class="creator-card-kicker">🌟 Expert Pool</div>
+                        <h2 data-i18n="creator_expert_pool_title">预设专家池</h2>
+                        <p class="builder-hint" style="margin-top:6px;" data-i18n="creator_expert_pool_hint">点击专家可快速添加为团队角色（复用消息中心通讯录同一专家源）</p>
+                        <div class="expert-pool-search-wrap">
+                            <input id="expert-pool-search" class="builder-input expert-pool-search" type="text" data-i18n-placeholder="creator_expert_pool_search_placeholder" placeholder="🔍 搜索专家名称 / 分类..." autocomplete="off">
+                        </div>
+                        <div id="expert-pool-list" class="expert-pool-list">
+                            <div class="creator-item"><div class="creator-item-subtitle" data-i18n="creator_expert_pool_loading">正在加载专家池...</div></div>
+                        </div>
+                    </section>
+
+                    <section class="creator-card">
+                        <div class="creator-card-kicker" data-i18n="creator_build_jobs_kicker">Build Jobs</div>
+                        <h2 data-i18n="creator_build_jobs_title">构建记录</h2>
+                        <div id="builder-jobs" class="creator-stack">
+                            <div class="creator-item"><div class="creator-item-subtitle">正在加载构建记录...</div></div>
+                        </div>
+                    </section>
+                </aside>
+            </section>
+
+        </main>
+    </div>
+
+    <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
+    <script src="/static/js/pretext_text_core.js?v=20260402-pretext"></script>
+    <script src="/static/js/creator.js"></script>
+</body>
+</html>

@@ -11,7 +11,7 @@ Clawcross is an OpenAI-compatible AI agent system with:
 - a built-in multi-persona orchestration engine called OASIS
 - a ClawCross Studio sidebar for OASIS Town, swarm graphs, and ReportAgent
 - living GraphRAG memory per topic, backed by local SQLite and optional Zep mirroring
-- Agent tools for managing Teams, roles, workflows and schedules in conversation
+- an AI-assisted ClawCross Creator that can turn task descriptions or SOP pages into Teams
 - lightweight built-in agents for files, commands, and messaging
 - ACP exchange (acpx) for communicating with external AI agents (OpenClaw, Codex, Claude, Gemini, Aider) via the Agent Client Protocol
 - optional integrations such as OpenClaw, TinyFish internet search agent, Telegram, QQ, and Cloudflare Tunnel
@@ -43,12 +43,12 @@ OASIS is the workflow engine behind coordinated persona-driven discussions and e
 ## Main Capabilities
 
 - OpenAI-compatible chat API
-- main-Agent Team management and workflow preview
+- ClawCross Creator for task-to-team drafting and workflow preview
 - OASIS Town in the ClawCross Studio sidebar
 - GraphRAG long-term memory and report queries
 - multi-session and multi-user isolation
 - profile-bound delegated subagents for research / planning / coding / review / verification
-- ACP exchange (acpx): Codex, Claude Code, Gemini … agents reached through one agent interface, in group chat, OASIS and the API
+- ACP exchange (acpx) for external agent communication in group chat and OASIS workflows
 - Web UI on the local machine
 - scheduled tasks
 - internet search via TinyFish
@@ -67,7 +67,7 @@ Create teams of personas and define workflows that debate, vote, summarize, or e
 
 ### AI-assisted team drafting
 
-Tell the main Agent what you want to achieve. With the optional management tools enabled, it can create a Team, configure members and personas, save workflows and schedule tasks in the same conversation.
+Use ClawCross Creator to discover public SOP pages, extract role definitions with TinyFish, and generate a draft Team plus DAG workflow before importing it into Clawcross.
 
 ### Integration hub
 
@@ -78,7 +78,7 @@ Use Clawcross as a bridge layer for bots, external tools, or other OpenAI-compat
 - Documentation map: [index.md](./index.md)
 - Codebase map: [repo-index.md](./repo-index.md)
 - Installation, Windows / WSL setup, startup expectations, access notes, and audio setup: `SKILL.md`
-- Main-Agent Team management: [team-management.md](./team-management.md)
+- ClawCross Creator and workflow-to-team flow: [team-creator.md](./team-creator.md)
 - OASIS runtime model and orchestration semantics: [oasis-reference.md](./oasis-reference.md)
 - Runtime architecture and auth model: [runtime-reference.md](./runtime-reference.md)
 - WeBot delegated-agent runtime: [webot-agent-runtime.md](./webot-agent-runtime.md)
