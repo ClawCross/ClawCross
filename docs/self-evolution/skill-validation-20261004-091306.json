@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261004091306396116",
+  "candidate_id": "blended-verification-loop-workspace-preflight-structured-output",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-04T09:13:06.396079+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "..F............................F..................       [100%]\n=================================== FAILURES ===================================\n_ ReasoningLevelsTests.test_mapping_uses_supported_choices_with_monotonic_conservative_fallback _\n\nself = <test.test_reasoning_levels.ReasoningLevelsTests testMethod=test_mapping_uses_supported_choices_with_monotonic_conservative_fallback>\n\n    def test_mapping_uses_supported_choices_with_monotonic_conservative_fallback(self):\n        self.assertEqual(list(level_map(['high','low','medium']).values()),\n                         ['low','low','low','medium','high','high','high'])\n>       self.assertEqual(list(level_map(['none','low','medium','high','xhigh']).values()),\n                         ['none','low','low','medium','high','xhigh','xhigh'])\nE       AssertionError: Lists differ: ['none', 'none', 'low', 'medium', 'high', 'xhigh', 'xhigh'] != ['none', 'low', 'low', 'medium', 'high', 'xhigh', 'xhigh']\nE       \nE       First differing element 1:\nE       'none'\nE       'low'\nE       \nE       - ['none', 'none', 'low', 'medium', 'high', 'xhigh', 'xhigh']\nE       ?          --------\nE       \nE       + ['none', 'low', 'low', 'medium', 'high', 'xhigh', 'xhigh']\nE       ?                +++++++\n\ntest/test_reasoning_levels.py:14: AssertionError\n_ ConnectionProbeTests.test_connection_initializes_without_prompt_or_identity_delivery _\n\nself = <test.test_acp_stream_and_bridge.ConnectionProbeTests testMethod=test_connection_initializes_without_prompt_or_identity_delivery>\n\n    async def test_connection_initializes_without_prompt_or_identity_delivery(self):\n        with TemporaryDirectory() as tmp:\n            store = AgentStore(Path(tmp)/'agents.db')\n            agent = store.create('alice', driver=ACPX, config={'platform':'codex','model':'gpt-5.5'})\n            runtime = AcpRuntime(store=store)\n            adapter = SimpleNamespace(ensure_session=AsyncMock(), prompt_with_trace=AsyncMock())\n            with patch('external.acpx.get_acpx_adapter',return_value=adapter), \\\n                 patch('external.acp_settings.initial_config_options',return_value={}), \\\n                 patch('external.tool_bridge.connector_file',return_value='/scoped-mcp.json'):\n                await runtime.test_connection(agent)\n            adapter.ensure_session.assert_awaited_once()\n            self.assertIsNone(adapter.ensure_session.call_args.kwargs['system_prompt'])\n            self.assertEqual(adapter.ensure_session.call_args.kwargs['model'],'gpt-5.5')\n            adapter.prompt_with_trace.assert_not_awaited()\n>           self.assertEqual(store.require('alice',agent.agent_id).runtime,{})\nE           AssertionError: {'acp_cwd': '/tmp/clawcross-reasoning-test[49 chars]6694} != {}\nE           + {}\nE           - {'acp_cwd': '/tmp/clawcross-reasoning-tests/workspace/acpx',\nE           -  'last_used_at': 1791105087.9456694}\n\ntest/test_acp_stream_and_bridge.py:158: AssertionError\n=========================== short test summary info ============================\nFAILED test/test_reasoning_levels.py::ReasoningLevelsTests::test_mapping_uses_supported_choices_with_monotonic_conservative_fallback\nFAILED test/test_acp_stream_and_bridge.py::ConnectionProbeTests::test_connection_initializes_without_prompt_or_identity_delivery\n2 failed, 48 passed, 16 subtests passed in 4.90s",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-04T09:13:06.396139+00:00",
+  "asset_id": "sha256:083ba3dee8fe1f9e9d247b88a31eeaeb799cc41780edf9e19b96d5ac5ed19cf9"
+}

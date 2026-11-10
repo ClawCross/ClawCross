@@ -8,9 +8,9 @@ plan:
     author: begin
     content: "请提出你的问题或议题，各位顾问将依次给出分析。"
 - id: m1
-  expert: zhang_yiming#oasis#张一鸣
+  agent: 张一鸣
 - id: m2
-  expert: zhangxuefeng#oasis#张雪峰
+  agent: 张雪峰
 - id: m3
   manual:
     author: bend

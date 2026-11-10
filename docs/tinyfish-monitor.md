@@ -18,10 +18,10 @@ This feature is shared by the frontend, the scheduler, and a standalone CLI wrap
 
 | Path | Role |
 |---|---|
-| `src/services/tinyfish_monitor_service.py` | shared TinyFish client, SQLite persistence, change detection, live SSE stream handling |
-| `scripts/tinyfish_competitor_monitor.py` | thin CLI wrapper around the shared service |
-| `src/front.py` | `/api/tinyfish/*` endpoints for status, run, live crawl, and site snapshots |
-| `src/utils/scheduler_service.py` | restores the built-in TinyFish cron job from `config/.env` |
+| `src/backend/tinyfish/monitor.py` | shared TinyFish client, SQLite persistence, change detection, live SSE stream handling |
+| `src/backend/tinyfish/cli.py` | thin CLI wrapper around the shared service |
+| `src/frontend/server.py` | `/api/tinyfish/*` endpoints for status, run, live crawl, and site snapshots |
+| `src/backend/scheduler/service.py` | restores the built-in TinyFish cron job from `config/.env` |
 | `config/tinyfish_targets.example.json` | example target file schema |
 | `config/tinyfish_targets.json` | local target list used by the runtime |
 | `test/test_tinyfish_monitor.py` | unit tests for target loading, persistence, and polling |
@@ -44,7 +44,7 @@ Recommended operator flow:
 
 1. Configure the keys from the settings UI's `TinyFish Monitor` group, or edit `config/.env` directly.
 2. Copy `config/tinyfish_targets.example.json` to `config/tinyfish_targets.json`.
-3. Save and restart Clawcross if you changed the cron or target path so `src/utils/scheduler_service.py` can restore the scheduler job with the new values.
+3. Save and restart Clawcross if you changed the cron or target path so `src/backend/scheduler/service.py` can restore the scheduler job with the new values.
 
 ## Target File Format
 
@@ -90,7 +90,7 @@ The TinyFish settings group supports three main operator actions:
 
 ### From HTTP Endpoints
 
-`src/front.py` exposes these routes:
+`src/frontend/server.py` exposes these routes:
 
 | Route | Purpose |
 |---|---|
@@ -106,9 +106,9 @@ The TinyFish settings group supports three main operator actions:
 Use the wrapper when you want a direct operator flow without the Web UI:
 
 ```bash
-uv run python scripts/tinyfish_competitor_monitor.py run --site competitor-a
-uv run python scripts/tinyfish_competitor_monitor.py poll
-uv run python scripts/tinyfish_competitor_monitor.py report --limit 20
+uv run python src/backend/tinyfish/cli.py run --site competitor-a
+uv run python src/backend/tinyfish/cli.py poll
+uv run python src/backend/tinyfish/cli.py report --limit 20
 ```
 
 Useful switches:
@@ -121,7 +121,7 @@ Useful switches:
 
 ## Scheduler Behavior
 
-When `TINYFISH_MONITOR_ENABLED=true` and `TINYFISH_MONITOR_CRON` is set, `src/utils/scheduler_service.py` restores a built-in APScheduler job on service startup.
+When `TINYFISH_MONITOR_ENABLED=true` and `TINYFISH_MONITOR_CRON` is set, `src/backend/scheduler/service.py` restores a built-in APScheduler job on service startup.
 
 That job:
 

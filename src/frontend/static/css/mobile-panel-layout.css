@@ -1,0 +1,47 @@
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+  .drawer:not(.side-drawer), .settings-modal-overlay, .agent-history-overlay,
+  .subagent-panel-overlay, .profile-subpage, .agent-detail-overlay,
+  .side-panel-overlay.drawer-overlay, .external-settings-overlay,
+  #workspace-settings-modal, #runtime-settings-modal {
+    position: fixed;
+    left: var(--conversation-panel-left, calc((100vw - var(--desktop-shell-w)) / 2 + var(--desktop-rail-w) + var(--desktop-list-w)));
+    right: var(--conversation-panel-right, calc((100vw - var(--desktop-shell-w)) / 2));
+    top: var(--conversation-panel-top, 24px);
+    bottom: var(--conversation-panel-bottom, 24px);
+    width: auto;
+    max-width: none;
+    box-sizing: border-box;
+    border-radius: 0 14px 14px 0;
+  }
+  .agent-detail-overlay {
+    padding: 0;
+    align-items: stretch;
+    justify-content: flex-start;
+    background: var(--bg);
+    z-index: 10000;
+    border-left: 1px solid var(--border);
+  }
+  .agent-detail-dialog {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0 14px 14px 0;
+    box-shadow: none;
+  }
+  .subagent-panel-overlay, .agent-history-overlay { border-left: 1px solid var(--border); }
+  .subagent-panel-body { padding: 16px; min-height: 0; }
+  .subagent-item { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; }
+  .side-drawer.drawer {
+    top: var(--conversation-panel-top, 24px);
+    bottom: var(--conversation-panel-bottom, 24px);
+    right: var(--conversation-panel-right, 24px);
+    width: min(420px, calc(100vw - var(--conversation-panel-left, 432px) - var(--conversation-panel-right, 24px)));
+    max-width: calc(100vw - var(--conversation-panel-left, 432px) - var(--conversation-panel-right, 24px));
+    min-width: 0;
+    border-radius: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-detail-overlay, .subagent-panel-overlay, .agent-history-overlay { transition: none; }
+}

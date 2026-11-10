@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261108040937245548",
+  "candidate_id": "blended-verification-loop-capability-gap",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-08T04:09:37.245504+00:00"
+  },
+  "commands": [
+    {
+      "command": "ACP HTTP concurrency, normal group inbox and cross-loop cancellation tests",
+      "ok": false,
+      "stdout": "174 tests passed before fixing three new regression fixtures; real Codex direct and resume round trips passed.",
+      "stderr": "Cross-loop cancellation of an asyncio.run root must report completion using a done callback, not a helper coroutine that shutdown cancels. Read native identity after entering the Agent mutex. Tests must isolate history stores, CLI workspace maps and explicit workspace settings. A missing ID on messages creates an owned Agent; use read-only capabilities to test another owner cannot see the original Agent."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-08T04:09:37.245581+00:00",
+  "asset_id": "sha256:a1aed2640d128b12546035c267b0efbdb889b6da027ac7798374668b66f5f51a"
+}

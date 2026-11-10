@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest import mock
 
-from src.mcp_servers import search
+from webot.mcp import search
 
 
 class McpSearchHelpersTests(unittest.TestCase):

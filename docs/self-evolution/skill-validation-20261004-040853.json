@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261004040853605646",
+  "candidate_id": "verification-loop-4",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-04T04:08:53.605614+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "",
+      "stderr": "======================================================================\nERROR: test_agent_runtime_form_preserves_other_fields_and_scopes (test.test_configuration_setup.ConfigurationTests.test_agent_runtime_form_preserves_other_fields_and_scopes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/ubuntu/work2/ClawCross/test/test_configuration_setup.py\", line 46, in test_agent_runtime_form_preserves_other_fields_and_scopes\n    self.assertEqual(runtime_store.get_session_mode('alice','one').mode,'manual')\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'dict' object has no attribute 'mode'\n\n----------------------------------------------------------------------\nRan 12 tests in 1.468s\n\nFAILED (errors=1)"
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-04T04:08:53.605669+00:00",
+  "asset_id": "sha256:eb6acaea043ae6d440095a8c872dd90ba0b7e341482c2d5aec147144a61f0c47"
+}

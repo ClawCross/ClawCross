@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261003121454669679",
+  "candidate_id": "blended-verification-loop-approval-auth-structured-output",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-03T12:14:54.669653+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": true,
+      "stdout": "Runtime gap: web_search/web_fetch default policy allowed network I/O without review, and the MCP service had no identity-bound gate.\nRegression exposed duplicate review: expected reviewer once, awaited 2 times.\nCause: the model could supply another session; now web identity and session are forcibly bound to the calling runtime, and one exact permit transfers to MCP.\nVerification: 128 tests passed, 261 subtests passed across approval, search, continuation, schemas and ACP bridge.\nReal provider + actual MCP HTTP integration: one DeepSeek JSON Schema review, valid original-user authorization, Example Domain received with HTTP 200.\nSandbox grants were not changed: one-time approval does not create a session domain/path whitelist; KEEP Y records exact parameters.",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": true,
+  "duration_ms": null,
+  "created_at": "2026-10-03T12:14:54.669700+00:00",
+  "asset_id": "sha256:ea94bd1a05cdf6d4ea09a8c1bdf6b9725de896a2ad7ffe45cd80f2ff4de39655"
+}

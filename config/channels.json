@@ -1,0 +1,405 @@
+{
+  "common_keys": ["NONEBOT_ADAPTERS", "NONEBOT_HOST", "NONEBOT_PORT", "WHITELIST_FILE"],
+  "channels": [
+    {
+      "id": "telegram",
+      "label": "Telegram",
+      "kind": "nonebot",
+      "adapter": "telegram",
+      "module": "nonebot.adapters.telegram",
+      "package": "nonebot-adapter-telegram",
+      "env_key": "TELEGRAM_BOTS",
+      "config_field": "telegram_bots",
+      "emoji": "📱",
+      "help": "Telegram 使用 BotFather 创建 bot 后填入 token。保存后会自动把 telegram 加入 NONEBOT_ADAPTERS；重启后生效。",
+      "setup_instructions": [
+        "1. Open Telegram and message @BotFather",
+        "2. Send /newbot, name the bot, copy the token",
+        "3. Use Telegram numeric user ID in the whitelist"
+      ],
+      "fields": [
+        {
+          "name": "token",
+          "label": "Bot token",
+          "target": "bot",
+          "type": "password",
+          "required": true,
+          "placeholder": "123456789:AAExample_BotFatherToken",
+          "help": "BotFather 给出的 token，格式通常是数字 bot id、冒号、较长的 secret。",
+          "pattern": "^[0-9]{6,}:[A-Za-z0-9_-]{20,}$",
+          "invalid_message": "Telegram Bot token 格式不对；请粘贴 @BotFather 给出的完整 token，例如 123456789:AA..."
+        },
+        {
+          "name": "name",
+          "label": "Local bot label",
+          "target": "bot",
+          "type": "text",
+          "default": "bot1",
+          "placeholder": "bot1",
+          "help": "本地备注名，可留默认。"
+        }
+      ]
+    },
+    {
+      "id": "qq",
+      "label": "QQ",
+      "kind": "nonebot",
+      "adapter": "qq",
+      "module": "nonebot.adapters.qq",
+      "package": "nonebot-adapter-qq",
+      "env_key": "QQ_BOTS",
+      "config_field": "qq_bots",
+      "emoji": "🐧",
+      "help": "QQ 官方机器人需要 app id、bot secret 和 intents。沙箱测试时把 QQ_IS_SANDBOX 设为 true；生产环境设为 false。",
+      "setup_instructions": [
+        "1. https://q.qq.com -> register a QQ bot",
+        "2. Copy AppID, Token and AppSecret",
+        "3. Choose at_messages, guild_messages, direct_message and/or c2c_group_at_messages intents"
+      ],
+      "fields": [
+        {
+          "name": "id",
+          "label": "App ID",
+          "target": "bot",
+          "type": "text",
+          "required": true,
+          "placeholder": "qq_app_id",
+          "help": "QQ 开放平台应用 ID。"
+        },
+        {
+          "name": "token",
+          "label": "Bot token",
+          "target": "bot",
+          "type": "password",
+          "required": true,
+          "placeholder": "qq_bot_token",
+          "help": "QQ Bot token。"
+        },
+        {
+          "name": "secret",
+          "label": "Bot secret",
+          "target": "bot",
+          "type": "password",
+          "required": true,
+          "placeholder": "qq_bot_secret",
+          "help": "QQ bot secret。"
+        },
+        {
+          "name": "at_messages",
+          "label": "Guild @ messages",
+          "target": "bot_intent",
+          "type": "boolean",
+          "default": "true",
+          "help": "写入 intent.at_messages。"
+        },
+        {
+          "name": "direct_message",
+          "label": "Enable direct messages",
+          "target": "bot_intent",
+          "type": "boolean",
+          "default": "false",
+          "help": "写入 intent.direct_message。"
+        },
+        {
+          "name": "guild_messages",
+          "label": "Guild messages",
+          "target": "bot_intent",
+          "type": "boolean",
+          "default": "false",
+          "help": "写入 intent.guild_messages。"
+        },
+        {
+          "name": "c2c_group_at_messages",
+          "label": "C2C/group @ messages",
+          "target": "bot_intent",
+          "type": "boolean",
+          "default": "false",
+          "help": "写入 intent.c2c_group_at_messages。"
+        },
+        {
+          "name": "QQ_IS_SANDBOX",
+          "label": "Use QQ sandbox",
+          "target": "env",
+          "type": "boolean",
+          "env_key": "QQ_IS_SANDBOX",
+          "default": "false",
+          "help": "沙箱环境填 true，正式环境填 false。"
+        }
+      ]
+    },
+    {
+      "id": "onebotv11",
+      "label": "OneBot V11",
+      "kind": "nonebot",
+      "adapter": "onebot.v11",
+      "module": "nonebot.adapters.onebot.v11",
+      "package": "nonebot-adapter-onebot",
+      "env_key": "",
+      "requires_config": false,
+      "emoji": "🤖",
+      "help": "OneBot V11 通常连接 NapCat、Lagrange、go-cqhttp 等实现。反向 WebSocket/HTTP 只需要把实现端指向 NoneBot；鉴权按 ONEBOT_* 环境变量配置。",
+      "setup_instructions": [
+        "1. Stand up a OneBot V11 implementation",
+        "2. Configure reverse WebSocket to ws://127.0.0.1:<NONEBOT_PORT>/onebot/v11/ws",
+        "3. Keep access_token/secret consistent on both sides if used"
+      ],
+      "fields": [
+        {"name": "ONEBOT_V11_ACCESS_TOKEN", "label": "V11 access token", "target": "env", "type": "password", "placeholder": "optional_token", "help": "可选；对应 OneBot 实现端 access_token。"},
+        {"name": "ONEBOT_V11_SECRET", "label": "V11 secret", "target": "env", "type": "password", "placeholder": "optional_secret", "help": "可选；HTTP 上报签名 secret。"},
+        {"name": "ONEBOT_V11_WS_URLS", "label": "Forward WS URLs", "target": "env", "type": "textarea", "placeholder": "[\"ws://127.0.0.1:6700\"]", "help": "可选；正向 WebSocket 连接地址集合，JSON 数组。"},
+        {"name": "ONEBOT_V11_API_ROOTS", "label": "HTTP API roots", "target": "env", "type": "textarea", "placeholder": "{\"bot_id\":\"http://127.0.0.1:5700/\"}", "help": "可选；HTTP API 根地址映射，JSON 对象。"}
+      ]
+    },
+    {
+      "id": "onebotv12",
+      "label": "OneBot V12",
+      "kind": "nonebot",
+      "adapter": "onebot.v12",
+      "module": "nonebot.adapters.onebot.v12",
+      "package": "nonebot-adapter-onebot",
+      "env_key": "",
+      "requires_config": false,
+      "emoji": "🤖",
+      "help": "OneBot V12 的连接字段取决于具体实现。反向连接只需要实现端指向 NoneBot；正向 WS/API root 用 ONEBOT_V12_* 环境变量。",
+      "fields": [
+        {"name": "ONEBOT_V12_ACCESS_TOKEN", "label": "V12 access token", "target": "env", "type": "password", "placeholder": "optional_token"},
+        {"name": "ONEBOT_V12_WS_URLS", "label": "V12 forward WS URLs", "target": "env", "type": "textarea", "placeholder": "[\"ws://127.0.0.1:6700\"]", "help": "可选；正向 WebSocket 连接地址集合，JSON 数组。"},
+        {"name": "ONEBOT_V12_API_ROOTS", "label": "V12 API roots", "target": "env", "type": "textarea", "placeholder": "{\"bot_id\":\"http://127.0.0.1:5700/\"}", "help": "可选；HTTP API 根地址映射，JSON 对象。"},
+        {"name": "ONEBOT_V12_USE_MSGPACK", "label": "Use msgpack", "target": "env", "type": "boolean", "default": "false"}
+      ]
+    },
+    {
+      "id": "discord",
+      "label": "Discord",
+      "kind": "nonebot",
+      "adapter": "discord",
+      "module": "nonebot.adapters.discord",
+      "package": "nonebot-adapter-discord",
+      "env_key": "DISCORD_BOTS",
+      "config_field": "discord_bots",
+      "emoji": "💬",
+      "help": "Discord 需要在 Developer Portal 创建 bot，并开启需要的 Privileged Gateway Intents。",
+      "fields": [
+        {"name": "token", "label": "Bot token", "target": "bot", "type": "password", "required": true, "placeholder": "discord_bot_token"},
+        {"name": "message_content", "label": "Message content intent", "target": "bot_intent", "type": "boolean", "default": "true", "help": "写入 intent.message_content；还需要在 Discord Developer Portal 开启。"},
+        {"name": "guild_messages", "label": "Guild messages", "target": "bot_intent", "type": "boolean", "default": "true"},
+        {"name": "direct_messages", "label": "Direct messages", "target": "bot_intent", "type": "boolean", "default": "true"}
+      ]
+    },
+    {
+      "id": "dingtalk",
+      "label": "DingTalk",
+      "kind": "nonebot",
+      "adapter": "ding",
+      "module": "nonebot.adapters.ding",
+      "package": "nonebot-adapter-ding",
+      "env_key": "",
+      "requires_config": false,
+      "required_env": ["DING_ACCESS_TOKEN"],
+      "emoji": "🔔",
+      "help": "DingTalk 使用 NoneBot 的 ding adapter；源码配置项是 DING_ACCESS_TOKEN 和 DING_SECRET。该上游包较旧，生产使用前建议先验证。",
+      "fields": [
+        {"name": "DING_ACCESS_TOKEN", "label": "DingTalk access token", "target": "env", "type": "password", "required": true},
+        {"name": "DING_SECRET", "label": "DingTalk signing secret", "target": "env", "type": "password"}
+      ]
+    },
+    {
+      "id": "feishu",
+      "label": "Feishu",
+      "kind": "nonebot",
+      "adapter": "feishu",
+      "module": "nonebot.adapters.feishu",
+      "package": "nonebot-adapter-feishu",
+      "env_key": "FEISHU_BOTS",
+      "config_field": "feishu_bots",
+      "emoji": "🪶",
+      "help": "Feishu / Lark 需要开放平台应用凭据和事件订阅配置。",
+      "fields": [
+        {"name": "app_id", "label": "App ID", "target": "bot", "type": "text", "required": true, "placeholder": "cli_xxx"},
+        {"name": "app_secret", "label": "App secret", "target": "bot", "type": "password", "required": true},
+        {"name": "encrypt_key", "label": "Encrypt key", "target": "bot", "type": "password"},
+        {"name": "verification_token", "label": "Verification token", "target": "bot", "type": "password", "required": true},
+        {"name": "protocol", "label": "Protocol", "target": "bot", "type": "text", "default": "http", "help": "http 为 Webhook，ws 为飞书长连接。"},
+        {"name": "is_lark", "label": "Use Lark", "target": "bot", "type": "boolean", "default": "false"}
+      ]
+    },
+    {
+      "id": "kaiheila",
+      "label": "Kaiheila / KOOK",
+      "kind": "nonebot",
+      "adapter": "kaiheila",
+      "module": "nonebot.adapters.kaiheila",
+      "package": "nonebot-adapter-kaiheila",
+      "env_key": "KAIHEILA_BOTS",
+      "config_field": "kaiheila_bots",
+      "emoji": "🪁",
+      "help": "KOOK / Kaiheila 需要机器人 token。",
+      "fields": [
+        {"name": "token", "label": "Bot token", "target": "bot", "type": "password", "required": true}
+      ]
+    },
+    {
+      "id": "mail",
+      "label": "Mail",
+      "kind": "nonebot",
+      "adapter": "mail",
+      "module": "nonebot.adapters.mail",
+      "package": "nonebot-adapter-mail",
+      "env_key": "MAIL_BOTS",
+      "config_field": "mail_bots",
+      "emoji": "📧",
+      "help": "Mail channel 需要邮箱 SMTP/IMAP 连接信息。建议使用应用专用密码。",
+      "fields": [
+        {"name": "id", "label": "Email address", "target": "bot", "type": "text", "required": true},
+        {"name": "name", "label": "Local bot name", "target": "bot", "type": "text", "default": "mail"},
+        {"name": "password", "label": "App password", "target": "bot", "type": "password", "required": true},
+        {"name": "subject", "label": "Subject filter", "target": "bot", "type": "text", "default": "ClawCross"},
+        {"name": "imap_host", "path": "imap.host", "label": "IMAP host", "target": "bot", "type": "text", "default": "imap.gmail.com"},
+        {"name": "imap_port", "path": "imap.port", "label": "IMAP port", "target": "bot", "type": "number", "default": "993"},
+        {"name": "imap_tls", "path": "imap.tls", "label": "IMAP TLS", "target": "bot", "type": "boolean", "default": "true"},
+        {"name": "smtp_host", "path": "smtp.host", "label": "SMTP host", "target": "bot", "type": "text", "default": "smtp.gmail.com"},
+        {"name": "smtp_port", "path": "smtp.port", "label": "SMTP port", "target": "bot", "type": "number", "default": "587"},
+        {"name": "smtp_tls", "path": "smtp.tls", "label": "SMTP TLS", "target": "bot", "type": "boolean", "default": "true"}
+      ]
+    },
+    {
+      "id": "minecraft",
+      "label": "Minecraft",
+      "kind": "nonebot",
+      "adapter": "minecraft",
+      "module": "nonebot.adapters.minecraft",
+      "package": "nonebot-adapter-minecraft",
+      "env_key": "",
+      "requires_config": false,
+      "required_env": ["MINECRAFT_WS_URLS"],
+      "emoji": "⛏",
+      "help": "Minecraft 通过 QueQiao 服务端插件/Mod 与 NoneBot 互通，不是 RCON 登录接口。源码配置项是 MINECRAFT_WS_URLS 和 MINECRAFT_ACCESS_TOKEN。",
+      "fields": [
+        {"name": "MINECRAFT_WS_URLS", "label": "QueQiao WebSocket URLs", "target": "env", "type": "textarea", "required": true, "placeholder": "{\"default\":[\"ws://127.0.0.1:25585/ws\"]}", "help": "JSON 对象；key 为 bot/self id，value 为 WebSocket URL 数组。"},
+        {"name": "MINECRAFT_ACCESS_TOKEN", "label": "Access token", "target": "env", "type": "password", "help": "可选；与 QueQiao 侧 token 保持一致。"}
+      ]
+    },
+    {
+      "id": "github",
+      "label": "GitHub",
+      "kind": "nonebot",
+      "adapter": "github",
+      "module": "nonebot.adapters.github",
+      "package": "nonebot-adapter-github",
+      "env_key": "GITHUB_APPS",
+      "config_field": "github_apps",
+      "emoji": "🐙",
+      "help": "GitHub 适配器支持 GitHub App 或 OAuth App。这里按 GitHub App 配置：app_id、private_key、可选 webhook_secret。",
+      "fields": [
+        {"name": "app_id", "label": "GitHub App ID", "target": "bot", "type": "text", "required": true},
+        {"name": "private_key", "label": "Private key PEM", "target": "bot", "type": "textarea", "required": true, "placeholder": "-----BEGIN RSA PRIVATE KEY-----..."},
+        {"name": "client_id", "label": "Client ID", "target": "bot", "type": "text"},
+        {"name": "client_secret", "label": "Client secret", "target": "bot", "type": "password"},
+        {"name": "webhook_secret", "label": "Webhook secret", "target": "bot", "type": "password"}
+      ]
+    },
+    {
+      "id": "villa",
+      "label": "Villa",
+      "kind": "nonebot",
+      "adapter": "villa",
+      "module": "nonebot.adapters.villa",
+      "package": "nonebot-adapter-villa",
+      "env_key": "VILLA_BOTS",
+      "config_field": "villa_bots",
+      "emoji": "🏰",
+      "help": "Villa 需要 bot_id、bot_secret 和 pub_key；connection_type 默认 webhook。",
+      "fields": [
+        {"name": "bot_id", "label": "Bot ID", "target": "bot", "type": "text", "required": true},
+        {"name": "bot_secret", "label": "Bot secret", "target": "bot", "type": "password", "required": true},
+        {"name": "pub_key", "label": "Public key", "target": "bot", "type": "textarea", "required": true},
+        {"name": "connection_type", "label": "Connection type", "target": "bot", "type": "text", "default": "webhook"},
+        {"name": "callback_url", "label": "Callback URL", "target": "bot", "type": "text"},
+        {"name": "verify_event", "label": "Verify event", "target": "bot", "type": "boolean", "default": "true"}
+      ]
+    },
+    {
+      "id": "yunhu",
+      "label": "Yunhu",
+      "kind": "nonebot",
+      "adapter": "yunhu",
+      "module": "nonebot.adapters.yunhu",
+      "package": "nonebot-adapter-yunhu",
+      "env_key": "YUNHU_BOTS",
+      "config_field": "yunhu_bots",
+      "emoji": "☁",
+      "help": "Yunhu 需要 app_id 和 token；use_stream 可按需要开启。",
+      "fields": [
+        {"name": "app_id", "label": "App ID", "target": "bot", "type": "text", "required": true},
+        {"name": "token", "label": "Bot token", "target": "bot", "type": "password", "required": true},
+        {"name": "use_stream", "label": "Use streaming", "target": "bot", "type": "boolean", "default": "false"}
+      ]
+    },
+    {
+      "id": "heybox",
+      "label": "Heybox",
+      "kind": "nonebot",
+      "adapter": "heybox",
+      "module": "nonebot.adapters.heybox",
+      "package": "nonebot-adapter-heybox",
+      "env_key": "HEYBOX_BOTS",
+      "config_field": "heybox_bots",
+      "emoji": "📦",
+      "help": "Heybox 需要 id 和 token。",
+      "fields": [
+        {"name": "id", "label": "Bot ID", "target": "bot", "type": "text", "required": true},
+        {"name": "token", "label": "Bot token", "target": "bot", "type": "password", "required": true}
+      ]
+    },
+    {
+      "id": "console",
+      "label": "Console",
+      "kind": "nonebot",
+      "adapter": "console",
+      "module": "nonebot.adapters.console",
+      "package": "nonebot-adapter-console",
+      "env_key": "",
+      "requires_config": false,
+      "emoji": "🖥",
+      "help": "Console adapter 主要用于本地调试，一般不需要真实平台 token。",
+      "fields": [
+        {"name": "CONSOLE_BOT_ID", "label": "Console bot id", "target": "env", "type": "text", "default": "robot"},
+        {"name": "CONSOLE_BOT_NAME", "label": "Console bot name", "target": "env", "type": "text", "default": "Bot"},
+        {"name": "CONSOLE_HEADLESS_MODE", "label": "Headless mode", "target": "env", "type": "boolean", "default": "false"},
+        {"name": "CONSOLE_STRICT_TOME", "label": "Strict to-me", "target": "env", "type": "boolean", "default": "false"}
+      ]
+    },
+    {
+      "id": "weclaw",
+      "label": "微信 / WeClaw",
+      "kind": "weclaw",
+      "adapter": "weclaw",
+      "env_key": "",
+      "emoji": "🟢",
+      "help": "微信渠道使用 WeClaw，不走 NoneBot adapter，也不需要平台 token。扫码登录由 WeClaw 自己保存会话。",
+      "fields": [
+        {"name": "WECLAW_ENABLED", "label": "Enable WeClaw", "target": "env", "type": "boolean", "default": "true"},
+        {"name": "WECLAW_USERNAME", "label": "Local WeClaw account name", "target": "env", "type": "text", "default": "default"},
+        {"name": "WECLAW_BIN", "label": "WeClaw binary", "target": "env", "type": "text", "default": "weclaw"},
+        {"name": "WECLAW_CONFIG", "label": "WeClaw config path", "target": "env", "type": "text", "default": "~/.weclaw/config.json"},
+        {"name": "WECLAW_PROXY_HOST", "label": "Proxy host", "target": "env", "type": "text", "default": "127.0.0.1"},
+        {"name": "WECLAW_PROXY_PORT", "label": "Proxy port", "target": "env", "type": "text", "default": "51298"}
+      ]
+    },
+    {
+      "id": "webhook",
+      "label": "Custom Webhook",
+      "kind": "webhook",
+      "adapter": "webhook",
+      "env_key": "",
+      "emoji": "🔗",
+      "help": "Webhook 使用本地通用 adapter。默认平台名是 webhook；自定义平台可手动添加 <NAME>_WEBHOOK_URL 并在白名单中使用小写 <name>。",
+      "fields": [
+        {"name": "WEBHOOK_WEBHOOK_URL", "label": "Webhook URL", "target": "env", "type": "text", "placeholder": "https://example.com/incoming-webhook"},
+        {"name": "WEBHOOK_WEBHOOK_SECRET", "label": "Shared secret", "target": "env", "type": "password"},
+        {"name": "WEBHOOK_REPLY_URL", "label": "Reply URL", "target": "env", "type": "text", "placeholder": "https://example.com/reply-endpoint"},
+        {"name": "WEBHOOK_DEFAULT_ALLOW", "label": "Allow users not in whitelist", "target": "env", "type": "boolean", "default": "false"}
+      ]
+    }
+  ]
+}

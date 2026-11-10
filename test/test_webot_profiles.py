@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.webot.profiles import (
+from webot.profiles import (
     build_subagent_session_id,
     get_agent_profile,
     list_agent_profiles,

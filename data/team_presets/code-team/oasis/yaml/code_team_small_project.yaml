@@ -7,19 +7,19 @@ plan:
     author: begin
     content: "请描述你要完成的小项目：目标用户、核心功能、技术边界、交付时间。Code Team 会按 PM → 架构 → 前后端 → QA → 发布 的节奏协作。"
 - id: c1
-  expert: pm#oasis#Product Manager
+  agent: Product Manager
 - id: c2
-  expert: architect#oasis#Architect
+  agent: Architect
 - id: c3
-  expert: frontend#oasis#Frontend Engineer
+  agent: Frontend Engineer
 - id: c4
-  expert: backend#oasis#Backend Engineer
+  agent: Backend Engineer
 - id: c5
-  expert: qa#oasis#QA Lead
+  agent: QA Lead
 - id: c6
-  expert: devops#oasis#DevOps
+  agent: DevOps
 - id: c7
-  expert: pm#oasis#Product Manager
+  agent: Product Manager
 - id: c8
   manual:
     author: bend

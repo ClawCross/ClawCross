@@ -7,13 +7,13 @@ plan:
     author: begin
     content: "请描述你要做的视频：用途/平台（短视频竖屏 1080×1920 / 横屏 1920×1080 / 方形 1080×1080）、时长、风格基调、关键场景或脚本、是否有配音/字幕、必须出现的元素。HyperFrames 工坊将按 导演分镜 → 工程实现 → 渲染审校 的节奏交付一份可 npx hyperframes render 跑通的项目。"
 - id: v1
-  expert: director#oasis#Video Director
+  agent: Video Director
 - id: v2
-  expert: engineer#oasis#HyperFrames Engineer
+  agent: HyperFrames Engineer
 - id: v3
-  expert: reviewer#oasis#Video Reviewer
+  agent: Video Reviewer
 - id: v4
-  expert: director#oasis#Video Director
+  agent: Video Director
 - id: v5
   manual:
     author: bend

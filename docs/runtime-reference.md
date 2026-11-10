@@ -1,52 +1,87 @@
 # Runtime Reference
 
-This reference captures the architecture, service responsibilities, and runtime data layout for Clawcross’s Claude-Code-inspired agent runtime. It emphasizes WeBot, session state, MCP tooling, and the canonical runtime DTO that now powers the browser UI, CLI/BFF proxies, bridge clients, voice state, buddy state, and memory/Kairos surfaces.
+This reference captures the architecture, service responsibilities, and runtime data layout for Clawcross’s Claude-Code-inspired agent runtime. It emphasizes WeBot, session state, MCP tooling, and the canonical runtime DTO that now powers the browser UI, CLI/BFF proxies, voice state, and memory/Kairos surfaces.
+
+## External Agent inbox and live context
+
+ACP and HTTP sessions use the same durable, per-user/per-Agent inbox as WeBot.
+Deliveries wait for the existing external session turn lock; provider failures keep
+the message queued and service startup resumes it through its own runtime.
+Reading a queued passive message during an active turn consumes it and avoids a
+second wake. Relay delivery IDs prevent duplicate entries.
+
+For ACP sessions with `read_session_inbox` enabled, `inbox` dynamic blocks contain
+bounded notices and IDs; that tool returns the full body and marks it read.
+ClawCross MCP search/call results carry only changed dynamic blocks, so incoming
+messages are visible during an ongoing native turn. Group blocks contain metadata
+only. Plain chat sessions or transports without the reader receive message bodies
+directly and retain the normal group reply callback.
+
+ACP settings expose per-Agent ClawCross mode, the native adapter's advertised
+options, and workspace settings. Before the first prompt, the selected workspace
+sets the ACP server's native cwd. After conversation/resume, that cwd stays pinned, including
+reset, to preserve native history; changes to the folder collection still apply to
+ClawCross file/command tools and appear in the next dynamic block.
 
 ## Architecture Map
 
 ```
 Browser / Studio UI
-    -> `src/front.py` (Flask UI + session auth + runtime proxies)
-    -> `frontend/js/main.js` + runtime panel wiring (current-session card, bridge socket consumer, voice/buddy controls)
+    -> `src/frontend/server.py` (Flask UI + session auth + runtime proxies)
+    -> `src/frontend/static/js/main.js` + runtime panel wiring (current-session card and voice controls)
 FastAPI services
-    -> `src/mainagent.py` (OpenAI-compatible chat endpoints, session history, cancel)
-    -> `src/webot/routes.py` (runtime + policy APIs via `WeBotService`)
-    -> `src/webot/service.py` (serializes runtime DTOs, policy/plan/todo persistence)
-    -> `src/mcp_servers/webot.py` (MCP tools: spawn, send, inbox, ultrareview, ultraplan, dream, bridge hooks)
-    -> `src/api/ops_service.py` (voice/TTS + direct connect hooks for audio uploads)
-    -> `src/webot/bridge.py` (bridge session issuance, websocket hub, runtime snapshot publish)
-    -> `src/webot/memory.py` / `src/webot/voice.py` / `src/webot/buddy.py` (browser-native parity services)
+    -> `src/backend/server.py` (OpenAI-compatible chat endpoints, session history, cancel)
+    -> `src/backend/webot/api/routes.py` (runtime + policy APIs via `WeBotService`)
+    -> `src/backend/webot/api/service.py` (serializes runtime DTOs, policy/plan/todo persistence)
+    -> `src/backend/webot/mcp/webot.py` (MCP tools: subagents, session messages, inbox, plans and todos)
+    -> `src/backend/ops/service.py` (voice/TTS + direct connect hooks for audio uploads)
+    -> `src/backend/webot/memory.py` (memory service)
 Persistence
-    -> `data/webot_runtime.db` (runs, attempts, inbox, artifacts, session state, memory, bridge, voice, buddy)
+    -> `data/webot_agents/<user>#<agent>.db` (runs, inbox, approvals, permits, artifacts, session state, memory, voice)
     -> `data/webot_subagents.db` (subagent metadata)
     -> `data/user_files/{user_id}/` (profiles, policies, runtime artifacts, memory dirs, logs)
 Side systems
-    -> `oasis/` (Town Mode, workflows, swarm engine)
-    -> `src/integrations/acpx_adapter.py` (ACP exchange with external AI agents via acpx CLI)
+    -> `src/backend/oasis/` (Town Mode, workflows, swarm engine)
+    -> `src/backend/external/acp_direct.py` (built-in ACP SDK client, local and SSH)
     -> WeBot dream pipeline (`webot_memory.py`) as the current browser-native autoDream layer
 ```
+
+### Startup readiness
+
+公网入口由用户显式开启，默认使用 ClawCross Hub：设备主动建立 WSS 连接，获得持久的设备子域名，可访问完整前端、SSE 对话和附件。设备凭证保存在工作区外的 `config/hub-tunnel.json`（0600），状态保存在 `run/hub-tunnel-status.json`。断线自动重连；关闭后保留设备地址，不重放中断的请求。远程请求仍需正常登录，不能获得本机直连权限。Hub URL 通过 `CLAWCROSS_HUB_URL` 配置；Cloudflare 通过 `TUNNEL_PROVIDER=cloudflare` 显式选择并单独安装 cloudflared。固定 `PUBLIC_DOMAIN` 不被覆盖，开启的 Hub 地址仅在运行期间优先使用。
+
+The launcher starts the five core services concurrently and records each process's
+time to readiness. Bundled tool definitions are read from their existing FastMCP
+registrations in the Agent API process, sharing Python imports. Actual tool calls
+continue through the original per-server stdio MCP connections, with the same
+schemas, result conversion, permissions and sandbox enforcement. No tool server or
+external Agent is started just to construct the bundled tool catalogue.
+
+`GET /health` returns success only after the Agent API's startup lifespan completes.
+Launch readiness uses this endpoint instead of `/v1/models`, which can discover
+external platforms. Port checks use loopback sockets on every supported platform;
+reloading waits for ports only while they remain occupied, up to two seconds.
 
 ## Service Responsibilities
 
 | Service | Ownership |
 |---|---|
-| `src/front.py` | Flask UI shell, authentication, WeBot runtime proxy routes (`/proxy_webot_*`), voice/TTS proxies, bridge-ready URLs. |
-| `src/mainagent.py` | OpenAI-compatible chat API, session history, cancel, provider routing. |
-| `src/webot/service.py` | Serializes DTO (mode, plan, todos, approvals, inbox, artifacts, runs, relationships, bridge/voice/buddy/memory), enforces auth, counts inbox queue, exposes policy endpoints. |
-| `src/mcp_servers/webot.py` | Durable spawn/send/cancel workflows, background run leasing, ultrareview/ultraplan orchestration, Kairos/dream tools, inbox delivery, runtime artifact logging, bridge/voice/buddy tools. |
-| `src/webot/runtime_store.py` | SQLite tables for runs, attempts, inbox messages, artifacts, session modes, verifications, tool approvals, memory state, bridge sessions, voice state, buddy state; helpers for leases/heartbeats/interruption/events. |
-| `src/webot/runtime.py` | Mode normalization, blocked tool lists, turn-limit messaging, surgical heuristics for plan/execute/review. |
-| `src/webot/policy.py` | Normalizes tool policies, events (`session_start`, `permission_request`, `stop`, etc.), hook definitions, serialization, router for `save_tool_policy_config`. |
-| `src/core/agent.py` | Enforces tool filtering, injects runtime context, proxies MCP tooling into session handler, budgets history with `webot_context`. |
-| `src/api/ops_service.py` | Text-to-speech / audio proxy for voice mode; writes audio metadata into runtime payload via `front.py`. |
-| `src/webot/profiles.py` | Profile definitions (`general`, `research`, `planner`, `coder`, `reviewer`, `verifier`), helper `slugify`, built-in tool sets, user extension loading. |
-| `src/webot/context.py` | Budgeting helpers (tool results, user inputs) that log artifacts, perform compaction, build runtime summaries. |
-| `src/webot/workspace.py` | Worktree/remote/shared workspace resolution used when rendering runtime panel workspace text. |
-| `src/routes/front_webot_routes.py` | Additional Flask proxies for runtime mode updates, plan/todo/verification APIs, supporting UI actions and bridge wiring. |
-| `src/webot/bridge.py` | Bridge attach/detach records, websocket route support, connected-client registry, publish helpers for runtime updates. |
-| `src/webot/memory.py` | Per-project memory directories, `MEMORY.md`, relevant entry recall, daily logs, dream gating, Kairos flags. |
-| `src/webot/voice.py` | Voice defaults + persisted per-session voice state derived from current LLM/audio provider. |
-| `src/webot/buddy.py` | Deterministic per-user companion state and reaction updates backed by the runtime store. |
+| `src/frontend/server.py` | Flask UI shell, authentication, WeBot runtime proxy routes (`/proxy_webot_*`), voice/TTS proxies. |
+| `src/backend/server.py` | OpenAI-compatible chat API, session history, cancel, provider routing. |
+| `src/backend/webot/api/service.py` | Serializes DTO (mode, plan, todos, approvals, inbox, artifacts, runs, relationships, voice/memory), enforces auth, counts inbox queue, exposes policy endpoints. |
+| `src/backend/webot/mcp/webot.py` | Durable spawn/send/cancel workflows, background run leasing, inbox delivery, plan/todo updates, runtime artifact logging. |
+| `src/backend/webot/runtime_store.py` | SQLite tables for runs, attempts, inbox messages, artifacts, session modes, verifications, tool approvals, memory state, voice state; helpers for leases/heartbeats/interruption/events. |
+| `src/backend/webot/runtime.py` | Mode normalization, blocked tool lists, turn-limit messaging, surgical heuristics for plan/execute/review. |
+| `src/backend/webot/policy.py` | Normalizes tool policies, events (`session_start`, `permission_request`, `stop`, etc.), hook definitions, serialization, router for `save_tool_policy_config`. |
+| `src/backend/webot/engine/agent.py` | Enforces tool filtering, injects runtime context, proxies MCP tooling into session handler, budgets history with `webot_context`. |
+| `src/backend/ops/service.py` | Text-to-speech (`/tts`) with the host-wide `TTS_MODEL` / `TTS_VOICE` settings. |
+| `src/backend/webot/profiles.py` | Profile definitions (`general`, `research`, `planner`, `coder`, `reviewer`, `verifier`), helper `slugify`, built-in tool sets, user extension loading. |
+| `src/backend/webot/context.py` | Runtime state assembly and deltas, including group metadata only; rebase the first retained state after compression. |
+| `src/backend/webot/compression.py` | Persistent rolling summaries, whole-turn boundaries, summary caps, temporary bounded views and oversized input artifacts. Original messages remain stored. |
+| `src/backend/webot/engine/background_compaction.py` | Prepare summaries from frozen snapshots after a turn; version checks and reset generation prevent stale commits. |
+| `src/backend/webot/workspace.py` | Worktree/remote/shared workspace resolution used when rendering runtime panel workspace text. |
+| `src/frontend/proxies/webot.py` | Additional Flask proxies for runtime mode updates, plan/todo/verification APIs, supporting UI actions. |
+| `src/backend/webot/memory.py` | Per-project memory directories, `MEMORY.md`, relevant entry recall, daily logs, dream gating, Kairos flags. |
 
 ## Runtime DTO
 
@@ -54,23 +89,21 @@ Every runtime request (`/webot/session-runtime` → `WeBotService.get_session_ru
 
 - `mode`: current `execute/agent/plan/review/yolo` mode plus reason/status.
 - `plan`, `todos`, `verifications`, `approvals`: persisted states from `webot_runtime_store`.
-- `inbox`: queued messages from `webot_session_inbox`, delivered via `_deliver_inbox_messages`.
+- `inbox`: messages from `webot_session_inbox` with `summary`, delivery status, and `read_at`. `send_to_session` and the inbox API share the queue; idle delivery sends summaries, and `read_session_inbox` retrieves full bodies on demand and marks the returned messages read. The dynamic context includes new/unread counts and up to three new summaries only on the first inference of a turn with queued messages. A delivered digest already carries that notice, and previously notified unread messages are not repeated in later dynamic blocks.
 - `artifacts`: runtime artifacts stored when budgets trigger (`webot_context`, `_deliver_inbox_messages`).
 - `runs`: `list_runs_for_session` results with `run_kind`, `mode`, `events`.
 - `active_run`: latest `queued`/`running` run (main session or child).
 - `relationships`: `parent_session` plus `children` aggregated via `list_subagents_for_parent_session`.
 - `memory`: per-project memory metadata, daily logs, Kairos flag, dream timestamps, relevant entries, dream eligibility.
-- `bridge`: bridge session records, attach code, websocket path, connection count, live status, role list.
 - `voice`: enabled flag, provider defaults, STT/TTS models, read-aloud setting, last transcript.
-- `buddy`: deterministic companion identity, soul/profile, reaction bubble, compact face, action metadata.
 
-Internal modules use this DTO to keep the runtime panel, Flask proxies, MCP tools, prompt context injection, and bridge websocket payloads in sync.
+Internal modules use this DTO to keep the runtime panel, Flask proxies, MCP tools, and prompt context injection in sync.
 
 ## Data Layout
 
 ```
 data/
-├── webot_runtime.db   (runs / attempts / inbox / artifacts / session_mode)
+├── webot_agents/     (one DB per Agent: runs / attempts / inbox / approvals / permits / artifacts / session_mode)
 ├── webot_subagents.db (agent metadata: id/session/parent/status)
 ├── user_files/
 │   └── {user_id}/
@@ -82,30 +115,158 @@ data/
 │       ├── projects/{project_slug}/memory/
 │       │   ├── MEMORY.md
 │       │   └── logs/YYYY/MM/YYYY-MM-DD.md
-│       └── ... (artifacts, bridge metadata)
+│       └── ... (artifacts)
 ```
 
 ## API Surface
 
 - `/webot/subagents` – list subagents with runtime status and queued inbox count.
-- `/webot/subagents/history` – fetch LangGraph snapshot messages for a subagent session.
+- `/webot/subagents/history` – fetch persisted snapshot messages for a subagent session.
 - `/webot/subagents/cancel` – cancel background runs gracefully.
-- `/webot/session-runtime` – primary runtime DTO consumed by Studio / CLI / bridge.
+- `/webot/session-runtime` – primary runtime DTO consumed by Studio / CLI.
 - `/webot/session-mode` – switch execute/agent/plan/review/yolo.
 - `/webot/lsp` – OpenSeek-style best-effort diagnostics for a workspace file (Python, TypeScript, JavaScript, JSON).
-- `/webot/session-inbox`, `/webot/session-inbox/send`, `/webot/session-inbox/deliver` – inbox list/send/deliver for cross-session messaging.
+- `/webot/session-inbox` – list a session's inbox. Sending is `send_to_session` (or `POST /v1/agents/<id>/inbox`); delivering what is queued is `POST /v1/agents/<id>/control` `{"action": "deliver_inbox"}`.
 - `/webot/runs/interrupt` – request interruption for an active runtime run.
 - `/webot/session-plan`, `/webot/session-todos`, `/webot/verifications` – plan/todo/verification CRUD.
-- `/webot/voice`, `/webot/bridge/attach`, `/webot/bridge/detach`, `/webot/kairos`, `/webot/dream`, `/webot/buddy` – browser-native parity endpoints for voice, bridge, Kairos, dream, and companion control.
+- `/webot/kairos`, `/webot/dream` – browser endpoints for Kairos and dream.
 - `/webot/tool-policy` – read/write policy and hook definitions.
 - `/webot/tool-approvals/resolve` – resolve manual approvals.
-- `/webot/ws/{user_id}/{bridge_id}` – websocket transport for bridge clients; emits `connected`, `runtime_snapshot`, and runtime-update pushes.
+
+Automatic review uses complete original human requests, including human group messages with server-recorded sender and group identity. Inbox summaries and agent messages remain evidence, not authorization. Group requests authorize task work in the agent workspace; broader host operations still need specific justification. If the inference view was compacted, review recovers original requests from persisted history. Missing originals produce a normal request for confirmation, rather than a reviewer exception.
 - `/proxy_webot_*` (Flask) – front-end-friendly proxies for runtime data, policies, approvals, session mode, and tool approvals.
 
-These APIs line up with MCP tools (`mcp_webot`) so browser, agents, and remote-attached clients all operate on the same control plane.
+The browser uses these APIs for runtime inspection and controls. Studio refreshes runtime status through HTTP polling.
 
 ## Related Docs
 
 - [`webot-agent-runtime.md`](./webot-agent-runtime.md) – deep dive on runtime concepts and hooks.
 - [`webot-claude-gap-analysis.md`](./webot-claude-gap-analysis.md) – matrix vs Claude Code and outstanding parity items.
 - [`ports.md`](./ports.md) – route/port map.
+
+### Frontend optional components
+
+Studio 和 Mobile 的上下文、审核模式和命令沙盒设置均保存到当前 Agent，不从页面向整个群聊广播同一模式。群聊唤醒各 Agent 时使用其自身持久化模式。外部 Agent 的页面仅设置 ClawCross 工具的审核与沙盒；原生模型窗口与压缩由外部运行时负责。
+
+Studio 的输入框加号、Mobile 首页加号及对话输入框加号提供“工作流运行”，打开 OASIS 工作流实例列表。Mobile 顶部不再放工作流按钮；带切换图标的 `/studio` 入口在手机端消息页左上角，桌面布局位于左侧栏底部。
+
+输入框加号的“模型与思考”按 Agent 保存。WeBot 支持选择平台默认、已有 CLI `config/models.json` 配置，或保存当前用户独立的 API 配置；选择只复制到当前 Agent，不更改平台默认或其他 Agent。用户配置保存在 `CONFIG_DIR/model-profiles/`（0600），API 响应只返回密钥是否存在；更新同名配置时空密钥保留原值，更新后须重新应用。查看新对话的配置不会创建 Agent；显式应用配置时才创建，以便首次对话使用所选模型。Agent 模型每次调用都会读取，思考强度来自当前 Agent 的运行设置，页面按实际模型显示支持的值。Codex/Claude 等外部 Agent 使用各自原生模型与思考选项，打开已创建 Agent 的设置时自动测试连接以获取选项，不发送聊天消息；查看未创建的外部配置不会自动创建。
+
+Agent 中心的“高级设置”可查看模式、沙盒等级和 KEEP Y 已记住的权限。沙盒授权可在运行设置中删除；其他工具的精确参数授权按当前 Agent 列出并可单独撤销，不展示敏感参数值。
+
+思考强度提供“自动”及统一 1–7 级（最低、很低、低、均衡、高、很高、最高），偏好按 Agent 保存。实际请求按当前模型/适配器声明的原生档位映射；缺档时选择最近可用档，距离相同时选较低档，不假定各模型计算量相同。仅支持 low/medium/high 的模型映射为 low、low、low、medium、high、high、high。页面显示具体原生值，选择其他保存的模型配置时更新预览。能力未知或没有声明 effort 的模型沿用原生预设，不发送虚构参数。内部“自动”不传 effort；外部“自动”保留原生会话当前设置。旧的原生 effort 配置仍可读取；使用新控件保存后转为统一等级。外部调用在连接、选定模型后按本会话最新选项映射，再用 `set` 更新，未变化不重复设置。
+
+内部压缩在每次模型调用前检查占用，也可在一轮结束后后台准备摘要。自动目标为历史预算的 10%，最多 10,000 tokens，包含摘要和保留原文；显式 `context.target_tokens` 优先。摘要上限默认 8,000 tokens，优先占总目标的最多 80%；摘要输入预算默认 32,000，小窗口及旧的较小输入预算会自动缩减摘要上限。`context.preserve_recent_turns` 默认优先保留最近 4 轮，但只在目标 token 预算内保留，不能用完整轮次保护无限增长的工具循环。装不下时沿完整工具调用与结果的边界压缩较早内容，保留最新完整交换。最新单个交换本身超过目标时会报告目标未达成；接近模型安全窗口时等待压缩，仍放不下则阻止超限 API 调用。等待后台摘要时的临时裁剪保留预算内的最近完整轮次；关闭自动压缩时不执行临时裁剪。原始历史记录仍保存在数据库。外部 Agent 的压缩由原生运行时负责。
+
+后台压缩固定开始时的消息快照，只提交摘要、压缩截止位置和来源快照长度，以版本检查防止并发摘要覆盖及 reset 后复活。后续模型输入从当前完整历史重建：新摘要 + 当前历史中截止位置之后的消息。这包含快照未压缩的尾部，也包含压缩开始后新增的用户消息、回复、工具调用和工具结果，不用旧快照覆盖实时历史。开始后新增部分不受旧快照目标裁剪；下一次模型调用重新检查合并后的占用。
+
+Mobile Agent 详情提供当前 Agent 设置；主端历史默认显示 ClawCross 最近 200 条记录，可折叠系统/动态信息和工具结果。外部 ACP Agent 可切换到 acpx 捕获的对话文本，读取不会创建或启动适配器会话；这不保证包含接入前的原生历史或完整工具轨迹。加载错误显式显示，旧请求不会覆盖新打开的 Agent 历史。
+
+前端固定绑定 `127.0.0.1`，不提供改成 `0.0.0.0` 的配置。远端访问由用户显式选择 Cloudflare Tunnel，或配置监听外部接口的反向代理（如 Caddy）；路由器端口转发应指向该反向代理，不能直接转发到 loopback 前端端口。远端访问必须经 HTTPS：loopback 上的反向代理可提供转发头，其他来源的转发头不被信任。HTTP 远端请求仅重定向到配置的 HTTPS `PUBLIC_DOMAIN`，没有安全入口时拒绝；本机直接 HTTP 仍可用。
+
+Studio: 上下文与审核 → 工具审核 → 命令沙盒。Mobile: 加号里的运行模式 → 命令沙盒。
+未保存过沙盒选项时，检测到已安装 SRT 或可用 Linux Landlock 会默认自动选择；用户显式保存的关闭选项继续有效。可选 SRT、Linux Landlock 或自动选择。SRT 旁边显示组件状态及显式下载按钮，下载安装不会打开沙盒。自动选择只执行无副作用的探测命令，Linux SRT 不兼容时改用 Landlock；绝不把用户命令作为后端探测或退出隔离执行。Landlock 要求 Linux x86_64/aarch64、内核 ABI ≥ 6、libseccomp 和非 root 账号，不需要新容器或修改 AppArmor。x86_64 Linux 已实测；其他平台不据此声称已验证。
+普通安全等级允许在管理员上限内审核提权；严格等级限制在当前 Agent 配置的目录集合，强制隔离且不接受提权或历史授权。新 Agent 默认使用伴生目录，用户共享、CLI、Team 和自定义目录按配置附加；自动目录仅在运行时生成，配置只保存来源开关和自定义路径。旧 Agent 未调整设置时保留旧目录。详见 [工作区配置](workspaces.md)。安全设置与工具策略在 `USER_FILES_DIR/.control/`，命令配置与后台控制文件在 `CONFIG_DIR/sandbox/`，均不进入工作区。普通 Landlock 只读开放 `/proc` 以支持 `ps/top/free`；同一 Unix 账号下可读的进程环境也可见。严格 Landlock 仅开放资源统计和启动时 PID 元数据，保护进程环境，但新 PID 的 `ps/top` 查询受限。两者均可管理同一命令的子进程，跨轮后台任务使用已有查看/取消工具，不能任意控制宿主进程。详见 [命令隔离后端](command-isolation-plan.md)。
+WeBot 子 Agent 有独立历史和工作区；同名 spawn 继续原会话。它根据持久父关系实时继承审核方式、沙盒后端、安全等级和网站许可；子 Agent 只能保留更严格的限制。工具能力取父 Agent 持久工具名单与模式、子角色及子 Agent 本轮名单的交集。KEEP Y 仍属于各自 Agent，不复制父授权；严格子 Agent 不能提权。管理工具为 `spawn_subagent`、`list_subagents`、`send_subagent_message`、`get_subagent_history`、`cancel_subagent`、`delete_subagent`，默认子角色不开放再次创建子 Agent。外部 Codex/Claude CLI 的原生终端、文件等工具由对应 CLI 执行；通过 MCP 使用 ClawCross 工具时才走本项目的工具审核和沙盒。
+工具审核中的 `KEEP Y · 持续授权` 列出当前 Agent 的精确工具调用授权及沙盒目标，支持立即添加和移除。沙盒新增仍按管理员最大范围校验；严格模式只能移除已有沙盒提权，旧条目标注不生效。工具参数由系统绑定用户及 Agent，并检查当前文件、Web 和显式禁止规则；授权不执行操作、不解除硬限制。列表中密码、令牌等命名字段被隐藏。普通设置保存不会用旧列表覆盖即时修改。API 为 `/v1/agents/{id}/remembered-approvals` 的 GET/POST，以及按条目键 DELETE。
+邀请链接使用配置的 `PUBLIC_DOMAIN`，未配置时退回当前浏览器访问的入口；不调用公网 IP 查询服务。配置的域名同时适用于 HTTPS 反向代理与 tunnel，不以 tunnel 是否运行决定域名是否可用。二维码应编码相同完整邀请链接，保持同一群号、票据和加入权限。
+
+`PUBLIC_DOMAIN` 保存在运行环境的 `config/.env`（默认 `~/.clawcross/config/.env`）。前端、CLI、群聊与 `get_publicnet_info` 共用读取逻辑，每次读取最新配置；不通过浏览器 Host 或公网 IP 查询推断域名，也不据此保证 DNS、证书和转发已配置成功。固定域名优先，启动或停止 Quick Tunnel 不会覆盖、删除固定域名；仅当未配置固定域名时发布临时 `*.trycloudflare.com` 地址，停止后清理临时地址。
+Auto 审核输出 `Y`（批准一次）、`N`（拒绝）或 `KEEP Y`（批准并在当前 Agent 记住），要求简短 JSON 决定，默认输出上限 16,384 tokens、等待上限 120 秒，为模型思考及完整 JSON 留出空间。输出上限不是目标长度，不要求模型写长解释；实际用量由实际生成的 token 决定。Y 与 KEEP Y 都必须引用原始用户请求中的有效授权来源；持续授权须有持续使用该范围的依据。旧版 `ask_user`、审核超时和格式错误均按拒绝处理，不产生等待人类确认的记录；用户后续自然语言明确同意时，下一次审核读取原始对话重新判断。摘要、工具结果和其他群成员不能代替 Agent 所有者授权。
+人工审核在对话气泡内提供确认按钮；`Y <approval_id>`、`N <approval_id>`、`KEEP Y <approval_id>` 与按键使用同一审批记录，多个请求必须指定编号。原工具调用在后端等待，批准后在该调用内执行，拒绝或超时只返回最终结果；不向模型返回待审核结果，不新建模型调用重试原操作。Studio 待审核时开放输入框，精确选项回复直接更新审批记录，群聊中仅所属用户可确认。取消调用会关闭待审核记录。旧的已脱离调用的审批仍兼容原续执行机制。Auto 始终由审核模型批准或拒绝，不转为人工弹窗。
+`request_sandbox_permission` 已从 Agent 工具中移除，`run_command` 不再接受 Agent 提权参数。启用命令沙盒的前台命令先执行；成功直接返回，失败后系统仅在能确定一个具体路径/域名时申请审核，批准后累计本次调用内的权限继续执行；新目标逐轮审核，最多 8 次权限审核且共用原命令超时，返回最终结果。同一已批准目标仍失败时停止，不重复审核。代理记录了网络权限拒绝时，即使 curl 或捕获 HTTP 异常的脚本退出码为 0，也按权限拒绝处理；上游网站自身返回的 HTTP 403 不触发提权。stderr 是不可信证据而不是授权；不明确的权限错误、超时、普通程序错误和隔离初始化失败均不自动提权。每次执行可能产生部分工作区变更，获批重试会重放整条命令并可能重复此前副作用；每轮审核都要判断是否适合继续。审核材料的 `sandbox_permissions` 列出此前批准的目标、访问类型、审批编号、决定和本次新增目标；人工授权气泡也列出已加入权限。前序 Y 只对同一次 command 调用有效，人工确认暂停后通过绑定原命令、用户、Agent、工作区的审批链恢复，结束或拒绝后关闭，其他调用不能复用。KEEP Y 只持久保存本轮新增目标。后台与交互任务仍不自动重放，失败保留在任务结果中。
+提权最大范围只由服务器环境配置：`CLAWCROSS_SANDBOX_MAX_READ_PATHS`、`CLAWCROSS_SANDBOX_MAX_WRITE_PATHS` 和 `CLAWCROSS_SANDBOX_MAX_DOMAINS`，均为 JSON 字符串数组。文件上限默认空数组，禁止扩展；网络上限未设置时允许对具体公网目标送审（`["*"]`），显式空数组或无效配置禁止网络扩展。每次批准仍只授予具体目标，路径只可位于指定范围内，域名/端口精确匹配。凭据、其他用户数据、系统账户配置、设备路径、整个 home、工作区上级和 host 执行禁止提权；模型和人工审批都不能突破上限。上限参与审批绑定，重试启动前再次检查。根目录销毁、格式化设备等命令绝对拦截也不能通过审核或 Manual 解除。
+Linux Landlock 默认只读程序/Python 安装路径和相应安全等级允许的系统统计，工作区可读写；其余路径访问按授权控制。网络连接只能通过受控代理，允许无网络功能的匿名 socketpair；禁止进程调试和跨隔离域信号。管理员上限内可批准一个额外读/写路径；只读授权不允许删除，文件写授权不授予父目录删除权限。可管理的 systemd 主机提供按域名/端口过滤的 HTTP/HTTPS、SOCKS 代理，禁止绕过代理直连和访问私有地址；用户可在运行设置中填写 `sandbox_allowed_domains`，网络新目标在管理员上限内审核。其他环境保持离线，网络请求不降级为直接联网。资源限制是每进程 CPU 120 秒/地址空间 2 GiB、每文件 128 MiB、每进程 256 FD；进程数量为同 UID 现有线程数加 64 的共享上限，在受控联网临时 unit 下另有任务合计内存 2 GiB、任务进程数 128 和整体超时限制，CPU/磁盘仍非总额配额。后台/交互使用相同隔离，暂不自动提权重试。详见 [命令隔离方案](command-isolation-plan.md)。
+关闭沙盒时，`run_command` 在服务进程的宿主账号下执行；工作目录和关键词黑名单不提供 OS 隔离，自动审核也不能替代隔离。
+Node.js/npm、Linux bwrap/socat/rg 等缺失依赖会在同一处提示；Debian/Ubuntu 提供单独的系统依赖安装按钮（需服务器管理员权限），macOS 使用已有 Homebrew，其余平台提示手动步骤；缺少隔离能力时命令拒绝执行，不回退到宿主机。
+
+Windows 使用 SRT 0.0.78+ 的原生后端，组件页面提供独立的 Windows 沙盒初始化按钮，首次创建专用账号与 WFP 网络规则需要主机管理员确认，启动不自动执行。文件/网络策略与审批设置继续共用；命令在原生隔离内使用 Job Object 限制 CPU、内存、进程数和运行时间，限制设置失败则不执行。完整 Windows 隔离尚未在本 Linux 主机实测；Windows CI 验证 Job Object 和接口契约，完整 SRT 测试需真机明确开启。详见 [命令隔离后端](command-isolation-plan.md)。
+`apply-seccomp` 写入 `setgroups`、`uid_map` 或 `gid_map` 失败属于隔离初始化故障，不能通过普通路径/域名提权解决，也不能据此认定沙盒已验证安全。管理员需检查 AppArmor 的 `bwrap//&unpriv_bwrap` 策略及嵌套 user namespace 支持；不得自动关闭 seccomp、开放所有 Unix socket 或切换到宿主执行。
+管理员明确批准并安装 root 所有的 `/usr/local/libexec/clawcross/bwrap` 后，ClawCross 可通过 SRT 的 `bwrapPath` 使用专用 AppArmor 配置；二进制及其所有上级目录必须由 root 持有且不可由普通用户修改。程序不会自行安装该配置或修改全局 sysctl。
+新建 Agent 可以选择 ACP 连接方式；表单内提供官方适配器显式安装按钮。运行编号可留空自动生成，中文显示名不需要手填编号。
+
+Studio 的快速新建仍先保留为草稿；切换平台、查看设置不登记 Agent，也不发送对话。模型配置可直接应用到草稿；工作区提供明确的“创建并配置工作区”，点击后登记 Agent 并编辑目录，不必先发消息。外部 Agent 的草稿同样可先保存启动方式并配置工作区，不会因此初始化原生会话。
+通讯录新建页从首次打开就列出全部 ACP 平台和自定义入口，平台切换保留本次表单中的启动命令；异步加载完成不会把已切回的内置伙伴改回外部平台。外部 Agent 使用“创建并配置”：登记后进入设置，先配置工具和工作区，再测试连接读取实际模型、原生模式和思考强度。已有 Agent 直接打开连接设置时仍自动检测。所有这些操作都无需发送首条对话，也不会安装外部组件。
+
+Studio、通讯录与群成员详情共用“Agent 设置”目录。详情只展示概览；名称与人设、工具范围、模型与思考、工作区、模式与沙盒、上下文分别在各自页面编辑，并提供返回设置目录的按钮。思考强度只在模型页面编辑，ClawCross 运行模式只在审核页面编辑；外部程序的原生模式仍属于原生连接选项。新建页默认填入“我的伙伴”，直接展示能力模板；外部程序、人设全文、工具范围和团队归属折叠到高级设置。消息页的第一个伙伴入口也使用同一取名流程，确认前不创建 Agent。
+系统设置先展示分类目录，手机端在分类页面用“返回设置”回到目录；各分类沿用原表单，切换页面保留未保存的字段。底部提示待保存的修改数，重启服务位于高级设置的服务维护中。
+
+ACP 状态轮询与会话追踪只读 AgentStore，不运行外部客户端。所有平台和旧 Agent 均使用内置 ACP 客户端；模型与模式通过 `session/set_config_option` 或适配器声明的模式接口应用。没有隐式适配器下载或 prompt 重试。
+
+### 外部 Agent 设置与工具通道
+
+Codex / Claude 使用固定版本官方适配器；其他平台的原生 argv 见 `config/acp-launchers.json`。自定义启动命令或命名启动器保存在 Agent 的 `meta.acp`；用户命名配置位于 `$CLAWCROSS_HOME/config/acp-launchers.json`。原 `~/.acpx` 目录仅用于读取旧编号与别名，不是运行依赖。
+
+旧连接按 Agent、会话代次、工作区恢复原生 ID，仍被旧进程持有时拒绝接管；恢复失败保留原记录。原生目录与历史通过 ACP 的 list/load 读取，未知能力明确提示。`GET /v1/agents/{id}/capabilities` 读取缓存的真实选项，不启动模型。参数仍由各适配器声明，不假定所有平台相同。
+
+同一 Agent 的 turn/control 锁跨线程、事件循环共享，键包括数据库、用户和 Agent。直连子进程由单独 actor loop 管理，限制并发进程及排队数量，OS 文件锁拒绝第二后台进程接管同一 Agent。原生 ID 在模型调用前保存；取消、超时、断线回收连接，后续显式请求恢复相同 ID，无自动 prompt 重试。连接器变更只重连原会话。每个 Agent 最多 64 个请求，全局最多 256 个；直连进程总计 16 个、每用户 4 个，默认空闲 300 秒回收。服务退出先取消排队和活动操作，再回收适配器。安装与恢复细节见 [转接模式](agent-join.md)。
+
+ClawCross MCP 工具默认启用，可按 Agent 关闭。启用时每个 Agent 使用独立的凭证及 MCP 配置，连接器只暴露 `tool_search` 和 `tool_call`；工具搜索返回准确参数。服务端验证当前用户、Agent、活动调用、工具名单、每轮模式，并通过 WeBot 的工具执行节点执行命令规则和审核。身份参数不能由外部 Agent 覆盖。ACP 权限策略仅将带 ClawCross 完整命名空间的两个 MCP 包装器委托给后端审核，不对原生 shell 自动放行；否则 Claude 的只读批准会拒绝通用 MCP 包装器。原生 CLI 工具继续使用自身的沙盒与审批；ClawCross 的自动审核不接管原生 shell。群聊通过 MCP 发送时使用相同的身份与群成员校验；未启用时提供已安装 Python 的 CLI 命令，避免 `uv run` 因缓存写入触发额外审核。
+
+ACP 工具事件在调用期间通过 gateway SSE 转发；手机端通过有用户认证的 `/v1/agents/{id}/events?after=...` 读取当前群的最近活动，保留最多 256 个事件。失败工具显示失败。工具完成但没有普通文本属于合法结束，JSON-RPC 请求、通知、用量和原始提示词不会回退为正文；旧审计记录仅在展示时过滤协议日志，不修改原始记录。
+
+MCP 连接器变更时，内置客户端只关闭当前传输并载入同一原生 ID；不重置原生会话。SSH 使用受管理 OpenSSH、字节流和只允许两个 ClawCross MCP 包装器的回连；断线/取消停止远端进程组。
+组件安装只接受登录用户的同源操作和固定白名单，不在启动或打开表单时自动下载。
+
+### Context usage after compaction
+
+API 实测用量绑定到该次调用使用的压缩视图。摘要提交后，状态接口立即按新摘要和保留原文重算当前占用，
+沿用上次实测的系统提示词/工具定义分摊，并用上次 API 与本地计数的比例校准历史。显示明确标为估算，
+旧输出不重复计入，旧缓存命中量清零。重启后仍根据已存 API 测量及最新压缩视图计算；下一次调用重新采用 API 实测值。
+
+模型、系统提示词、工具定义和原有消息前缀一致时，新增纯用户输入或工具结果可用
+`当前 input - 上次 input - 上次 output` 归因；动态块变化、多种消息混合、推理输出等不能单独归因时，
+回退到本地分词分摊。差分分项仍是推断：输出转为输入的序列化成本可能不同，多条新增消息只有整体增量可知。
+
+Studio 加号二级菜单仅保留当前对话运行选项：沙盒与审核、上下文与压缩、模式、工具、人设、工作流、对话面板与附件。全局设置 → 外部 Agent 提供官方 ACP 适配器安装；机器人集成中提供 WeClaw / NoneBot / QQ / Telegram 安装；公网访问设置中提供 cloudflared 安装。群聊加入操作位于消息中心。安装不自动开启渠道、Agent 或公网通道。手动摘要提交后，用量投影失败不影响任务完成；终态清除前端残留的压缩忙状态。
+
+
+### 内外 Agent 的提示词与动态状态
+
+WeBot 与外部 Agent 共享基础对话规则、Team/Skill 目录、模式说明和群元信息校验。
+WeBot 每次请求读取并重组系统提示词；有记忆的外部会话首次收到身份，身份成分也纳入同一动态块交付快照，后续只接收发生变化的块，reset 清空整个快照并重新发送完整状态。
+ACP 启用 ClawCross MCP 时使用 MCP 版技能目录，工作流规则按需通过工具获取；关闭时保留 CLI 入口和兼容说明。
+ClawCross MCP 搜索和调用的结果可附带 `runtime_context`，只包含相对本轮已交付快照的变化，成功结束后记在 Agent 表上。群成员变化可在同轮工具调用后生效；来源群以最新成员资格校验，正文仍由当前输入或 inbox 提供，不注入群元信息。
+此机制不改写 Codex/Claude 的原生工具结果，也不接管它们的历史压缩或内部循环。外部 Agent 仍使用原生持久会话与审批，MCP 走 ClawCross 的工具执行和审核节点。
+
+外部提示词交付使用统一状态机（`prompt_context_version=2`）：`identity_*` 与群聊、Team、技能、模式一起存入 `dynamic_context`，首次全量、后续增量、成功才提交、reset 全清。旧版 identity_sections 可迁入快照，不再输出独立版本号或系统提示词补丁。原生历史中的旧消息不会被物理删除。
+
+新 ACP 会话复用已知选项目录时，设置页面显示 ClawCross 的明确初始选择，首轮调用使用同一份选项；不复用其他会话的 currentValue。已建立会话仍以自身返回的选项和该 Agent 已保存的覆盖值为准。
+
+Agent 设置页的“测试连接”显式调用 `/v1/agents/{id}/test-connection`，仅初始化或恢复该用户的 ACP 会话并刷新配置；不发 session/prompt、不生成问答、不提交动态块快照。忙碌 Agent 返回 409，连接失败显示错误。
+
+运行模式在 CLI、Studio、Mobile 和 Agent API 中使用相同值：`chat` 不开放工具；`readonly` 只开放只读工具；`manual` 开放全部工具、允许的操作直接执行，需要批准的操作交给人类；`auto` 开放全部工具，需要批准的操作交给 AI；`bypass` 开放全部工具并跳过审核。Manual 的批准按钮与当前对话中的 Y/N/KEEP Y 使用同一审批单，待批准或拒绝时不执行。显式禁止规则、命令硬拦截和沙盒限制在所有模式下生效。外部 Agent 的 ClawCross MCP 工具遵循该模式；原生 CLI 工具继续使用适配器的权限机制。
+
+自动审核通过供应商原生 JSON Schema 输出接口返回 `Y` / `N` / `KEEP Y`，不依赖仅写在提示词中的 JSON 格式要求，也不创建用于回复的工具。DeepSeek 使用 Responses API 的 `text.format`；OpenAI 兼容模型使用 `response_format.json_schema`；Anthropic / Gemini 使用原生结构化输出。后端仍验证字段、原始用户授权来源及管理员上限。完整 JSON 被围栏或简短前言包裹时可提取后按原 Schema 验证；存在多个对象、截断或不合规结构时拒绝该结果。空响应或格式错误只在同一原生 Schema 约束下重试一次，仍无有效决定则拒绝执行；不会切换到人工弹窗。模型配置、输出故障和输入容量故障在审计中分别记录 `configuration`、`response`、`capacity`，提供相应修复说明；真实的 N 保持授权拒绝语义。
+
+`web_search` 与 `web_fetch` 在联网前走统一审核，即使默认工具策略为 allow。Auto 交模型、Manual 交人类，Bypass 跳过确认但保留显式 deny 与现有 URL 限制。搜索审核完整查询内容，`fetch_top` 抓取的每个结果 URL 另走 `web_fetch` 审核。用户及 Agent 身份由 runtime 强制注入，MCP 服务消费同一份短期、单次、完整参数执行许可，避免重复审核；缺少身份的直接调用不联网。此规则适用于 ClawCross 工具，外部 CLI 原生 Web 工具仍由其自身权限策略管理。
+
+严格安全等级对文件与 Web 工具也生效：文件工具只能操作当前 Agent 配置的工作区目录集合，目录句柄防止路径被换成 symlink/junction，读取拒绝硬链接；Windows 使用原生文件句柄锁定父目录。Web 搜索与抓取共同使用 `sandbox_allowed_domains`，空列表离线；DNS 全部解析结果必须为公网地址，并连接同一数值地址，重定向仍走代理。HTTP 抓取解码内容上限 2 MiB，不继承宿主代理绕行环境。严格模式禁用宿主浏览器执行，HTTP/DDGS 可用；普通模式浏览器网络也走公网代理，但不宣称进程级隔离。搜索提供者自己的域名也要加入许可列表，搜索结果过滤器 `include_domains` 不是网络授权。审批、KEEP Y 和 Bypass 都不能突破严格 Web 边界。各平台验证与恶意用户威胁见 [严格模式安全审查](strict-security-review.md)。
+
+沙盒单次 `Y` 或访问成功不会自动保存白名单。模型与人工 `KEEP Y` 使用相同保存机制：沙盒重试记录具体域名/IP 和端口，或具体路径及读/写类型，存于当前 Agent 的 `approval.sandbox_grants`；其他工具仅记住当前 Agent 的完整操作参数。后续命令在启动前重新验证每项沙盒授权，将有效权限合入隔离配置；读权限不变为写权限，不继承给其他 Agent，不改变管理员上限。管理员收紧上限、路径变为其他符号链接目标或目标被删除时，旧授权不再使用。权限在服务重启后保留，可在运行设置的“已记住的沙盒权限”中移除并保存，或恢复 Agent 继承设置。`sandbox_allowed_domains` 仍是用户显式配置的网站许可。命令沙盒的联网许可不替代 Web 工具对具体查询和 URL 的审核。
+
+提权过程由系统完成：原命令执行 → 检测可确定的权限拒绝 → 检查管理员上限 → 审核 Y/N/KEEP Y → 在新建的沙盒中带上本次调用累计权限重试；再次遇到新目标时重复审核。审核模型只返回决定，不能修改宿主权限、关闭沙盒或生成超出上限的授权。审计保存原始授权来源、决定和保存结果；执行许可使用保存后的策略绑定并只消费一次。
+
+人工审核按钮和输入框中的精确 `Y` / `N` / `KEEP Y` 共用 `/webot/tool-approvals/resolve`。这些输入作为审核操作处理，不作为普通消息发给 Agent 或群成员；多项待审核时必须填写审批编号。后端按当前用户和 Agent 验证审批归属、有效期和策略，原子更新一次后排队恢复。内部 Agent 直接重试保存的工具和参数，再继续原任务；外部 Agent 通过 gateway 恢复原生会话。群聊回复通道与内部工具范围随审核保存，批准不扩大其他操作的权限。拒绝也恢复说明结果，不执行被拒操作。重复点击、已用授权、过期及策略改变都不会重复执行。
+
+Studio 和 Mobile 的审核按钮放在对话授权气泡内；按钮由后端当前待审记录产生，不由工具/Agent 文本生成。点击等同于输入对应的 Y/N/KEEP Y，显示用户的确认信息并恢复执行，上方审核栏不再重复展示。Agent 中心的审核管理入口仍可处理其他 Agent 的待审操作。
+
+审核模型工厂在显式参数和已导出环境变量缺失时使用 `.env`/活跃 profile 返回的完整配置，MCP 工作进程不依赖 launcher 导出 `LLM_MODEL`。不会猜测或自动选择未配置的模型；真正缺失时提示配置审核模型或默认模型/API。审核材料取消固定 16,000 字符清空规则，按实际审核模型窗口、输出预留、提示词及 Schema 开销计算 token 容量；优先减少不可信工具材料和无关工具策略，再省略最旧的完整原始请求，保留最新请求全文。省略数量和实际模型写入审计，审核只可引用实际送入的完整原始请求 ID；最新完整请求本身仍放不下时，要求一条简短明确的新请求或更大容量的审核模型，不截断授权文本。
+
+### Studio navigation and interface preferences
+
+Studio uses one scrolling Agent rail: the current platform, the team tree, then at most five recent Agents. Agent names are primary and conversation titles secondary. Preferences and the archive stay fixed at the bottom. Archiving sets `settings.archived`; default Agent listings hide archived rows, and `GET /v1/agents?include_archived=1` includes them for restoration. Archiving preserves the Agent ID, history and team/group membership. Deletion continues to remove the Agent through the existing lifecycle endpoint.
+
+Studio and Message share 14 interface language choices, including Traditional Chinese, Japanese, Korean, French, German, Spanish, Portuguese, Russian, Italian, Arabic, Hindi and Indonesian. Navigation and common actions use local translations; detailed technical text falls back to English. Preferences are stored in the browser. This does not change model prompts, native tool schemas or Agent-authored content.
+
+Creation starts with “My companion” and visible capability templates. Technical settings are collapsed. Agent and group creation drawers are mutually exclusive. TinyFish configuration is removed from the interface and its scheduled monitor is no longer registered at startup; existing stored data is preserved.
+
+Dynamic UI remains embedded when clicked or dragged. Only its explicit dock control moves it beside the chat; the shared divider still adjusts the chat/UI proportions. Runtime thinking and tool activity have local elapsed-time indicators; completed tool results are collapsed. The timer makes no backend requests.
+
+When no sandbox choice has been saved, an installed SRT or available Linux Landlock backend selects automatic isolation. An explicit saved `off` remains effective. Standard mode can review new network targets; strict mode stays within its initial allowed destinations. Without an explicit reviewer model, approval review uses the current Agent’s model/API profile before platform defaults.
+
+Antigravity uses the installed official CLI through `agy acp` by default. Explicit custom launch settings take precedence. Without that CLI, install the native program or configure an explicit ACP launcher.
+
+### Unified conversation workspace
+
+`/studio`（登录后）和 `/mobile/group_chat` 使用同一个对话目录：我的 Agent 与群聊共用搜索和滚动区域。Agent 会话复用嵌入式 Studio 渲染器（`/studio?embedded=1`），保留普通 Agent API、工具历史、动态 UI 与流式输出；群聊复用原群组件及群 API。导航不会发送 prompt 或新建隐藏 Agent。Agent 中心是通讯录的卡片视图，团队/工作流编辑位于创造页。手机对话隐藏底部导航并提供返回，嵌入区响应 visualViewport。

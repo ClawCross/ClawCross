@@ -5,25 +5,20 @@ from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import StructuredTool
 
-from core.agent import USER_INJECTED_TOOLS, UserAwareToolNode
+from webot.engine.agent import USER_INJECTED_TOOLS, DirectToolNode, UserAwareToolNode
 
 
 _WEBOT_RUNTIME_USER_TOOLS = {
     "write_session_plan",
     "read_session_plan",
     "clear_session_plan",
-    "write_session_todos",
-    "read_session_todos",
-    "clear_session_todos",
-    "record_verification",
-    "list_verifications",
-    "run_verification",
     "list_tool_approvals",
 }
 
@@ -50,8 +45,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
     async def test_team_tools_auto_inject_username_and_team(self):
         node = UserAwareToolNode(
             [],
-            lambda: [],
-            find_internal_session_meta_fn=lambda user_id, session_id: {"team": "alpha"},
+            find_internal_session_meta_fn=lambda user_id, session_id: {"teams": ["alpha"]},
         )
         fake_tool_node = _FakeToolNode()
         node.tool_node = fake_tool_node
@@ -62,13 +56,13 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
             "messages": [
                 AIMessage(
                     content="",
-                    tool_calls=[{"name": "skill_list", "args": {}, "id": "call_1", "type": "tool_call"}],
+                    tool_calls=[{"name": "skill_view", "args": {}, "id": "call_1", "type": "tool_call"}],
                 )
             ],
         }
 
-        with patch("core.agent.get_session_mode", return_value={"mode": "default"}), patch(
-            "core.agent.resolve_permission_context",
+        with patch(
+            "webot.engine.agent.resolve_permission_context",
             return_value=type(
                 "Permission",
                 (),
@@ -81,7 +75,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
                     "approval": None,
                 },
             )(),
-        ), patch("core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+        ), patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             result = await node(state, config={})
 
         self.assertEqual(len(result["messages"]), 1)
@@ -90,8 +84,24 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(injected_call["args"]["username"], "alice")
         self.assertEqual(injected_call["args"]["team"], "alpha")
 
+    async def test_memory_scope_defaults_to_team_but_explicit_empty_means_personal(self):
+        node = UserAwareToolNode([], find_internal_session_meta_fn=lambda *a: {"teams": ["alpha"]})
+        fake = _FakeToolNode()
+        fake._tools_by_name = {"list_files": StructuredTool(name="list_files", description="list", func=lambda **a: "ok",
+            args_schema={"type": "object", "properties": {"team": {"type": ["string", "null"], "default": None}}})}
+        node.tool_node = fake
+        permission = type("Permission", (), {"allowed": True, "requires_approval": False, "reason": "",
+            "matched_rule": None, "policy": {}, "approval": None})()
+        for team, expected in ((None, "alpha"), ("", ""), ("beta", "beta")):
+            with self.subTest(team=team), patch("webot.engine.agent.resolve_permission_context", return_value=permission), patch(
+                "webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+                state = {"user_id": "alice", "session_id": "s", "session_mode": "bypass", "messages": [AIMessage(content="",
+                    tool_calls=[{"name": "list_files", "args": {"storage": "memory", "team": team}, "id": "one", "type": "tool_call"}])]}
+                await node(state, config={})
+                self.assertEqual(fake.captured_state["messages"][-1].tool_calls[0]["args"]["team"], expected)
+
     async def test_session_runtime_tools_auto_inject_username(self):
-        node = UserAwareToolNode([], lambda: [])
+        node = UserAwareToolNode([])
         fake_tool_node = _FakeToolNode()
         node.tool_node = fake_tool_node
 
@@ -103,7 +113,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
                     content="",
                     tool_calls=[
                         {
-                            "name": "read_session_todos",
+                            "name": "read_session_plan",
                             "args": {"source_session": "exp_entrepreneur_mo0yixp1"},
                             "id": "call_2",
                             "type": "tool_call",
@@ -113,8 +123,8 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        with patch("core.agent.get_session_mode", return_value={"mode": "default"}), patch(
-            "core.agent.resolve_permission_context",
+        with patch(
+            "webot.engine.agent.resolve_permission_context",
             return_value=type(
                 "Permission",
                 (),
@@ -127,7 +137,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
                     "approval": None,
                 },
             )(),
-        ), patch("core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+        ), patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             result = await node(state, config={})
 
         self.assertEqual(len(result["messages"]), 1)
@@ -135,6 +145,128 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         injected_call = fake_tool_node.captured_state["messages"][-1].tool_calls[0]
         self.assertEqual(injected_call["args"]["username"], "alice")
         self.assertEqual(injected_call["args"]["source_session"], "exp_entrepreneur_mo0yixp1")
+
+    async def test_inbox_tool_cannot_select_another_users_session(self):
+        node = UserAwareToolNode([])
+        fake_tool_node = _FakeToolNode()
+        node.tool_node = fake_tool_node
+        permission = type("Permission", (), {"allowed": True, "requires_approval": False,
+            "reason": "", "matched_rule": None, "policy": {}, "approval": None})()
+        state = {"user_id": "alice", "session_id": "actual", "session_mode": "bypass",
+            "messages": [AIMessage(content="", tool_calls=[{
+                "name": "read_session_inbox",
+                "args": {"username": "bob", "source_session": "other"},
+                "id": "inbox", "type": "tool_call",
+            }])]}
+        with patch("webot.engine.agent.resolve_permission_context", return_value=permission), patch(
+            "webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+            await node(state, config={})
+        args = fake_tool_node.captured_state["messages"][-1].tool_calls[0]["args"]
+        self.assertEqual((args["username"], args["source_session"]), ("alice", "actual"))
+
+    async def test_join_cannot_spoof_another_user_or_agent(self):
+        node = UserAwareToolNode([])
+        fake = _FakeToolNode()
+        node.tool_node = fake
+        permission = type("Permission", (), {"allowed": True, "requires_approval": False, "reason": "", "matched_rule": None, "policy": {}, "approval": None})()
+        state = {"user_id": "alice", "session_id": "actual", "session_mode": "bypass", "messages": [AIMessage(content="", tool_calls=[{
+            "name": "join_group", "args": {"username": "bob", "source_session": "other", "invite": "https://host.example/group-guest#ticket"}, "id": "join", "type": "tool_call"}])]}
+        with patch("webot.engine.agent.resolve_permission_context", return_value=permission), patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+            await node(state, config={})
+        args = fake.captured_state["messages"][-1].tool_calls[0]['args']
+        self.assertEqual((args['username'], args['source_session']), ('alice', 'actual'))
+
+
+
+async def _add(a: int, b: int) -> str:
+    return str(a + b)
+
+
+async def _explode(x: str) -> str:
+    raise RuntimeError("boom")
+
+
+async def _with_artifact(q: str):
+    return f"content:{q}", {"raw": q}
+
+
+def _call(name, args, call_id):
+    return {"name": name, "args": args, "id": call_id, "type": "tool_call"}
+
+
+class DirectToolNodeErrorHandlingTests(unittest.IsolatedAsyncioTestCase):
+    """DirectToolNode must match langgraph ToolNode's default error handling."""
+
+    def setUp(self):
+        self.node = DirectToolNode([
+            StructuredTool.from_function(coroutine=_add, name="add", description="add"),
+            StructuredTool.from_function(coroutine=_explode, name="explode", description="explode"),
+            StructuredTool.from_function(
+                coroutine=_with_artifact,
+                name="with_artifact",
+                description="artifact",
+                response_format="content_and_artifact",
+            ),
+        ])
+
+    async def _run(self, *calls):
+        state = {"messages": [AIMessage(content="", tool_calls=list(calls))]}
+        return (await self.node.ainvoke(state, config={}))["messages"]
+
+    async def test_unknown_tool_is_per_call_error(self):
+        messages = await self._run(_call("nope", {}, "c1"), _call("add", {"a": 1, "b": 2}, "c2"))
+        self.assertEqual(messages[0].status, "error")
+        self.assertEqual(
+            messages[0].content,
+            "Error: nope is not a valid tool, try one of [add, explode, with_artifact].",
+        )
+        self.assertEqual((messages[1].status, messages[1].content), ("success", "3"))
+
+    async def test_invalid_args_do_not_fail_sibling_calls(self):
+        messages = await self._run(_call("add", {"a": "x", "b": 2}, "c1"), _call("add", {"a": 1, "b": 2}, "c2"))
+        self.assertEqual(messages[0].status, "error")
+        self.assertTrue(messages[0].content.startswith("Error invoking tool 'add' with kwargs {'a': 'x', 'b': 2} with error:\n a: "))
+        self.assertTrue(messages[0].content.endswith("\n Please fix the error and try again."))
+        self.assertEqual(messages[0].tool_call_id, "c1")
+        self.assertEqual((messages[1].status, messages[1].content), ("success", "3"))
+
+    async def test_runtime_error_propagates_like_old_tool_node(self):
+        with self.assertRaises(RuntimeError):
+            await self._run(_call("explode", {"x": "y"}, "c1"))
+
+    async def test_artifact_is_preserved(self):
+        (message,) = await self._run(_call("with_artifact", {"q": "hi"}, "c1"))
+        self.assertEqual(message.content, "content:hi")
+        self.assertEqual(message.artifact, {"raw": "hi"})
+        self.assertEqual((message.name, message.tool_call_id), ("with_artifact", "c1"))
+
+
+    async def test_plan_mode_blocks_typing_into_an_interactive_job_but_not_reading_it(self):
+        node = UserAwareToolNode([])
+        fake_tool_node = _FakeToolNode()
+        node.tool_node = fake_tool_node
+
+        def state(args):
+            return {
+                "user_id": "alice",
+                "session_id": "sess-1",
+                "session_mode": "plan",
+                "messages": [AIMessage(content="", tool_calls=[
+                    {"name": "background_command_io", "args": args, "id": "call_io", "type": "tool_call"},
+                ])],
+            }
+
+        permission = type("Permission", (), {
+            "allowed": True, "requires_approval": False, "reason": "",
+            "matched_rule": None, "policy": {}, "approval": None,
+        })()
+        with patch("webot.engine.agent.resolve_permission_context", return_value=permission), \
+                patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+            blocked = await node(state({"job_id": "j1", "input": "rm x"}), config={})
+            self.assertIsNone(fake_tool_node.captured_state)
+            self.assertIn("plan", str(blocked["messages"][0].content))
+            await node(state({"job_id": "j1"}), config={})
+            self.assertIsNotNone(fake_tool_node.captured_state)
 
 
 if __name__ == "__main__":

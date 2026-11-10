@@ -1,0 +1,388 @@
+/* A browser member's group client; the agent it may bring runs in group-guest-agent.js. Main-site login cookies are not used. */
+(() => {
+  'use strict';
+  const el = id => document.getElementById(id);
+  const ticket = location.hash.slice(1);
+  const official=el('open-official');
+  if(official&&ticket)official.href='https://clawcross.net/groups/join#'+encodeURIComponent(location.origin+'/group-guest#'+ticket);
+  const legacyStorageKey = 'group-guest:' + ticket;
+  let storageKey = legacyStorageKey;
+  function stored(key) {
+    try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (_) { return {}; }
+  }
+  let saved = stored(storageKey);
+  function identityKey(data) {
+    if (data.identity_key) storageKey = 'group-guest-identity:' + data.identity_key;
+  }
+  let credential = saved.token || '', principal = '', cursor = -1, timer, polling = false;
+  const seen = new Set();
+  let pendingSend = null, replyContext = null;
+  let transportScope = '', sending = false, received = 0, readAck = 0, readTimer;
+  let historyBefore = 0, historyQuery = '', historyGeneration = 0;
+  const messageCache = new Map();
+  function setReply(message) {
+    replyContext = message;
+    el('reply-name').textContent = '引用 ' + message.sender_name;
+    el('reply-text').textContent = message.content || '(附件)';
+    el('reply-preview').hidden = false; el('text').focus();
+  }
+  function clearReply() { replyContext = null; el('reply-preview').hidden = true; }
+  el('reply-cancel').addEventListener('click', clearReply);
+  GroupMessageMenu.bind(el('messages'), id => messageCache.get(id), setReply);
+  const historyMessages = new Map();
+  GroupMessageMenu.bind(el('history-results'), id => historyMessages.get(id), message => { el('history').open = false; setReply(message); });
+  let members = [], mentionRange = null, selectedMentions = [], previousDraft = '', activeOption = 0;
+  function hideMentions() { el('mention-menu').hidden = true; el('text').setAttribute('aria-expanded', 'false'); mentionRange = null; }
+  function updateDraft() {
+    const text = el('text').value;
+    let prefix = 0, suffix = 0;
+    while (prefix < Math.min(previousDraft.length, text.length) && previousDraft[prefix] === text[prefix]) prefix++;
+    while (suffix < Math.min(previousDraft.length, text.length) - prefix && previousDraft[previousDraft.length - 1 - suffix] === text[text.length - 1 - suffix]) suffix++;
+    const end = previousDraft.length - suffix, delta = text.length - previousDraft.length;
+    selectedMentions = selectedMentions.filter(m => m.end <= prefix || m.start >= end)
+      .map(m => m.start >= end ? {...m,start:m.start + delta,end:m.end + delta} : m);
+    previousDraft = text;
+  }
+  function chooseMember(member) {
+    const input = el('text'), start = mentionRange ? mentionRange.start : input.selectionStart;
+    const end = mentionRange ? mentionRange.end : input.selectionEnd;
+    const label = '@' + member.name;
+    if (input.value.length - (end - start) + label.length + 1 > input.maxLength) { status('消息已达到字数上限', true); return; }
+    input.setRangeText(label + ' ', start, end, 'end'); updateDraft();
+    selectedMentions.push({principal:member.principal,start,end:start + label.length,label});
+    hideMentions(); input.focus();
+  }
+  function showMentions(query = '') {
+    const options = members.filter(m => m.principal !== principal && m.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+    activeOption = 0;
+    el('mention-menu').replaceChildren(...options.map(member => {
+      const button = document.createElement('button'); button.type = 'button'; button.setAttribute('role', 'option');
+      button.textContent = member.name; button.setAttribute('aria-selected', 'false');
+      button.addEventListener('mousedown', event => event.preventDefault());
+      button.addEventListener('click', () => chooseMember(member)); return button;
+    }));
+    if (!options.length) { hideMentions(); return; }
+    el('mention-menu').hidden = false; el('text').setAttribute('aria-expanded', 'true');
+    el('mention-menu').firstElementChild.setAttribute('aria-selected', 'true');
+  }
+  function suggestMentions() {
+    const input = el('text'), before = input.value.slice(0, input.selectionStart);
+    const match = /(?:^|\s)@([^@\n]*)$/.exec(before);
+    if (!match) { hideMentions(); return; }
+    mentionRange = {start:before.length - match[1].length - 1,end:input.selectionStart};
+    showMentions(match[1]);
+  }
+  el('text').addEventListener('input', () => { updateDraft(); suggestMentions(); });
+  el('text').addEventListener('click', suggestMentions);
+  el('text').addEventListener('keydown', event => {
+    if (el('mention-menu').hidden) return;
+    const options = Array.from(el('mention-menu').children);
+    if (event.key === 'Escape') { event.preventDefault(); hideMentions(); }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault(); activeOption = (activeOption + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+      options.forEach((b,i) => b.setAttribute('aria-selected', String(i === activeOption))); options[activeOption].scrollIntoView({block:'nearest'});
+    }
+    if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); options[activeOption].click(); }
+  });
+  el('mention').addEventListener('click', () => { mentionRange = null; showMentions(); });
+  function status(text, error = false) { el('status').textContent = text; el('status').classList.toggle('error', error); }
+  function remember() {
+    try {
+      const value = JSON.stringify({token: credential, name: el('name').value});
+      localStorage.setItem(storageKey, value);
+      // Keep old links usable while migrating existing identities to the per-group key.
+      localStorage.setItem(legacyStorageKey, value);
+    } catch (_) {}
+  }
+  async function api(action, body, params = '') {
+    const response = await fetch('/group-guest-api/' + action + (params ? '?' + params : action === 'state' ? '?after_id=' + cursor : ''), {
+      method: body === undefined ? 'GET' : 'POST', credentials: 'omit',
+      headers: {'Content-Type': 'application/json', 'X-Group-Invite': ticket, 'X-Guest-Token': credential},
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      let text = data.error || data.detail || '暂时无法连接群聊';
+      if (typeof text !== 'string') text = '请检查名字或消息内容';
+      const error = new Error(text); error.status = response.status; throw error;
+    }
+    return data;
+  }
+  function showJoin() { clearTimeout(timer); el('join').hidden = false; el('chat').hidden = true; el('rename').hidden = true; el('agent-open').hidden = true; el('password-open').hidden = true; el('password-form').hidden = true; }
+  // A space with an app shows the app's site, tunnelled to the owner's app server, in place of the
+  // messages and input. It opens sandboxed, so it never acts as this page.
+  let appFrame = null;
+  function setAppExpanded(value) {
+    document.body.classList.toggle('app-expanded', value);
+    el('app-expand').setAttribute('aria-pressed', String(value));
+    el('app-collapse').hidden=!value;
+  }
+  async function expandApp(value) {
+    const host=el('app-fullscreen-host');setAppExpanded(value);
+    if(value){try{await host.requestFullscreen();}catch(_){}}
+    else if(document.fullscreenElement===host)await document.exitFullscreen();
+  }
+  let nativeAppFullscreen=false;
+  el('app-expand').onclick = () => expandApp(true);
+  el('app-collapse').onclick = () => expandApp(false);
+  addEventListener('keydown', event => { if (event.key === 'Escape') setAppExpanded(false); });
+  addEventListener('fullscreenchange',()=>{if(document.fullscreenElement===el('app-fullscreen-host'))nativeAppFullscreen=true;else if(nativeAppFullscreen){nativeAppFullscreen=false;setAppExpanded(false);}});
+  function showApp(app) {
+    el('chat').classList.toggle('room-app-view', !!app);
+    el('app-toolbar').hidden = !app;
+    document.body.classList.toggle('has-room-app', !!app);
+    if (!app) expandApp(false);
+    const notice = text => { const p = document.createElement('p'); p.className = 'room-app-notice'; p.textContent = text; el('room-app-surface').replaceChildren(p); appFrame = null; };
+    if (!app) { el('room-app-surface').replaceChildren(); appFrame = null; return; }
+    if (!app.online) { notice('「' + (app.name || '小程序') + '」暂时不在线'); return; }
+    if (appFrame) return;
+    const frame = appFrame = document.createElement('iframe');
+    api('app_session', {}).then(({path}) => {
+      if (appFrame !== frame) return;
+      frame.title = app.name || '小程序';
+      frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock');
+      frame.referrerPolicy = 'no-referrer'; frame.src = '/' + path;
+      el('room-app-surface').replaceChildren(frame);
+    }, error => { if (appFrame === frame) notice('小程序打开失败：' + error.message); });
+  }
+  function render(data) {
+    el('announcement').hidden = !data.announcement;
+    el('announcement').textContent = data.announcement ? '群公告 · ' + data.announcement : '';
+    showApp(data.app);
+    identityKey(data);
+    el('password-open').textContent = data.password_set ? '修改密码' : '设置密码';
+    principal = data.principal; el('title').textContent = data.title; el('name').value = data.name;
+    members = data.members;
+    const activity = el('guest-agent-activity');
+    if (activity) {
+      const active = members.filter(m => m.is_agent && m.activity?.state === 'running');
+      activity.hidden = !active.length;
+      activity.textContent = active.length ? active.slice(0, 2).map(m => m.name).join('、') +
+        (active.length > 2 ? ` 等 ${active.length} 位伙伴正在处理` : ' 正在处理') : '';
+    }
+    el('member-count').textContent = '群成员 · ' + data.members.length;
+    el('member-list').replaceChildren(...members.map(m => {
+      const li = document.createElement('li'), button = document.createElement('button');
+      li.className = (m.online ? 'online' : 'offline') + (m.activity?.state === 'running' ? ' is-working' : '');
+      li.title = m.activity?.state === 'running' ? '正在处理' : m.online ? '在线' : '离线';
+      button.type = 'button'; button.textContent = m.name; button.setAttribute('aria-label', '提及 ' + m.name);
+      button.addEventListener('click', () => { mentionRange = null; chooseMember(m); }); li.append(button);
+      if(!m.is_agent){
+        button.textContent=m.name;
+        const info=document.createElement('button');info.type='button';info.className='member-profile-open';info.textContent='资料';info.setAttribute('aria-label',m.name+'的个人资料');
+        info.addEventListener('click',()=>showHuman(m));li.append(info);
+      }
+      const portrait = document.createElement('span'); portrait.className = 'guest-member-avatar';
+      portrait.innerHTML = Avatars.markup(m.avatar,m.name,{principal:m.principal}); button.prepend(portrait);
+      return li;
+    }));
+    const box = el('messages'), nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 100;
+    for (const m of data.messages) {
+      if (seen.has(m.id)) continue;
+      seen.add(m.id); messageCache.set(m.id, m);
+      if (messageCache.size > 500) messageCache.delete(messageCache.keys().next().value);
+      const article = document.createElement('article'); article.className = 'message' + (m.sender === principal ? ' own' : ''); article.dataset.messageId = m.id;
+      const by = document.createElement('div'); by.className = 'byline';
+      by.textContent = m.sender_name + ' · ' + new Date(m.created_at * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      const member = members.find(person => person.principal === m.sender);
+      if (member) { const portrait = document.createElement('span'); portrait.className = 'guest-message-avatar';
+        portrait.dataset.avatarSender = m.sender; portrait.innerHTML = Avatars.markup(member.avatar,member.name,{principal:member.principal}); by.prepend(portrait); }
+      const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = m.content;
+      bubble.dataset.groupMessageId = m.id; bubble.tabIndex = 0;
+      const reference = m.reply || messageCache.get(m.reply_to);
+      if (reference || m.reply_to) {
+        const quote = document.createElement('div'); quote.className = 'quote';
+        quote.textContent = reference ? reference.sender_name + '：' + reference.content : '引用消息 #' + m.reply_to;
+        bubble.prepend(quote);
+      }
+      article.append(by, bubble);
+      if (m.sender === principal) { const receipt = document.createElement('small'); receipt.className = 'message-receipt'; article.append(receipt); }
+      box.append(article);
+      if (box.children.length > 500) box.firstElementChild.remove();
+    }
+    if (seen.size > 2000) { const recent = Array.from(seen).slice(-1000); seen.clear(); recent.forEach(id => seen.add(id)); }
+    for (const portrait of box.querySelectorAll('[data-avatar-sender]')) {
+      const person = members.find(m=>m.principal===portrait.dataset.avatarSender);
+      if (person && portrait.querySelector('[data-avatar]')?.dataset.avatar !== (person.avatar||''))
+        portrait.innerHTML = Avatars.markup(person.avatar,person.name,{principal:person.principal});
+    }
+    if (nearBottom) box.scrollTop = box.scrollHeight;
+    for (const label of box.querySelectorAll('.message-receipt')) {
+      label.textContent = data.capabilities?.receipts === 'device-v1' ? GroupChatState.label(data.receipts, principal, Number(label.parentElement.dataset.messageId)) : '';
+    }
+    cursor = data.cursor; remember();
+    agent.update(data);
+    latest = data; drawDevices();
+  }
+  // The member list can be shown as a picture of the connected devices instead.
+  let latest = null, byDevice = false;
+  function drawDevices() { if (byDevice && latest) GroupDeviceMap.render(el('member-map'), {title: latest.title, members: latest.members}); }
+  el('member-view').addEventListener('click', () => {
+    byDevice = !byDevice;
+    el('member-view').textContent = byDevice ? '列表' : '设备图'; el('member-view').setAttribute('aria-pressed', String(byDevice));
+    el('member-list').hidden = byDevice; el('member-map').hidden = !byDevice; drawDevices();
+  });
+  async function poll() {
+    if (polling || !credential) return;
+    clearTimeout(timer); polling = true;
+    let delay = 2000;
+    try {
+      const data = await api('state');
+      const scope = GroupChatState.scope(location.origin, data.group_id, data.principal);
+      if (transportScope !== scope) { readAck = 0; received = 0; pendingSend = null; }
+      transportScope = scope;
+      let durable = false;
+      try { await GroupChatState.receive(transportScope, data.cursor, data.messages); durable = true; }
+      catch (_) { status('浏览器无法保存群消息，暂不确认送达；请检查存储空间。', true); }
+      el('join').hidden = true; el('chat').hidden = false; el('rename').hidden = false; el('password-open').hidden = false;
+      render(data);
+      if (durable) {
+        received = data.cursor;
+        status('以 ' + data.name + ' 的身份参与');
+        if (data.capabilities?.receipts === 'device-v1') await api('receipts', {device_id:GroupChatState.device(), received_cursor:received});
+        scheduleRead();
+        await flushOutbox();
+      }
+      if (data.has_more) delay = 100;
+    } catch (error) {
+      status(error.message, true); delay = 5000;
+      if ([401,403,404].includes(error.status)) { credential = ''; remember(); showJoin(); }
+    } finally { polling = false; if (credential) timer = setTimeout(poll, delay); }
+  }
+  el('join').addEventListener('submit', async event => {
+    event.preventDefault(); const button = el('join').querySelector('button'); button.disabled = true;
+    try { const data = await api('join', {name:el('name').value.trim(), password:el('password').value}); credential = data.token; el('password').value = ''; cursor = -1; seen.clear(); el('messages').replaceChildren(); remember(); await poll(); }
+    catch (error) { status(error.message, true); } finally { button.disabled = false; }
+  });
+  const retryable = error => !error.status || error.status >= 500 || [408,425,429].includes(error.status);
+  async function flushOutbox() {
+    if (sending || !transportScope) return;
+    sending = true;
+    const scope = transportScope;
+    try {
+      for (const message of (await GroupChatState.load(scope)).outbox.filter(row => !row.failed).slice(0,4)) {
+        try {
+          GroupChatState.confirm((await api('messages', message)).id);
+          await GroupChatState.sent(scope, message.client_msg_id);
+          if (pendingSend?.client_msg_id === message.client_msg_id) {
+            pendingSend = null;
+            if (el('text').value.trim() === message.content) {
+              if (replyContext?.id === message.reply_to) clearReply();
+              el('text').value = ''; selectedMentions = []; previousDraft = '';
+            }
+          }
+        } catch (error) {
+          if (!retryable(error)) await GroupChatState.failed(scope, message.client_msg_id);
+          status(error.message, true); break;
+        }
+      }
+    } finally { sending = false; }
+  }
+  function scheduleRead() {
+    clearTimeout(readTimer);
+    readTimer = setTimeout(() => {
+      const box = el('messages');
+      if (document.hidden || !box.clientHeight || latest?.app || latest?.capabilities?.receipts !== 'device-v1' || !credential) return;
+      const bounds = box.getBoundingClientRect();
+      const read = Math.max(0, ...[...box.querySelectorAll('[data-message-id]')].filter(row => {
+        const r = row.getBoundingClientRect(); return r.bottom > bounds.top && r.top < bounds.bottom;
+      }).map(row => Number(row.dataset.messageId)).filter(id => id <= received));
+      if (read <= readAck) return;
+      void api('receipts', {device_id:GroupChatState.device(), received_cursor:received, read_cursor:read})
+        .then(() => { readAck = Math.max(readAck, read); }).catch(() => {});
+    }, 200);
+  }
+  el('messages').addEventListener('scroll', scheduleRead);
+  document.addEventListener('visibilitychange', scheduleRead);
+  el('send').addEventListener('submit', async event => {
+    event.preventDefault(); const text = el('text').value.trim(); if (!text || sending || !transportScope) return;
+    const mentions = [...new Set(selectedMentions.filter(m => members.some(member => member.principal === m.principal) && el('text').value.slice(m.start,m.end) === m.label).map(m => m.principal))];
+    const button = el('send').querySelector('button'); button.disabled = true;
+    const replying = replyContext, reply_to = replying ? replying.id : null;
+    if (!pendingSend || pendingSend.content !== text || pendingSend.reply_to !== reply_to || JSON.stringify(pendingSend.mentions) !== JSON.stringify(mentions)) pendingSend = {content:text, mentions, reply_to, client_msg_id:crypto.randomUUID()};
+    sending = true;
+    const message = pendingSend, scope = transportScope;
+    let savedForRetry = false;
+    try {
+      await GroupChatState.queue(scope, message);
+      savedForRetry = true;
+      GroupChatState.confirm((await api('messages', message)).id); await GroupChatState.sent(scope, message.client_msg_id);
+      pendingSend = null; if(replyContext === replying) clearReply(); el('text').value = ''; selectedMentions = []; previousDraft = ''; hideMentions();
+    } catch (error) {
+      if (!retryable(error)) await GroupChatState.failed(scope, message.client_msg_id);
+      status(error.message + (savedForRetry && retryable(error) ? '；消息已保存，恢复连接后重试。' : ''), true);
+    } finally { sending = false; button.disabled = false; }
+    await poll();
+  });
+  async function searchHistory(reset) {
+    const generation = reset ? ++historyGeneration : historyGeneration;
+    if (reset) { historyQuery = el('history-query').value.trim(); historyBefore = 0; el('history-results').replaceChildren(); historyMessages.clear(); el('history-more').hidden = true; }
+    if (!historyQuery) return;
+    const button = reset ? el('history-search').querySelector('button') : el('history-more'); button.disabled = true;
+    el('history-status').textContent = '正在查找…';
+    try {
+      const data = await api('search', undefined, new URLSearchParams({query:historyQuery,before_id:historyBefore,limit:50}));
+      if (generation !== historyGeneration) return;
+      for (const message of data.messages || []) {
+        const row = document.createElement('article'); row.className = 'history-result';
+        const author = document.createElement('strong'); author.textContent = message.sender_name;
+        const date = document.createElement('small'); date.textContent = new Date(message.created_at * 1000).toLocaleString();
+        const text = document.createElement('p'); text.textContent = message.content;
+        historyMessages.set(message.id,message); row.dataset.groupMessageId = message.id; row.tabIndex = 0;
+        row.append(author,date,text); el('history-results').append(row);
+      }
+      historyBefore = data.next_before_id || 0; el('history-more').hidden = !historyBefore;
+      const count = el('history-results').children.length;
+      el('history-status').textContent = count ? `已找到 ${count} 条消息` : '没有找到匹配的消息';
+    } catch (error) { if (generation === historyGeneration) el('history-status').textContent = error.message; }
+    finally { button.disabled = false; }
+  }
+  el('history-search').addEventListener('submit', event => { event.preventDefault(); void searchHistory(true); });
+  el('history-more').addEventListener('click', () => { void searchHistory(false); });
+  el('password-open').addEventListener('click', () => { el('password-form').hidden = false; el('new-password').focus(); });
+  el('password-cancel').addEventListener('click', () => { el('password-form').hidden = true; el('new-password').value = ''; });
+  el('password-form').addEventListener('submit', async event => {
+    event.preventDefault(); const button = el('password-form').querySelector('button'); button.disabled = true;
+    try {
+      await api('password', {password:el('new-password').value});
+      el('new-password').value = ''; el('password-form').hidden = true;
+      el('password-open').textContent = '修改密码';
+      status('密码已保存，之后可在任何设备上用这个名字和密码回来');
+    } catch (error) { status(error.message, true); } finally { button.disabled = false; }
+  });
+  function showHuman(member) {
+    HumanProfile.open({member,members,title:latest?.title||el('title').textContent,canEdit:member.principal===principal,
+      canGenerateAvatar:false,
+      loadAvatar:imageId=>api('avatar',undefined,new URLSearchParams({principal:member.principal,image_id:imageId}).toString()),
+      loadImage:image=>api('image',undefined,new URLSearchParams({principal:member.principal,image_id:image.id}).toString()),
+      save:async fields=>{const result=await api('profile',fields);await poll();return result;},
+      mention:m=>{mentionRange=null;chooseMember(m);},
+    });
+  }
+  el('rename').addEventListener('click', () => {const me=members.find(m=>m.principal===principal);if(me)showHuman(me);});
+  Avatars.setGuestLoader((member,imageId)=>api('avatar',undefined,new URLSearchParams({principal:member,image_id:imageId}).toString()));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void poll(); });
+  // The agent this browser may bring into the group; it reads each poll's state.
+  const agent = GuestAgent.start({ ticket, token: () => credential, refresh: () => poll() });
+  async function start() {
+    if (!ticket) { status('请从朋友发来的分享链接进入', true); return; }
+    el('name').value = saved.name || '朋友' + Math.floor(1000 + Math.random() * 9000);
+    if (credential) { await poll(); return; }
+    try {
+      const data = await api('info', {});
+      identityKey(data);
+      saved = stored(storageKey);
+      el('title').textContent = data.title;
+      if (saved.token) {
+        credential = saved.token;
+        el('name').value = saved.name || el('name').value;
+        await poll();
+        return;
+      }
+      if (saved.name) el('name').value = saved.name;
+      status('欢迎加入'); showJoin();
+    }
+    catch (error) { status(error.message, true); }
+  }
+  void start();
+})();

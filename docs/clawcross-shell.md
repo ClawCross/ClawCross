@@ -11,14 +11,14 @@
 Equivalent repo-local launcher:
 
 ```bash
-bash selfskill/scripts/run.sh clawcross
+bash launch/run.sh clawcross
 ```
 
 PowerShell launcher:
 
 ```powershell
 .\clawcross.ps1
-.\selfskill\scripts\run.ps1 clawcross
+.\launch\run.ps1 clawcross
 ```
 
 NPM entrypoints:
@@ -118,11 +118,10 @@ trae
 acp
 http
 temp
-openclaw:main
 team:default
 ```
 
-ACP-backed platforms route through the local `acpx` bridge and the frontend proxy. `acp`, `http`, and `temp` are generic connector targets; `openclaw:main` and `team:default` are namespace targets reserved for follow-up routing work.
+ACP-backed platforms route through the local `acpx` bridge and the frontend proxy. `acp`, `http`, and `temp` are generic connector targets; `team:default` is a namespace target reserved for follow-up routing work.
 
 ## NPM Packaging
 

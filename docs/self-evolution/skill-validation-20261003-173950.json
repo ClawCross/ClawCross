@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261003173950457798",
+  "candidate_id": "blended-verification-loop-approval-auth-structured-output",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-03T17:39:50.457770+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Formal MCP inventory verification failed for the new request_channel_setup tool: free-form dict schema cannot bind strict, identity arguments were not injected, and display category/parameter docs were missing. Fix with a fixed name/value list model, register username/session injection and notification category, then rerun test/test_tool_schemas.py and test/test_channel_setup.py. No credentials are allowed in model-visible draft fields."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-03T17:39:50.457820+00:00",
+  "asset_id": "sha256:6ac06e2e75cf7009cc0cecf39cbead908a0f4ec5729ae75366228bb6e7da04c7"
+}

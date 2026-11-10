@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261023075807837907",
+  "candidate_id": "blended-verification-loop-workspace-preflight",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-23T07:58:07.837878+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Fresh interactive CLI failed in _public_front_url: ModuleNotFoundError: No module named dotenv. Keep the welcome/public-domain reader usable with stdlib before installing core dependencies; verify actual TTY startup in a clean CLAWCROSS_HOME."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-23T07:58:07.837930+00:00",
+  "asset_id": "sha256:5e1a91dcf4598f4ad536787c7dc60661eec40d12728270f342efd44322552495"
+}

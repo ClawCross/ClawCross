@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261108040111174198",
+  "candidate_id": "blended-verification-loop-structured-output",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-08T04:01:11.174170+00:00"
+  },
+  "commands": [
+    {
+      "command": "ACP installer and focused regression",
+      "ok": false,
+      "stdout": "108 regression tests passed; six compatibility-fixture failures identified.",
+      "stderr": "Standalone launch/environment.py uses install, not install-component, and must remain standard-library only. Share pinned adapter package versions via config/acp-adapters.json rather than importing backend modules from the installer. Legacy test doubles need absent-config support; update CLI preparation mocks when adding transport options."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-08T04:01:11.174219+00:00",
+  "asset_id": "sha256:7e24093903cc6da9e68cb730dfb645376a6b1ef352580fdd0e4d54b33e3624e2"
+}

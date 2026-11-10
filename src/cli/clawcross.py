@@ -1,0 +1,3022 @@
+#!/usr/bin/env python3
+"""ClawCross Shell: a Codex-style multi-platform agent CLI."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+from datetime import datetime
+import io
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import select
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+import tempfile
+import unicodedata
+import urllib.error
+import urllib.request
+
+try:
+    import termios
+    import tty
+except ImportError:  # pragma: no cover - Windows fallback uses regular input().
+    termios = None
+    tty = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - non-Windows terminals use termios.
+    msvcrt = None
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from src.backend.common.runtime_paths import ENV_FILE, STATE_DIR, LOGS_DIR, PID_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env
+from src.backend.common.env_settings import read_env_all, write_env_settings
+ensure_runtime_dirs()
+STATE_PATH = STATE_DIR / "state.json"
+STATE_VERSION = 1
+APP_NAME = "ClawCross Code"
+
+
+ANSI_GREEN = "\033[38;5;36m"
+ANSI_DIM = "\033[2m"
+ANSI_RESET = "\033[0m"
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except Exception:
+                pass
+
+
+def _load_env() -> None:
+    env_path = ENV_FILE
+    if not env_path.exists():
+        return
+    for key, value in read_env_all(str(env_path)).items():
+        os.environ.setdefault(key, value)
+
+
+_configure_stdio()
+_load_env()
+
+PORT_AGENT = int(os.getenv("PORT_AGENT", "51200"))
+PORT_FRONTEND = int(os.getenv("PORT_FRONTEND", "51209"))
+AGENT_BASE = f"http://127.0.0.1:{PORT_AGENT}"
+FRONT_BASE = f"http://127.0.0.1:{PORT_FRONTEND}"
+INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
+
+
+def _public_front_url() -> str:
+    """Return a configured public entry, or a live Quick Tunnel, else localhost.
+    Re-read .env so updates take effect without restarting the CLI.
+
+    Note: HTTP requests still target FRONT_BASE because backend endpoints like
+    /generate_login_link are localhost-only by design. This helper is for
+    *display* (welcome banner, status output) only.
+    """
+    from src.backend.common.public_access import read_public_domain, is_quick_tunnel_domain
+    domain = read_public_domain(ENV_FILE)
+    if not domain:
+        return FRONT_BASE
+    if is_quick_tunnel_domain(domain):
+        try:
+            pid = int((PID_DIR / "tunnel.pid").read_text(encoding="utf-8").strip())
+            if pid <= 0:
+                return FRONT_BASE
+            if os.name == "nt":
+                result = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                                        capture_output=True, text=True, timeout=5)
+                if str(pid) not in result.stdout:
+                    return FRONT_BASE
+            else:
+                os.kill(pid, 0)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return FRONT_BASE
+    return domain
+
+# Unified CLI permission modes, sent as ``session_mode``; each runtime (WeBot, or an
+# ACP agent through acpx) applies it its own way.
+VALID_MODES = ("chat", "readonly", "manual", "auto", "bypass")
+_DEFAULT_MODE = "auto"
+
+
+def _agent_id(session: str) -> str:
+    """A session name as the number of its agent (letters, digits, '_' and '-')."""
+    return re.sub(r"[^A-Za-z0-9_-]+", "-", session or "").strip("-_")[:64] or "main"
+
+
+def _normalize_mode(mode: str | None) -> str:
+    """Normalize to one of VALID_MODES.
+
+    Legacy values (``execute`` / ``review``) and unknown strings collapse to
+    the default (currently ``auto``). Manual keeps tools available and sends
+    actions requiring approval to the human approval broker.
+    """
+    raw = (mode or "").strip().lower()
+    raw = {"plan": "readonly", "yolo": "bypass"}.get(raw, raw)
+    return raw if raw in VALID_MODES else _DEFAULT_MODE
+def _resolve_default_user() -> str:
+    """Pick the canonical CLI user from env, users.json, or 'admin' fallback."""
+    for var in ("CLAW_USER", "CLI_USER"):
+        v = (os.getenv(var) or "").strip()
+        if v:
+            return v
+    users_json = Path(os.getenv("CLAWCROSS_HOME", str(Path.home() / ".clawcross"))) / "config" / "users.json"
+    if users_json.is_file():
+        try:
+            data = json.loads(users_json.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data:
+                return next(iter(data))
+        except Exception:
+            pass
+    return "admin"
+
+
+DEFAULT_USER = _resolve_default_user()
+
+KNOWN_PLATFORMS = {
+    "internal": "ClawCross internal agent",
+    "openclaw": "OpenClaw agent via built-in ACP",
+    "codex": "ACP Codex CLI via built-in ACP",
+    "claude": "ACP Claude Code via built-in ACP",
+    "gemini": "ACP Gemini CLI via built-in ACP",
+    "aider": "ACP Aider via built-in ACP",
+    "cursor": "ACP Cursor CLI via built-in ACP",
+    "copilot": "ACP Copilot CLI via built-in ACP",
+    "droid": "ACP Droid CLI via built-in ACP",
+    "iflow": "ACP iFlow CLI via built-in ACP",
+    "kilocode": "ACP Kilo Code CLI via built-in ACP",
+    "kimi": "ACP Kimi CLI via built-in ACP",
+    "kiro": "ACP Kiro CLI via built-in ACP",
+    "opencode": "ACP OpenCode CLI via built-in ACP",
+    "pi": "ACP Pi CLI via built-in ACP",
+    "qoder": "ACP Qoder CLI via built-in ACP",
+    "qwen": "ACP Qwen CLI via built-in ACP",
+    "trae": "ACP Trae CLI via built-in ACP",
+    "acp": "Generic ACP connector",
+    "http": "Generic HTTP connector",
+    "temp": "Temporary connector",
+    "team:default": "ClawCross team route (planned route)",
+}
+ACP_PLATFORMS = {
+    "openclaw",
+    "codex",
+    "claude",
+    "gemini",
+    "aider",
+    "cursor",
+    "copilot",
+    "droid",
+    "iflow",
+    "kilocode",
+    "kimi",
+    "kiro",
+    "opencode",
+    "pi",
+    "qoder",
+    "qwen",
+    "trae",
+    "claude-code",
+    "gemini-cli",
+}
+SLASH_COMMANDS = [
+    ("/platform", "platform actions (list / use)"),
+    ("/resume", "pick a session and replay the last 10 messages"),
+    ("/resume <id>", "switch session by id (no history replay)"),
+    ("/new session", "create and switch to a new session"),
+    ("/mode [<mode>]", "permission mode picker (or `/mode chat|readonly|manual|auto|bypass` direct)"),
+    ("/state", "show persisted state"),
+    ("/restart", "restart the ClawCross backend"),
+    ("/cancel", "cancel generation on the current platform (internal or ACP)"),
+    ("/front", "get magic link (local 127.0.0.1 + public tunnel)"),
+    ("/tunnel [on|off|status]", "Hub public access (Cloudflare optional)"),
+    ("/help", "show commands"),
+    ("/exit", "leave the shell (backend keeps running)"),
+    ("/shutdown", "stop all background services and quit"),
+]
+SLASH_MENU = [
+    ("/agents", "list and manage agents", "/agents", True),
+    ("/groups", "list and manage group chats", "/groups", True),
+    ("/history", "show current conversation history", "/history", True),
+    ("/reset", "reset the current Agent", "/reset", True),
+    ("/compact", "compress the current conversation", "/compact", True),
+    ("/platform", "platform actions (list / use)", "/platform", True),
+    ("/state", "show persisted state", "/state", True),
+    ("/restart", "restart the ClawCross backend", "/restart", True),
+    ("/help", "show commands", "/help", True),
+    ("/cancel", "cancel generation on the current platform (internal or ACP)", "/cancel", True),
+    ("/resume", "pick session and replay recent history", "/resume", True),
+    ("/new session", "create a new session", "/new session", True),
+    ("/login", "show current user; change it or keep", "/login", True),
+    ("/mode", "permission mode: chat / readonly / manual / auto / bypass", "/mode", True),
+    ("/model", "model actions (list / use / add / migrate / remove)", "/model", True),
+    ("/team [<name>]", "team actions (list / new / rename / delete / member)", "/team", True),
+    ("/workflow", "workflow actions (list / show / run / new / delete)", "/workflow", True),
+    ("/skill [<team>]", "skill actions (list / show / new / delete)", "/skill", True),
+    ("/expert [<team>]", "team experts (list / show / add / edit / delete)", "/expert", True),
+    ("/cron [<team>]", "cron actions (list / add / delete)", "/cron", True),
+    ("/channel", "list / setup channels", "/channel", True),
+    ("/front", "magic link: local 127.0.0.1 + public tunnel", "/front", True),
+    ("/tunnel", "Hub public access (Cloudflare optional) (on/off/status)", "/tunnel", True),
+    ("/exit", "leave the shell (backend keeps running)", "/exit", True),
+    ("/shutdown", "stop all background services and quit", "/shutdown", True),
+]
+CLI_COMMANDS = [
+    ("clawcross", "enter interactive shell"),
+    ("clawcross run [-p platform] <prompt>", "run one prompt"),
+    ("clawcross use <platform>", "persist current platform"),
+    ("clawcross config KEY VALUE", "set a config value in config/.env"),
+    ("clawcross config get KEY", "print one config value"),
+    ("clawcross config list", "list configured values"),
+    ("clawcross model [name]", "select/set LLM model"),
+    ("clawcross team [name|new|rename|delete|member ...]", "list/show teams, create/rename/delete, manage members"),
+    ("clawcross workflow [show|run|new|delete|runs|log ...]", "list/show/run/create/delete workflows; runs=discussion list, log=transcript"),
+    ("clawcross skill [agent|show|new|delete ...]", "list/show skills, create or delete one"),
+    ("clawcross expert [team|show|add|edit|delete ...]", "manage team personas/experts"),
+    ("clawcross cron [list [team]|add|delete <task_id>]", "list / add / delete cron alarms"),
+    ("clawcross channel [list|setup ...]", "list / interactively set up channels"),
+    ("clawcross platforms", "list available platforms"),
+    ("clawcross state", "print state json"),
+    ("clawcross login [name]", "show or set the current username"),
+    ("clawcross cancel", "cancel generation on the current platform (internal or ACP)"),
+    ("clawcross restart", "request a backend restart"),
+    ("clawcross shutdown", "stop all background services (alias: stop)"),
+]
+
+SENSITIVE_CONFIG_RE = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|COOKIE|AUTH)", re.IGNORECASE)
+CHAT_SLASH_COMMANDS = [
+    ("/cross help", "show this command list"),
+    ("/cross platforms", "list agent platforms"),
+    ("/cross use <platform>", "switch platform"),
+    ("/cross resume", "list sessions for current platform"),
+    ("/cross resume <id>", "switch session by id"),
+    ("/cross new session", "create and switch to a new session"),
+    ("/cross mode [<mode>]", "permission mode picker: chat / readonly / manual / auto / bypass"),
+    ("/cross model [name]", "select/set LLM model"),
+    ("/cross team [name|new|rename|delete|member ...]", "list/show teams, create/rename/delete, manage members"),
+    ("/cross workflow", "list workflows (`show`/`run`/`new`/`delete`/`runs`/`log <id>`)"),
+    ("/cross skill [agent|show|new|delete ...]", "list/show skills, create or delete one"),
+    ("/cross expert [team|show|add|edit|delete ...]", "manage team personas/experts"),
+    ("/cross cron [team]", "list cron alarms (optionally for one team)"),
+    ("/cross channel", "list configured channels (setup requires CLI)"),
+    ("/cross state", "show current shell state"),
+    ("/cross restart", "request a backend restart"),
+    ("/cross cancel", "cancel generation on the current platform (internal or ACP)"),
+    ("/cross front", "get a public magic link"),
+    ("/cross exit", "leave /cross mode"),
+]
+
+
+def _repo_session_name() -> str:
+    root = Path(os.getcwd()).resolve()
+    name = root.name or "default"
+    return name.replace(" ", "-")
+
+
+def _state_session_base_name(state: dict) -> str:
+    cwd = str(_current(state).get("cwd") or "").strip()
+    if cwd:
+        name = Path(cwd).expanduser().name or "default"
+        return name.replace(" ", "-")
+    return _repo_session_name()
+
+
+def _default_state() -> dict:
+    session = _repo_session_name()
+    return {
+        "version": STATE_VERSION,
+        "current": {
+            "platform": "internal",
+            "session": session,
+            "user": DEFAULT_USER,
+            "mode": _DEFAULT_MODE,
+        },
+        "platforms": {
+            "internal": {"session": session},
+        },
+        "recent": [],
+    }
+
+
+def _load_state(path: Path | str | None = None) -> dict:
+    state_path = Path(path) if path else STATE_PATH
+    if not state_path.exists():
+        state = _default_state()
+        state["__state_path"] = str(state_path)
+        return state
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        data = _default_state()
+    if not isinstance(data, dict):
+        data = _default_state()
+    default = _default_state()
+    data.setdefault("version", STATE_VERSION)
+    data.setdefault("current", default["current"])
+    data.setdefault("platforms", {})
+    data.setdefault("recent", [])
+    for key, value in default["current"].items():
+        data["current"].setdefault(key, value)
+    # Drop legacy / unknown mode values (e.g. "review") so the CLI never prompts
+    # with a value its UI no longer offers. Silent — saved on next /save.
+    data["current"]["mode"] = _normalize_mode(data["current"].get("mode"))
+    # Migrate legacy "admin" user to the canonical user from users.json
+    # when admin is not a registered account. Avoids the empty-result
+    # problem when state was created before users.json was provisioned.
+    cur_user = (data["current"].get("user") or "").strip()
+    canonical = _resolve_default_user()
+    if cur_user and cur_user != canonical:
+        users_json = Path(os.getenv("CLAWCROSS_HOME", str(Path.home() / ".clawcross"))) / "config" / "users.json"
+        if users_json.is_file():
+            try:
+                registered = json.loads(users_json.read_text(encoding="utf-8"))
+                if isinstance(registered, dict) and cur_user not in registered and canonical in registered:
+                    data["current"]["user"] = canonical
+            except Exception:
+                pass
+    data["__state_path"] = str(state_path)
+    return data
+
+
+def _channel_state_path(channel: str, user_id: str) -> Path:
+    raw = f"{channel or 'chat'}-{user_id or 'anonymous'}"
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("._") or "chat-anonymous"
+    return STATE_DIR / "channels" / f"{safe}.json"
+
+
+def load_channel_state(channel: str, user_id: str, username: str | None = None) -> dict:
+    state = _load_state(_channel_state_path(channel, user_id))
+    current = _current(state)
+    current["user"] = username or user_id or DEFAULT_USER
+    safe_session = _chat_default_session(channel, user_id)
+    current["session"] = current.get("session") or safe_session
+    state["__chat_channel"] = channel
+    state["__chat_user_id"] = user_id
+    state["__chat_default_session"] = safe_session
+    return state
+
+
+def _chat_default_session(channel: str, user_id: str) -> str:
+    raw = f"{channel or 'chat'}-{user_id or 'anonymous'}"
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw).strip(".-")
+    return safe or "chat-anonymous"
+
+
+def _package_version() -> str:
+    path = PROJECT_ROOT / "package.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            version = data.get("version")
+            if isinstance(version, str) and version:
+                return version
+        except Exception:
+            pass
+    return "dev"
+
+
+def _style(text: str, color: str = ANSI_GREEN) -> str:
+    if not sys.stdout.isatty() or os.getenv("NO_COLOR"):
+        return text
+    return f"{color}{text}{ANSI_RESET}"
+
+
+def _dim(text: str) -> str:
+    return _style(text, ANSI_DIM)
+
+
+def _term_width() -> int:
+    # Use the actual terminal width when available, but keep a tiny floor so
+    # the TUI can still render in very small panes instead of pretending the
+    # screen is wider than it is.
+    return max(20, min(120, shutil.get_terminal_size((100, 24)).columns))
+
+
+def _term_height() -> int:
+    return max(10, shutil.get_terminal_size((100, 24)).lines)
+
+
+def _strip_ansi(text: str) -> str:
+    return ANSI_RE.sub("", str(text))
+
+
+def _cell_width(ch: str) -> int:
+    if not ch:
+        return 0
+    if unicodedata.combining(ch):
+        return 0
+    if unicodedata.east_asian_width(ch) in {"F", "W"}:
+        return 2
+    return 1
+
+
+def _display_width(text: str) -> int:
+    return sum(_cell_width(ch) for ch in _strip_ansi(text))
+
+
+def _truncate_display(text: str, width: int) -> str:
+    text = _strip_ansi(text)
+    if width <= 0:
+        return ""
+    if _display_width(text) <= width:
+        return text
+    if width <= 1:
+        return ""
+    out = []
+    used = 0
+    ellipsis_width = 1
+    for ch in text:
+        ch_width = _cell_width(ch)
+        if used + ch_width + ellipsis_width > width:
+            break
+        out.append(ch)
+        used += ch_width
+    return "".join(out) + "…"
+
+
+def _pad_display(text: str, width: int) -> str:
+    text = _truncate_display(text, width)
+    return text + " " * max(0, width - _display_width(text))
+
+
+def _fit(text: str, width: int) -> str:
+    return _truncate_display(str(text), width)
+
+
+def _claw_logo() -> list[str]:
+    return [
+        "     ████    ████",
+        "   ██████████████",
+        "  ████ ██ ██ ████",
+        "  ████   ▄   ████",
+        "   ██████████████",
+        "     ████    ████",
+        "",
+        "      ○──□──○──□",
+        "",
+        "        ClawCross",
+    ]
+
+
+def _format_command_rows(rows: list[tuple[str, str]], width: int) -> list[str]:
+    cmd_width = min(max(_display_width(command) for command, _ in rows) + 2, max(36, width - 18))
+    lines = []
+    for command, description in rows:
+        left = _pad_display(command, cmd_width)
+        right_width = max(10, width - cmd_width - 1)
+        lines.append(f"{left} {_fit(description, right_width)}")
+    return lines
+
+
+def _platform_status_line(name: str) -> str:
+    if name == "team:default":
+        return "planned"
+    tool = _acpx_tool(name)
+    if tool in ACP_PLATFORMS:
+        from importlib.util import find_spec
+        return "ACP ready" if find_spec('acp') else "ACP SDK missing"
+    if name in {"internal"}:
+        return "ready"
+    if name in {"acp", "http", "temp"}:
+        return "connector"
+    return "available"
+
+
+def _recent_lines(state: dict, width: int) -> list[str]:
+    recent = state.get("recent") or []
+    if not recent:
+        return ["No recent activity yet."]
+    lines = []
+    for item in recent[:3]:
+        platform = item.get("platform", "internal")
+        session = item.get("session", "default")
+        lines.append(_fit(f"{platform} / {session}", width))
+    return lines
+
+
+def _llm_status_hint() -> str:
+    """Single-line hint shown in the welcome banner about LLM configuration."""
+    try:
+        from src.cli.commands import models_store
+        active = models_store.get_active()
+        if active is not None:
+            return f"LLM: {active.provider}/{active.model} (profile {active.name!r})"
+    except Exception:
+        pass
+    model = os.environ.get("LLM_MODEL", "").strip()
+    if model:
+        provider = os.environ.get("LLM_PROVIDER", "").strip() or "?"
+        return f"LLM: {provider}/{model} (from .env)"
+    return "LLM: not configured — type /model to choose one."
+
+
+def _missing_model_hint(model: str = "default") -> str | None:
+    if model and model != "default":
+        return None
+    try:
+        from src.cli.commands.runtime_provider import resolve_active_profile
+        if resolve_active_profile().model:
+            return None
+    except Exception:
+        pass
+    if os.environ.get("LLM_MODEL", "").strip():
+        return None
+    return "LLM model is not configured. Type /model in chat, or run `clawcross model`, to set one."
+
+
+def _welcome_lines(state: dict) -> list[str]:
+    current = _current(state)
+    width = _term_width()
+    platform = current.get("platform", "internal")
+    if width < 88:
+        # Narrow terminals get a stacked layout so the banner adapts instead of
+        # forcing a wide two-column frame that overflows the viewport.
+        inner_width = max(10, width - 4)
+        web_ui_url = _public_front_url()
+        lines = [_style("╭" + "─" * (width - 2) + "╮")]
+        for text in [
+            f"{APP_NAME} v{_package_version()}",
+            f"Web UI: {web_ui_url}",
+            f"Platform: {platform} ({_platform_status_line(platform)}) | Session: {current.get('session', 'default')}",
+            f"User: {current.get('user', DEFAULT_USER)} | Mode: {_normalize_mode(current.get('mode'))}",
+            "Type / to choose a command.",
+            "Type /help for all commands.",
+            _llm_status_hint(),
+        ]:
+            lines.append("│ " + _pad_display(_fit(text, inner_width), inner_width) + " │")
+        lines.append(_style("╰" + "─" * (width - 2) + "╯"))
+        lines.append("")
+        return lines
+
+    right_width = min(max(52, width - 31), 76)
+    web_ui_url = _public_front_url()
+    right = [
+        f"{APP_NAME} v{_package_version()}",
+        _fit(f"Web UI: {web_ui_url}", right_width),
+        _fit(
+            f"Platform: {platform} ({_platform_status_line(platform)}) | "
+            f"Session: {current.get('session', 'default')} | User: {current.get('user', DEFAULT_USER)} | "
+            f"Mode: {_normalize_mode(current.get('mode'))}",
+            right_width,
+        ),
+        "Type / as the first character to choose a command.",
+        "Type /help for all commands.",
+        _fit(_llm_status_hint(), right_width),
+    ]
+    logo = _claw_logo()
+    left_width = max(_display_width(line) for line in logo)
+    content_width = min(width, left_width + right_width + 5)
+    title = f" {APP_NAME} "
+    lines = [_style("╭─" + title + "─" * max(0, content_width - len(title) - 1) + "╮")]
+    for idx in range(max(len(logo), len(right))):
+        left = logo[idx] if idx < len(logo) else ""
+        text = right[idx] if idx < len(right) else ""
+        lines.append(
+            "│ "
+            + _pad_display(left, left_width)
+            + " "
+            + _style("│")
+            + " "
+            + _pad_display(text, right_width)
+            + " │"
+        )
+    lines.append(_style("╰" + "─" * content_width + "╯"))
+    lines.append("")
+    return lines
+
+
+def print_welcome(state: dict) -> None:
+    print("\n".join(_welcome_lines(state)))
+
+
+def _save_state(state: dict) -> None:
+    state_path = Path(state.get("__state_path") or STATE_PATH)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    serializable = {k: v for k, v in state.items() if not k.startswith("__")}
+    payload = json.dumps(serializable, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=str(state_path.parent),
+        delete=False,
+        prefix="state.",
+        suffix=".tmp",
+    ) as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+        tmp_name = handle.name
+    os.replace(tmp_name, state_path)
+
+
+def _current(state: dict) -> dict:
+    return state.setdefault("current", _default_state()["current"])
+
+
+def _set_platform(state: dict, platform: str) -> None:
+    platform = (platform or "internal").strip()
+    current = _current(state)
+    old_platform = current.get("platform") or "internal"
+    old_session = current.get("session") or _repo_session_name()
+    state.setdefault("platforms", {}).setdefault(old_platform, {})["session"] = old_session
+    current["platform"] = platform
+    platform_state = state.setdefault("platforms", {}).setdefault(platform, {})
+    current["session"] = platform_state.get("session") or old_session
+    current["session_resumed"] = False
+    platform_state["session"] = current["session"]
+
+
+def _set_chat_platform(state: dict, platform: str) -> None:
+    platform = (platform or "internal").strip()
+    current = _current(state)
+    default_session = state.get("__chat_default_session") or _repo_session_name()
+    current["platform"] = platform
+    current["session"] = default_session
+    current["session_resumed"] = False
+    state.setdefault("platforms", {}).setdefault(platform, {})["session"] = default_session
+    _save_state(state)
+
+
+def _set_session(state: dict, session: str, *, resumed: bool = False) -> None:
+    current = _current(state)
+    platform = current.get("platform") or "internal"
+    current["session"] = session or _repo_session_name()
+    current["session_resumed"] = bool(resumed)
+    state.setdefault("platforms", {}).setdefault(platform, {})["session"] = current["session"]
+
+
+def _remember_recent(state: dict) -> None:
+    current = dict(_current(state))
+    recent = state.setdefault("recent", [])
+    item = {
+        "platform": current.get("platform", "internal"),
+        "session": current.get("session", "default"),
+    }
+    recent[:] = [r for r in recent if not (
+        r.get("platform") == item["platform"]
+        and r.get("session") == item["session"]
+    )]
+    recent.insert(0, item)
+    del recent[20:]
+
+
+def _headers_for_user(user: str) -> dict:
+    global INTERNAL_TOKEN
+    if not INTERNAL_TOKEN:
+        INTERNAL_TOKEN = read_env_all(str(ENV_FILE)).get("INTERNAL_TOKEN", "")
+    if not INTERNAL_TOKEN:
+        raise RuntimeError("INTERNAL_TOKEN is not configured. Start ClawCross or configure config/.env first.")
+    return {"Authorization": f"Bearer {INTERNAL_TOKEN}:{user}"}
+
+
+def _post_stream(url: str, headers: dict, data: dict, timeout: int = 600):
+    body = json.dumps(data).encode("utf-8")
+    hdrs = {"Content-Type": "application/json", "Accept": "text/event-stream"}
+    hdrs.update(headers or {})
+    req = urllib.request.Request(url, data=body, headers=hdrs, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        for raw_line in resp:
+            yield raw_line.decode("utf-8", errors="replace")
+
+
+def _request_json(method: str, url: str, headers: dict | None = None, data: dict | None = None, timeout: int = 20):
+    body = json.dumps(data or {}).encode("utf-8") if data is not None else None
+    hdrs = {"Accept": "application/json"}
+    if data is not None:
+        hdrs["Content-Type"] = "application/json"
+    hdrs.update(headers or {})
+    req = urllib.request.Request(url, data=body, headers=hdrs, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            text = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        # Read the body so the caller sees the real backend error
+        # (e.g. "acpx openclaw: sessions list failed: ...") instead of
+        # just "HTTP Error 502: BAD GATEWAY".
+        try:
+            body_bytes = exc.read() or b""
+        except Exception:
+            body_bytes = b""
+        body_text = body_bytes.decode("utf-8", errors="replace").strip()
+        detail = ""
+        if body_text:
+            try:
+                payload = json.loads(body_text)
+                if isinstance(payload, dict):
+                    detail = str(payload.get("error") or payload.get("message") or "").strip()
+            except json.JSONDecodeError:
+                detail = body_text[:200]
+        if detail:
+            raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
+        raise
+    return json.loads(text) if text.strip() else {}
+
+
+def _fetch_session_history(state: dict, session_id: str, *, limit: int = 10) -> tuple[list[dict], str | None]:
+    """Fetch the tail of a session's messages for resume-replay.
+
+    A session (internal or ACP) is an agent: its history is GET /v1/agents/{id}/history,
+    and one with no turn yet has none. Returns ([], error_str) on failure so callers
+    can render silently when offline.
+    """
+    current = _current(state)
+    platform = current.get("platform") or "internal"
+    if platform != "internal" and (":" in platform or _acpx_tool(platform) not in ACP_PLATFORMS):
+        return [], None
+    user = current.get("user") or DEFAULT_USER
+    try:
+        data = _request_json("GET", f"{AGENT_BASE}/v1/agents/{_agent_id(session_id)}/history?limit={limit}",
+                             headers=_headers_for_user(user))
+    except Exception as exc:
+        return [], None if str(exc).startswith("HTTP 404") else str(exc)
+    return list(data.get("messages") or [])[-limit:], None
+
+
+_HIST_COLOR_USER = "\033[38;5;39m"   # cyan-blue
+_HIST_COLOR_AI = ANSI_GREEN
+_HIST_COLOR_TOOL = "\033[38;5;179m"  # warm yellow
+
+
+def _print_history_tail(messages: list[dict], *, max_chars: int = 400) -> None:
+    """Render replayed history with turn numbers, colored labels, and
+    blank-line separation. Each message stays on a single CLI row so a
+    code block in an AI reply does not flood the terminal."""
+    if not messages:
+        return
+    print(_dim("── history ──"))
+    turn = 0
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role") or "").strip().lower()
+        content = msg.get("content") or ""
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    parts.append(part.get("text") or "")
+            content = "".join(parts)
+        text = re.sub(r"\s*\n\s*", " ⏎ ", str(content).strip())
+        if len(text) > max_chars:
+            text = text[:max_chars].rstrip() + "…"
+        tool_calls = msg.get("tool_calls") if role == "assistant" else None
+        tool_call_names = [
+            tc.get("name") for tc in tool_calls
+            if isinstance(tc, dict) and tc.get("name")
+        ] if isinstance(tool_calls, list) else []
+        if not text and not tool_call_names:
+            continue
+
+        turn += 1
+        if role == "user":
+            label = _style("you", _HIST_COLOR_USER)
+        elif role == "assistant":
+            label = _style("ai", _HIST_COLOR_AI)
+        elif role == "tool":
+            label = _style(f"tool[{msg.get('tool_name', '')}]", _HIST_COLOR_TOOL)
+        else:
+            label = _dim(role or "?")
+        prefix = _dim(f"[{turn}]")
+
+        if text:
+            print(f"  {prefix} {label}: {text}")
+        for name in tool_call_names:
+            arrow = _dim("→tool")
+            print(f"  {prefix} {label}{arrow}: {name}")
+        print()
+    print(_dim("── end ──"))
+
+
+def _replay_current_session_history(state: dict, *, unavailable_prefix: str | None = None) -> None:
+    current = _current(state)
+    session = (current.get("session") or "").strip()
+    if not session:
+        return
+    history, hist_err = _fetch_session_history(state, session, limit=10)
+    if hist_err:
+        if unavailable_prefix:
+            print(f"{unavailable_prefix}: {hist_err}")
+        return
+    _print_history_tail(history)
+
+
+def _new_session_name(state: dict) -> str:
+    cwd_name = _state_session_base_name(state)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return f"{cwd_name}-{stamp}"
+
+
+def _switch_to_new_session(state: dict) -> str:
+    session = _new_session_name(state)
+    _set_session(state, session, resumed=False)
+    _save_state(state)
+    return session
+
+
+def _list_current_platform_sessions(state: dict) -> tuple[list[dict], str | None]:
+    current = _current(state)
+    platform = current.get("platform") or "internal"
+    try:
+        if platform == "internal":
+            # WeBot's sessions are its agents; one nobody has written to yet has no title.
+            user = current.get("user") or DEFAULT_USER
+            data = _request_json("GET", f"{AGENT_BASE}/v1/agents?status=1&platform=webot",
+                                 headers=_headers_for_user(user))
+            return [{"session": a["agent_id"], "title": a["status"]["title"],
+                     "message_count": a["status"].get("message_count")}
+                    for a in data.get("data") or [] if (a.get("status") or {}).get("title")], None
+        tool = _acpx_tool(platform)
+        if ":" not in platform and tool in ACP_PLATFORMS:
+            # This tool's sessions are its agents.
+            user = current.get("user") or DEFAULT_USER
+            data = _request_json("GET", f"{AGENT_BASE}/v1/agents", headers=_headers_for_user(user))
+            return [{"session": a["agent_id"], "title": a.get("name") or "", "message_count": None}
+                    for a in data.get("data") or [] if a.get("platform") == tool], None
+        return [], f"Platform '{platform}' does not expose session listing yet."
+    except Exception as exc:
+        return [], str(exc)
+
+
+def _print_session_rows(rows: list[dict], state: dict, error: str | None = None) -> None:
+    current_session = _current(state).get("session", "")
+    if error:
+        print(f"session list unavailable: {error}")
+    if not rows:
+        print("No sessions found. Use /new session to create one.")
+        return
+    print("Sessions:")
+    for row in rows:
+        session = row.get("session", "")
+        marker = "*" if session == current_session else " "
+        title = row.get("title") or ""
+        count = row.get("message_count")
+        suffix = f" ({count} messages)" if isinstance(count, int) else ""
+        print(f" {marker} {session:<28} {_fit(title, 44)}{suffix}")
+
+
+_TOOL_COLOR = "\033[38;5;179m"   # warm yellow, matches history tool label
+
+
+_THINK_FRAMES = ("✦", "✕", "✚", "✳")  # crossing-themed
+
+
+class _Thinking:
+    """Animated 'thinking' indicator shown after a prompt is sent and before the
+    first token streams back. TTY only; cleared in place once output begins."""
+
+    def __init__(self, label: str = "ClawCross thinking") -> None:
+        try:
+            self.enabled = bool(sys.stdout.isatty())
+        except Exception:
+            self.enabled = False
+        self.label = label
+        self._stop = threading.Event()
+        self._thread: "threading.Thread | None" = None
+        self._stopped = False
+
+    def start(self) -> None:
+        if not self.enabled:
+            return
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def _spin(self) -> None:
+        i = 0
+        while not self._stop.wait(0.35):
+            frame = _THINK_FRAMES[i % len(_THINK_FRAMES)]
+            dots = "." * (1 + (i % 3))
+            sys.stdout.write(
+                f"\r{ANSI_GREEN}{frame}{ANSI_RESET} {ANSI_DIM}{self.label}{dots}{ANSI_RESET}\033[K"
+            )
+            sys.stdout.flush()
+            i += 1
+
+    def stop(self) -> None:
+        if not self.enabled or self._stopped:
+            return
+        self._stopped = True
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1.0)
+        sys.stdout.write("\r\033[K")  # wipe the indicator line before real output
+        sys.stdout.flush()
+
+
+def _print_sse_text(lines) -> bool:
+    wrote = False
+    completed = False
+    at_line_start = True
+    seen_tool_ids: set[str] = set()
+    thinking = _Thinking()
+    thinking.start()
+    try:
+      for line in lines:
+        line = line.strip()
+        if not line or not line.startswith("data:"):
+            continue
+        data_str = line[5:].strip()
+        if data_str == "[DONE]":
+            completed = True
+            break
+        try:
+            chunk = json.loads(data_str)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Invalid streaming response from the Agent service") from exc
+        if chunk.get("error"):
+            error = chunk["error"]
+            raise RuntimeError(error.get("message", str(error)) if isinstance(error, dict) else str(error))
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue  # OpenAI usage-only frames have an empty choices array.
+        completed = completed or bool(choices[0].get("finish_reason"))
+        delta = choices[0].get("delta") or {}
+        text = delta.get("content", "")
+        if text:
+            thinking.stop()
+            print(text, end="", flush=True)
+            wrote = True
+            at_line_start = text.endswith("\n")
+            continue
+        meta = delta.get("meta") if isinstance(delta, dict) else None
+        if not isinstance(meta, dict):
+            continue
+        mtype = meta.get("type")
+        # ACP route (proxy_acpx_chat): acpx_tool_start / acpx_tool_end (+title/kind/status)
+        # Internal route (/v1/chat/completions): tool_start / tool_end (+name)
+        is_start = mtype in ("acpx_tool_start", "tool_start")
+        is_end = mtype in ("acpx_tool_end", "tool_end")
+        if not (is_start or is_end):
+            # ignore acpx_tool_update / acpx_trace / tools_start / tools_end / ai_start
+            continue
+        thinking.stop()
+        if not at_line_start:
+            print()
+            at_line_start = True
+        tool_id = str(meta.get("tool_call_id") or "")
+        title = (
+            str(meta.get("title") or "").strip()
+            or str(meta.get("name") or "").strip()
+            or "tool"
+        )
+        if is_start:
+            if tool_id and tool_id in seen_tool_ids:
+                continue
+            if tool_id:
+                seen_tool_ids.add(tool_id)
+            parts = [title]
+            kind = str(meta.get("kind") or "").strip()
+            status = str(meta.get("status") or "").strip()
+            if kind:
+                parts.append(kind)
+            if status:
+                parts.append(status)
+            label = _style(f"→ tool[{' · '.join(parts)}]", _TOOL_COLOR)
+            print(label, flush=True)
+            wrote = True
+        else:  # tool_end / acpx_tool_end
+            print(_style(f"✓ {title}", _TOOL_COLOR), flush=True)
+            wrote = True
+    finally:
+        thinking.stop()
+    if wrote and not at_line_start:
+        print()
+    if not completed:
+        raise RuntimeError("Agent reply stream ended before completion; use clawcross status to check the service")
+    return wrote
+
+
+def _run_internal(prompt: str, state: dict, *, model: str = "default") -> None:
+    current = _current(state)
+    user = current.get("user") or DEFAULT_USER
+    session_id = _agent_id(current.get("session") or "default")
+    mode = _normalize_mode(current.get("mode"))
+    payload = {
+        "model": model or "default",
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": True,
+        "user": user,
+        "session_id": session_id,
+        "session_mode": mode,
+        "cli_workspace": str(Path.cwd().resolve()),
+    }
+    if mode == "chat":
+        # Chat: agent must answer with text only; no tool calls allowed.
+        payload["enabled_tools"] = []
+    _stream_turn(payload, state)
+
+
+def _stream_turn(payload: dict, state: dict, *, timeout: int = 600) -> None:
+    """While the original reply waits, resolve human approvals on that same turn."""
+    user = _current(state).get("user") or DEFAULT_USER
+    headers = _headers_for_user(user)
+    lines = _post_stream(f"{AGENT_BASE}/v1/chat/completions", headers, payload, timeout=timeout)
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        _print_sse_text(lines)
+        return
+    done, stopped = threading.Event(), threading.Event()
+    errors: list[Exception] = []
+
+    def consume():
+        try:
+            def active_lines():
+                for line in lines:
+                    if stopped.is_set():
+                        return
+                    yield line
+            _print_sse_text(active_lines())
+        except Exception as exc:
+            if not stopped.is_set():
+                errors.append(exc)
+        finally:
+            done.set()
+
+    worker = threading.Thread(target=consume, daemon=True)
+    worker.start()
+    try:
+        while not done.wait(1):
+            try:
+                from urllib.parse import urlencode
+                approvals = _request_json("GET", AGENT_BASE + "/webot/tool-approvals?" + urlencode({
+                    "user_id": user, "session_id": payload["session_id"], "status": "pending",
+                }), headers={"X-Internal-Token": INTERNAL_TOKEN}, timeout=2)
+            except (OSError, RuntimeError):
+                continue
+            for item in approvals.get("approvals", []):
+                if (item.get("review") or {}).get("reviewer") == "auto_review":
+                    continue
+                print(f"\n需要批准 · {item.get('tool_name', '工具')}\n{item.get('request_reason', '')}")
+                for key, value in (item.get("args") or {}).items():
+                    print(f"  {key}: {str(value)[:2000]}")
+                while True:
+                    choice = input("Y 同意 / N 拒绝 / KEEP Y 记住此操作 > ").strip().upper()
+                    if choice in {"Y", "N", "KEEP Y", "KEEPY"}:
+                        break
+                _request_json("POST", AGENT_BASE + "/webot/tool-approvals/resolve",
+                    headers={"X-Internal-Token": INTERNAL_TOKEN}, data={
+                        "user_id": user, "session_id": payload["session_id"],
+                        "approval_id": item["approval_id"], "action": "deny" if choice == "N" else "approve",
+                        "remember": choice.startswith("KEEP"),
+                    })
+    except (KeyboardInterrupt, EOFError):
+        stopped.set()
+        raise KeyboardInterrupt from None  # run_prompt cancels through the gateway.
+    if errors:
+        raise errors[0]
+
+
+def _acpx_tool(platform: str) -> str:
+    return platform.split(":", 1)[0].strip().lower()
+
+
+def _run_acpx(prompt: str, state: dict, *, model: str = "default") -> None:
+    """Talk to the ACP agent this session is (a new session name is a new agent)."""
+    current = _current(state)
+    platform = current.get("platform") or "codex"
+    tool = _acpx_tool(platform)
+    if tool not in ACP_PLATFORMS:
+        raise RuntimeError(f"Unsupported ACP platform: {platform}")
+    user = current.get("user") or DEFAULT_USER
+    payload = {
+        "model": tool,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": True,
+        "session_id": _agent_id(current.get("session") or _repo_session_name()),
+        "session_mode": _normalize_mode(current.get("mode")),
+        "cli_workspace": str(Path.cwd().resolve()),
+    }
+    _stream_turn(payload, state, timeout=700)
+
+
+def run_prompt(prompt: str, state: dict, *, model: str = "default") -> int:
+    prompt = (prompt or "").strip()
+    if not prompt:
+        return 0
+    current = _current(state)
+    platform = current.get("platform") or "internal"
+    try:
+        if platform == "internal":
+            _run_internal(prompt, state, model=model)
+        elif ":" not in platform and _acpx_tool(platform) in ACP_PLATFORMS:
+            _run_acpx(prompt, state, model=model)
+        else:
+            print(f"Platform '{platform}' is selectable but not runnable in this MVP.")
+            print("Use /use to pick a runnable platform.")
+            return 2
+        _remember_recent(state)
+        _save_state(state)
+        return 0
+    except KeyboardInterrupt:
+        # Ctrl+C mid-stream → actually cancel the in-flight generation on the
+        # active platform (internal agent, or the external ACP session).
+        print(_dim("\n⏹  interrupted — cancelling…"), file=sys.stderr)
+        try:
+            class _IntArgs:
+                user = ""
+                session = ""
+            cmd_cancel(_IntArgs(), state)
+        except Exception:
+            pass
+        return 130
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        print(f"HTTP {exc.code}: {detail}", file=sys.stderr)
+        return 1
+    except urllib.error.URLError as exc:
+        from src.cli.connection_errors import connection_error_message
+        print(connection_error_message(exc.reason, AGENT_BASE, english=True), file=sys.stderr)
+        return 1
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except (OSError, TimeoutError) as exc:
+        print(f"Reply failed: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_platforms(_args, state: dict) -> int:
+    current = _current(state)
+    names = list(KNOWN_PLATFORMS)
+    name_width = max(_display_width(name) for name in names)
+    name_col_width = min(max(name_width, 12), 18)
+    print("Available platforms")
+    print("┌───┬" + "─" * (name_col_width + 2) + "┐")
+    for name in KNOWN_PLATFORMS:
+        marker = "•" if name == current.get("platform") else " "
+        print("│ " + marker + " │ " + _pad_display(name, name_col_width) + " │")
+    print("└───┴" + "─" * (name_col_width + 2) + "┘")
+    return 0
+
+
+def cmd_state(_args, state: dict) -> int:
+    serializable = {k: v for k, v in state.items() if not k.startswith("__")}
+    print(json.dumps(serializable, ensure_ascii=False, indent=2, sort_keys=True))
+    print(f"\nstate_file: {state.get('__state_path') or STATE_PATH}")
+    return 0
+
+
+def cmd_user(args, state: dict) -> int:
+    """Show or set the current username (the identity used for all requests)."""
+    current = _current(state)
+    name = (getattr(args, "name", "") or "").strip()
+    if not name:
+        print(f"user: {current.get('user', DEFAULT_USER)}")
+        return 0
+    current["user"] = name
+    _save_state(state)
+    print(f"user: {name}")
+    return 0
+
+
+def _login_interactive(state: dict, name: str = "") -> bool:
+    """`/login`: show the current user, then offer to /change it or /cancel (keep)."""
+    current = _current(state)
+    cur_user = current.get("user", DEFAULT_USER)
+    name = (name or "").strip()
+    if name:
+        current["user"] = name
+        _save_state(state)
+        print(f"user: {name}")
+        return True
+
+    print(f"user: {cur_user}")
+    rows = [
+        ("/change", "enter a new username"),
+        ("/cancel", "keep current user (no change)"),
+    ]
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        for label, desc in rows:
+            print(f"  {label} — {desc}")
+        return True
+
+    selected = _choose_from_menu(f"Logged in as {cur_user}", rows)
+    if selected is None or rows[selected][0] == "/cancel":
+        print(f"user: {cur_user} (unchanged)")
+        return True
+    try:
+        new_name = input("new username: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print(f"\nuser: {cur_user} (unchanged)")
+        return True
+    if not new_name:
+        print(f"user: {cur_user} (unchanged)")
+        return True
+    current["user"] = new_name
+    _save_state(state)
+    print(f"user: {new_name}")
+    return True
+
+
+def _mask_config_value(key: str, value: str) -> str:
+    if not value:
+        return ""
+    if SENSITIVE_CONFIG_RE.search(key):
+        if len(value) <= 8:
+            return "*" * len(value)
+        return f"{value[:4]}...{value[-4:]}"
+    return value
+
+
+def _set_config_value(key: str, value: str) -> None:
+    key = key.strip()
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+        raise ValueError(f"invalid config key: {key!r}")
+    ensure_runtime_dirs()
+    ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
+    write_env_settings(str(ENV_FILE), {key: value})
+
+
+def cmd_config(args, _state: dict) -> int:
+    action = args.config_action
+    if action == "list":
+        values = read_env_all(str(ENV_FILE))
+        if not values:
+            print(f"No config values found in {ENV_FILE}")
+            return 0
+        for key in sorted(values):
+            print(f"{key}={_mask_config_value(key, values[key])}")
+        print(f"\nconfig_file: {ENV_FILE}")
+        return 0
+    if action == "get":
+        values = read_env_all(str(ENV_FILE))
+        value = values.get(args.key)
+        if value is None:
+            print(f"{args.key} is not set")
+            return 1
+        print(f"{args.key}={_mask_config_value(args.key, value)}")
+        return 0
+    if action == "set":
+        value = " ".join(args.value or [])
+        try:
+            _set_config_value(args.key, value)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        os.environ[args.key] = value
+        print(f"{args.key}={_mask_config_value(args.key, value)}")
+        print(f"config_file: {ENV_FILE}")
+        return 0
+    print("usage: clawcross config [list|get KEY|set KEY VALUE|KEY VALUE]")
+    return 2
+
+
+def cmd_use(args, state: dict) -> int:
+    _set_platform(state, args.platform)
+    _save_state(state)
+    current = _current(state)
+    print(f"platform: {current['platform']}")
+    print(f"session: {current['session']}")
+    return 0
+
+
+def cmd_run(args, state: dict) -> int:
+    if args.platform:
+        _set_platform(state, args.platform)
+    if args.session:
+        _set_session(state, args.session)
+    if args.user:
+        _current(state)["user"] = args.user
+    if args.mode:
+        _current(state)["mode"] = args.mode
+    prompt = " ".join(args.prompt or []).strip()
+    return run_prompt(prompt, state, model=args.model or "default")
+
+
+def cmd_cancel(args, state: dict) -> int:
+    """Cancel through the gateway for both internal and external Agents."""
+    current = _current(state)
+    user = getattr(args, 'user', '') or current.get('user') or DEFAULT_USER
+    session = _agent_id(getattr(args, 'session', '') or current.get('session') or 'default')
+    try:
+        response = _request_json('POST', f'{AGENT_BASE}/v1/agents/{session}/control',
+            headers=_headers_for_user(user), data={'action': 'cancel'})
+    except Exception as exc:
+        if not str(exc).startswith('HTTP 404'):
+            print(f'cancel failed: {exc}', file=sys.stderr)
+            return 1
+        response = {'cancelled': False}
+    print(f"session {session!r}: {'cancelled' if response.get('cancelled') else 'nothing running'}")
+    return 0
+
+
+def _show_magic_link(state: dict) -> None:
+    """POST /generate_login_link on the local front and print the resulting URL.
+
+    The endpoint is localhost-only by design; the CLI hits 127.0.0.1 so the
+    request is treated as direct-local. PUBLIC_DOMAIN (.env) is re-read on
+    every request by the backend, so tunnel updates take effect without a
+    restart.
+    """
+    current = _current(state)
+    user = current.get("user") or DEFAULT_USER
+    try:
+        resp = _request_json(
+            "POST",
+            f"{FRONT_BASE}/generate_login_link",
+            data={"user_id": user},
+            timeout=15,
+        )
+    except (urllib.error.URLError, RuntimeError) as exc:
+        print(f"failed to generate magic link: {exc}", file=sys.stderr)
+        print(f"is the frontend running on {FRONT_BASE} ?", file=sys.stderr)
+        return
+    if not isinstance(resp, dict) or not resp.get("ok"):
+        err = (resp or {}).get("error") if isinstance(resp, dict) else None
+        print(f"magic link request failed: {err or resp}", file=sys.stderr)
+        return
+    link = resp.get("link") or ""
+    valid_hours = resp.get("valid_hours") or 24
+    # 本地链接：取返回链接的 token 路径，套到 127.0.0.1 的前端端口上
+    from urllib.parse import urlsplit
+    parts_u = urlsplit(link)
+    path_q = parts_u.path + (("?" + parts_u.query) if parts_u.query else "")
+    local_link = f"{FRONT_BASE}{path_q}" if path_q else link
+    # 公网链接：仅当后端返回的是非 localhost 域名（即 tunnel 已开）才有
+    host = (parts_u.hostname or "").lower()
+    is_public = bool(host) and host not in ("127.0.0.1", "localhost", "::1")
+    print(f"Magic link for {user} (valid {valid_hours}h):")
+    print(f"  本地 (127.0.0.1): {local_link}")
+    if is_public:
+        print(f"  公网 (tunnel):    {link}")
+    else:
+        print("  公网 (tunnel):    未开启 —— 用 /tunnel on 开启后再 /front")
+
+
+def _cmd_tunnel(arg: str = "") -> int:
+    """Use the shared lifecycle controller; Hub is default, Cloudflare is opt-in."""
+    action = (arg or "status").strip().lower()
+    commands = {"on": "start-tunnel", "start": "start-tunnel", "off": "stop-tunnel", "stop": "stop-tunnel", "status": "tunnel-status"}
+    if action not in commands:
+        print("Usage: /tunnel on|off|status", file=sys.stderr)
+        return 2
+    return main([commands[action]])
+
+
+def cmd_restart(_args, state: dict) -> int:
+    current = _current(state)
+    user = current.get("user") or DEFAULT_USER
+    payload = {
+        "user_id": user,
+        "password": "",
+        "settings": {},
+    }
+    req = urllib.request.Request(
+        f"{AGENT_BASE}/restart",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "X-Internal-Token": INTERNAL_TOKEN},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            body = resp.read().decode("utf-8", errors="replace").strip()
+        print(body or "restart requested")
+        print("⏳ 正在等待服务重启并恢复...")
+        deadline = time.time() + 120
+        saw_down = False
+        stable_up = 0
+        while time.time() < deadline:
+            try:
+                _request_json("GET", f"{AGENT_BASE}/v1/models", timeout=5)
+                if saw_down:
+                    stable_up += 1
+                    if stable_up >= 2:
+                        print("✅ 重启完成")
+                        return 0
+                else:
+                    # The old process may still be answering briefly after it
+                    # has accepted the restart flag. Keep waiting until we
+                    # observe an actual down/up transition.
+                    stable_up = 0
+            except Exception:
+                saw_down = True
+                stable_up = 0
+            time.sleep(2)
+        print("⚠️ 重启已发起，但在 120 秒内未确认恢复", file=sys.stderr)
+        return 1
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        print(f"restart failed: HTTP {exc.code}: {detail}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"restart failed: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_shutdown(_args, _state: dict) -> int:
+    """Stop ALL background services (launcher + children + tunnel + cloudflared).
+
+    Delegates to the canonical `run.sh stop` (or `run.ps1 stop` on Windows),
+    which is the single source of truth
+    for a full teardown: it kills the launcher and every service it spawned, plus
+    the separately-managed tunnel / cloudflared processes, clears PUBLIC_DOMAIN,
+    and removes pid files. This is different from /restart (which respawns) and
+    from /exit (which only leaves this shell while the backend keeps running).
+
+    We run it synchronously and stream its output so the shell only drops back to
+    the prompt once the teardown has actually finished.
+    """
+    is_windows = sys.platform == "win32"
+    run_script = PROJECT_ROOT / ("run.ps1" if is_windows else "run.sh")
+    if not run_script.is_file():
+        print(f"shutdown failed: {run_script} not found", file=sys.stderr)
+        return 1
+    if is_windows:
+        cmd = [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(run_script),
+            "stop",
+        ]
+    else:
+        cmd = ["bash", str(run_script), "stop"]
+    try:
+        proc = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
+    except Exception as exc:
+        print(f"shutdown failed: {exc}", file=sys.stderr)
+        return 1
+    return proc.returncode
+
+
+def cmd_update(args, _state: dict) -> int:
+    target = "clawcross@latest" if not args.version else f"clawcross@{args.version}"
+    npm_bin = "npm.cmd" if sys.platform == "win32" else "npm"
+    cmd = [npm_bin, "install", "-g", target]
+    print(f"Running: {' '.join(cmd)}")
+    try:
+        result = subprocess.run(cmd, check=False)
+    except FileNotFoundError:
+        print("npm not found in PATH. Install Node.js first: https://nodejs.org", file=sys.stderr)
+        return 127
+    if result.returncode != 0:
+        print(
+            "Update failed. If this is a permission error, retry with sudo or "
+            "use a Node version manager (nvm/fnm) so global installs land in your home directory.",
+            file=sys.stderr,
+        )
+        return result.returncode
+    print(f"Updated to {target}. Re-run 'clawcross --version' to confirm.")
+    return 0
+
+
+def _prompt_label(state: dict) -> str:
+    current = _current(state)
+    platform = _fit(current.get("platform", "internal"), 14)
+    session = _fit(current.get("session", "default"), 32)
+    mode = _normalize_mode(current.get("mode"))
+    mode_suffix = f"[{mode}]" if mode != _DEFAULT_MODE else ""
+    return f"clawcross[{platform}:{session}]{mode_suffix}> "
+
+
+def _local_frontend_hint() -> str:
+    return f"打开前端（本地）: {FRONT_BASE}"
+
+
+def _menu_lines(selected: int) -> list[str]:
+    """Render the slash menu as a viewport — capped to fit inside the terminal.
+
+    Budget: terminal_height - 5 rows (prompt + header + footer + frontend + breathing).
+    The viewport scrolls so the selected row stays inside it.
+    """
+    width = _term_width() - 1
+    total = len(SLASH_MENU)
+    budget = max(4, _term_height() - 5)
+    visible = min(total, budget)
+
+    if total <= visible:
+        first = 0
+    else:
+        first = max(0, min(total - visible, selected - visible // 2))
+
+    lines = [_dim("Commands")]
+    for idx in range(first, first + visible):
+        command, description, _insert, _execute = SLASH_MENU[idx]
+        marker = ">" if idx == selected else " "
+        text = _fit(f"{marker} {_pad_display(command, 16)} {description}", width)
+        lines.append(_style(text) if idx == selected else text)
+    pos = f"{selected + 1}/{total}"
+    if total > visible:
+        scroll = "↕"
+        if first == 0:
+            scroll = "↓"
+        elif first + visible >= total:
+            scroll = "↑"
+        lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc closes  ·  {pos} {scroll}"))
+    else:
+        lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc closes  ·  {pos}"))
+    lines.append(_dim(_local_frontend_hint()))
+    return lines
+
+
+def _selection_menu_lines(title: str, rows: list[tuple[str, str]], selected: int) -> list[str]:
+    """Render the menu with a scrolling viewport so it always fits the screen.
+
+    Without a viewport, a 60+ row list would overflow the terminal, and the
+    in-place redraw on each ↑/↓ press (\\033[nA + \\033[J) could not reach
+    rows that had scrolled off the top — old and new frames would overlap.
+    """
+    width = _term_width() - 1
+    total = len(rows)
+    budget = max(4, _term_height() - 4)  # title + footer + breathing
+    visible = min(total, budget)
+
+    if total <= visible:
+        first = 0
+    else:
+        first = max(0, min(total - visible, selected - visible // 2))
+    last = first + visible
+
+    def _one_line(s: str) -> str:
+        # Collapse any embedded newlines so a single row occupies exactly
+        # one terminal line. Otherwise the in-place redraw (\033[nA + \033[J)
+        # counts logical lines while the terminal sees more, leaving an
+        # un-erased ghost of the previous frame after every ↓ keypress.
+        return re.sub(r"\s*\n\s*", " ⏎ ", str(s or ""))
+
+    window_rows = [(_one_line(label), _one_line(desc)) for label, desc in rows[first:last]]
+    label_width = min(
+        max((_display_width(label) for label, _ in window_rows), default=12),
+        max(20, width // 2),
+    )
+
+    lines = [_dim(title)]
+    for offset, (label, description) in enumerate(window_rows):
+        idx = first + offset
+        marker = ">" if idx == selected else " "
+        desc_width = max(8, width - label_width - 3)
+        text = f"{marker} {_pad_display(label, label_width)} {_fit(description, desc_width)}"
+        text = _fit(text, width)
+        lines.append(_style(text) if idx == selected else text)
+
+    pos = f"{selected + 1}/{total}"
+    if total > visible:
+        if first == 0:
+            scroll = "↓"
+        elif last >= total:
+            scroll = "↑"
+        else:
+            scroll = "↕"
+        lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc cancels  ·  {pos} {scroll}"))
+    else:
+        lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc cancels  ·  {pos}"))
+    return lines
+
+
+def _choose_from_menu(title: str, rows: list[tuple[str, str]]) -> int | None:
+    if not rows:
+        return None
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return None
+    if termios is None or tty is None:
+        return _choose_numbered_menu(title, rows)
+
+    old_settings = termios.tcgetattr(sys.stdin.fileno())
+    selected = 0
+    rendered_lines = 0
+    pending_escape = False
+    pending_bracket = False
+
+    def render() -> None:
+        nonlocal rendered_lines
+        if rendered_lines:
+            sys.stdout.write("\r")
+            if rendered_lines > 1:
+                sys.stdout.write(f"\033[{rendered_lines - 1}A")
+            sys.stdout.write("\033[J")
+        lines = _selection_menu_lines(title, rows, selected)
+        sys.stdout.write("\n".join(lines))
+        sys.stdout.flush()
+        rendered_lines = len(lines)
+
+    def clear() -> None:
+        nonlocal rendered_lines
+        if rendered_lines:
+            sys.stdout.write("\r")
+            if rendered_lines > 1:
+                sys.stdout.write(f"\033[{rendered_lines - 1}A")
+            sys.stdout.write("\033[J")
+            sys.stdout.flush()
+            rendered_lines = 0
+
+    try:
+        tty.setcbreak(sys.stdin.fileno())
+        # Explicitly disable ECHO — tty.setcbreak does not turn it off on
+        # older Python versions, so arrow-key escape sequences (\x1b[A/B)
+        # get echoed mid-frame and the menu visually duplicates itself.
+        attrs = termios.tcgetattr(sys.stdin.fileno())
+        attrs[3] &= ~termios.ECHO  # lflag
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, attrs)
+        render()
+        while True:
+            ch = sys.stdin.read(1)
+            if pending_bracket:
+                pending_bracket = False
+                if ch == "A":
+                    selected = (selected - 1) % len(rows)
+                    render()
+                    continue
+                if ch == "B":
+                    selected = (selected + 1) % len(rows)
+                    render()
+                    continue
+            if pending_escape:
+                pending_escape = False
+                if ch == "[":
+                    pending_bracket = True
+                    continue
+                clear()
+                return None
+            if ch in {"\r", "\n"}:
+                clear()
+                return selected
+            if ch == "\x03":
+                clear()
+                return None
+            seq = ""
+            if ch == "\x1b":
+                for _ in range(2):
+                    ready, _, _ = select.select([sys.stdin], [], [], 0.2)
+                    if not ready:
+                        break
+                    seq += sys.stdin.read(1)
+                if not seq:
+                    pending_escape = True
+                    continue
+            if seq == "[A":
+                selected = (selected - 1) % len(rows)
+                render()
+            elif seq == "[B":
+                selected = (selected + 1) % len(rows)
+                render()
+    finally:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
+
+
+def _choose_numbered_menu(title: str, rows: list[tuple[str, str]], selected: int = 0) -> int | None:
+    """Portable numbered picker used when raw terminal control is unavailable.
+
+    Windows PowerShell/cmd terminals do not provide termios, so the inline
+    arrow-key picker cannot safely read one key at a time. A plain numbered
+    prompt keeps the command-line experience interactive without silently
+    returning from picker commands.
+    """
+    if not rows:
+        return None
+    selected = max(0, min(selected, len(rows) - 1))
+    print(f"\n  {title}")
+    print("  Select by number, Enter to confirm, or q to cancel.\n")
+    label_width = min(
+        max((_display_width(label) for label, _ in rows), default=12),
+        max(20, _term_width() // 2),
+    )
+    for idx, (label, description) in enumerate(rows):
+        marker = "*" if idx == selected else " "
+        desc = f"  {description}" if description else ""
+        print(f"  {marker} {idx + 1:>2}. {_pad_display(label, label_width)}{desc}")
+    print()
+    try:
+        value = input(f"  Choice [default {selected + 1}]: ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return None
+    if not value:
+        return selected
+    if value in {"q", "quit", "cancel", "esc"}:
+        return None
+    try:
+        choice = int(value) - 1
+    except ValueError:
+        print(f"Invalid choice: {value}")
+        return None
+    if 0 <= choice < len(rows):
+        return choice
+    print(f"Choice out of range: {value}")
+    return None
+
+
+def _choose_slash_command() -> str | None:
+    rows = [(command, description) for command, description, _insert, _execute in SLASH_MENU]
+    if sys.stdin.isatty() and sys.stdout.isatty() and (termios is None or tty is None):
+        return _choose_numbered_slash_command(rows)
+    selected = _choose_from_menu("Commands", rows)
+    if selected is None:
+        return None
+    return SLASH_MENU[selected][2]
+
+
+def _choose_numbered_slash_command(rows: list[tuple[str, str]], selected: int = 0) -> str | None:
+    selected = max(0, min(selected, len(rows) - 1))
+    print("\n  Commands")
+    print("  Select by number, type a command name, or q to cancel.\n")
+    label_width = min(
+        max((_display_width(label) for label, _ in rows), default=12),
+        max(20, _term_width() // 2),
+    )
+    for idx, (label, description) in enumerate(rows):
+        marker = "*" if idx == selected else " "
+        desc = f"  {description}" if description else ""
+        print(f"  {marker} {idx + 1:>2}. {_pad_display(label, label_width)}{desc}")
+    print(f"\n  {_local_frontend_hint()}\n")
+    try:
+        value = input(f"  Choice [default {selected + 1}]: ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return None
+    if not value:
+        return SLASH_MENU[selected][2]
+    lower = value.lower()
+    if lower in {"q", "quit", "cancel", "esc"}:
+        return None
+    try:
+        choice = int(value) - 1
+    except ValueError:
+        command = value if value.startswith("/") else f"/{value}"
+        if command.split(maxsplit=1)[0].lower() == "/session":
+            return command.replace("/session", "/resume", 1)
+        return command
+    if 0 <= choice < len(SLASH_MENU):
+        return SLASH_MENU[choice][2]
+    print(f"Choice out of range: {value}")
+    return None
+
+
+def _choose_resume(state: dict) -> bool:
+    sessions, error = _list_current_platform_sessions(state)
+    rows: list[tuple[str, str]] = [("<new session>", "create and switch to a new session")]
+    rows.extend(
+        (row.get("session", ""), str(row.get("title") or ""))
+        for row in sessions
+        if row.get("session")
+    )
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        _print_session_rows(sessions, state, error)
+        return True
+    if error:
+        print(f"session list unavailable: {error}")
+    selected = _choose_from_menu("Sessions", rows)
+    if selected is None:
+        return True
+    if selected == 0:
+        session = _switch_to_new_session(state)
+        print(f"session: {session}")
+        return True
+    session = rows[selected][0]
+    _set_session(state, session, resumed=True)
+    _save_state(state)
+    print(f"session: {session} (resumed)")
+    _replay_current_session_history(state, unavailable_prefix="history unavailable")
+    return True
+
+
+def _handle_platform_command(args: list[str], state: dict) -> bool:
+    """Dispatcher for the unified /platform command.
+
+    No args -> action picker (list, use). Old /platforms and /use slash
+    commands remain as aliases for backwards compatibility.
+    """
+    if args:
+        sub = args[0].lower()
+        if sub == "list":
+            cmd_platforms(None, state)
+            return True
+        if sub == "use":
+            if len(args) >= 2:
+                _set_platform(state, args[1])
+                _save_state(state)
+                current = _current(state)
+                print(f"platform: {current['platform']}")
+                print(f"session: {current['session']}")
+                return True
+            return _choose_platform(state)
+        print(f"Unknown /platform action: {sub} (try: list, use)")
+        return True
+
+    rows = [("list", "show all platforms"), ("use", "switch active platform")]
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        cmd_platforms(None, state)
+        return True
+    selected = _choose_from_menu("Platform action", rows)
+    if selected is None:
+        return True
+    action = rows[selected][0]
+    if action == "list":
+        cmd_platforms(None, state)
+    elif action == "use":
+        _choose_platform(state)
+    return True
+
+
+def _choose_platform(state: dict) -> bool:
+    current_platform = _current(state).get("platform", "internal")
+    rows = []
+    for name in KNOWN_PLATFORMS:
+        rows.append((name, ""))
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        cmd_platforms(None, state)
+        return True
+    selected = _choose_from_menu("Platforms", rows)
+    if selected is None:
+        return True
+    platform = rows[selected][0]
+    _set_platform(state, platform)
+    _save_state(state)
+    current = _current(state)
+    marker = " unchanged" if platform == current_platform else ""
+    print(f"platform: {current['platform']}{marker}")
+    print(f"session: {current['session']}")
+    return True
+
+
+_MODE_DESCRIPTIONS: dict[str, str] = {
+    "manual": "all tools; human review for actions requiring approval",
+    "bypass": "all tools, skip confirmation",
+    "auto": "review actions for me (built-in agents); external agents allow reads",
+    "readonly": "read-only — writes denied non-interactively",
+    "chat": "no tool calls — text reply only",
+}
+
+
+def _choose_mode(state: dict) -> bool:
+    current_mode = _normalize_mode(_current(state).get("mode"))
+    rows = [(m, _MODE_DESCRIPTIONS[m]) for m in VALID_MODES]
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print(f"mode: {current_mode}")
+        for name, desc in rows:
+            marker = " (current)" if name == current_mode else ""
+            print(f"  {name}{marker} — {desc}")
+        return True
+    selected = _choose_from_menu("Run mode", rows)
+    if selected is None:
+        return True
+    mode = rows[selected][0]
+    _current(state)["mode"] = mode
+    _save_state(state)
+    marker = " unchanged" if mode == current_mode else ""
+    print(f"mode: {mode}{marker}")
+    return True
+
+
+def _read_windows_interactive_line(prompt: str) -> str:
+    """Read a Windows console line while preserving immediate slash menu access."""
+    if msvcrt is None:
+        return input(prompt)
+
+    buffer = ""
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    while True:
+        ch = msvcrt.getwch()
+        if ch in {"\x00", "\xe0"}:
+            # Consume the scan code for arrows/function keys.
+            msvcrt.getwch()
+            continue
+        if ch in {"\r", "\n"}:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return buffer
+        if ch == "\x03":
+            if buffer:
+                while buffer:
+                    buffer = buffer[:-1]
+                    sys.stdout.write("\b \b")
+                sys.stdout.flush()
+                continue
+            sys.stdout.write("^C\n")
+            sys.stdout.flush()
+            raise EOFError
+        if ch == "\x04":
+            if not buffer:
+                raise EOFError
+            continue
+        if ch in {"\b", "\x7f"}:
+            if buffer:
+                buffer = buffer[:-1]
+                sys.stdout.write("\b \b")
+                sys.stdout.flush()
+            continue
+        if ch == "/" and not buffer:
+            sys.stdout.write("/\n")
+            sys.stdout.flush()
+            chosen = _choose_slash_command()
+            if chosen:
+                return chosen
+            buffer = ""
+            sys.stdout.write(prompt)
+            sys.stdout.flush()
+            continue
+        if ch.isprintable():
+            buffer += ch
+            sys.stdout.write(ch)
+            sys.stdout.flush()
+
+
+def _read_interactive_line(prompt: str) -> str:
+    """Read one line with a rounded-box prompt and optional slash menu.
+
+    Layout on the main screen:
+
+        ╭─── ClawCross ────────────────────╮
+        │ clawcross[codex:ClawCross]> _    │
+        ╰──────────────────────────────────╯
+
+    The cursor lives inside the middle line. Typing redraws the middle
+    line in place. Pressing `/` as the first char opens a slash-menu
+    popup in the alternate screen buffer (no main-screen clear, so no
+    blank-rows ghost effect after closing).
+    """
+    if sys.stdin.isatty() and sys.stdout.isatty() and termios is None and tty is None and msvcrt is not None:
+        return _read_windows_interactive_line(prompt)
+    if not sys.stdin.isatty() or not sys.stdout.isatty() or termios is None or tty is None:
+        return input(prompt)
+
+    try:
+        old_settings = termios.tcgetattr(sys.stdin.fileno())
+    except Exception:
+        # Terminal not in a queryable state (e.g. EIO after a disrupted
+        # stream) — fall back to a plain prompt instead of crashing.
+        return input(prompt)
+    buffer = ""
+    menu_open = False
+    pending_escape = False
+    pending_bracket = False
+    selected = 0
+    box_width = max(20, min(_term_width(), 120))
+    inner_width = box_width - 4  # "│ " ... " │"
+    resized = False  # set by the SIGWINCH handler; drives a full redraw
+
+    def _truncate(text: str, w: int) -> str:
+        # Show the tail when the input exceeds the inner box width so the
+        # cursor stays visible at the right edge.
+        if _display_width(text) <= w:
+            return text
+        # Drop chars from the front until it fits.
+        result = text
+        while _display_width(result) > w and len(result) > 1:
+            result = result[1:]
+        return result
+
+    def render_input() -> None:
+        # Cursor is somewhere on the middle line. Clear it, redraw, and
+        # leave the cursor right after the buffer text (inside the box).
+        content = _truncate(prompt + buffer, inner_width)
+        pad = inner_width - _display_width(content)
+        sys.stdout.write("\r\033[K")
+        sys.stdout.write("│ " + content + " " * pad + " │")
+        # Position cursor right after content (column 2 + display_width).
+        sys.stdout.write("\r")
+        sys.stdout.write(f"\033[{2 + _display_width(content)}C")
+        sys.stdout.flush()
+
+    def draw_box() -> None:
+        # Draw the three-line box and park the cursor on the middle line.
+        horiz_top = "─" * (box_width - 2)
+        horiz_bot = "─" * (box_width - 2)
+        sys.stdout.write(f"╭{horiz_top}╮\n")
+        sys.stdout.write(f"│{' ' * (box_width - 2)}│\n")
+        sys.stdout.write(f"╰{horiz_bot}╯")
+        # Move cursor up to middle line.
+        sys.stdout.write("\033[1A\r")
+        sys.stdout.flush()
+        render_input()
+
+    def redraw_full() -> None:
+        # Terminal was resized: recompute the box width for the new terminal
+        # size and repaint the whole box so the borders never stay wider than
+        # the screen (which would wrap and corrupt the layout). The cursor is
+        # on the middle line; go to the top border, clear downward, repaint.
+        nonlocal box_width, inner_width
+        box_width = max(20, min(_term_width(), 120))
+        inner_width = box_width - 4
+        sys.stdout.write("\r\033[1A\033[J")
+        sys.stdout.flush()
+        draw_box()
+
+    def render_menu() -> None:
+        if not menu_open:
+            return
+        sys.stdout.write("\033[H\033[2J")
+        sys.stdout.write(prompt + buffer + "\n\n")
+        sys.stdout.write("\n".join(_menu_lines(selected)))
+        sys.stdout.flush()
+
+    def open_menu() -> None:
+        nonlocal menu_open
+        if menu_open:
+            return
+        menu_open = True
+        sys.stdout.write("\033[?1049h\033[?25l")
+        sys.stdout.flush()
+        render_menu()
+
+    def close_menu(*, restore_input: bool = True) -> None:
+        nonlocal menu_open
+        if not menu_open:
+            return
+        menu_open = False
+        sys.stdout.write("\033[?1049l\033[?25h")
+        sys.stdout.flush()
+        if restore_input:
+            render_input()
+
+    def finish_line() -> None:
+        if menu_open:
+            close_menu()
+        # Move cursor down past the bottom border before the trailing \n
+        # so subsequent output appears below the box.
+        sys.stdout.write("\033[1B\n")
+        sys.stdout.flush()
+
+    def _on_winch(_signum, _frame) -> None:
+        # Runs in the main thread while the blocking read is parked, between
+        # bytecode ops, so terminal writes here are safe. Repaint at the new
+        # width; the interrupted read auto-resumes afterwards. (`sys.stdin` is
+        # buffered and swallows EINTR, so we cannot react from the read loop —
+        # the handler has to do the redraw.)
+        nonlocal resized
+        resized = True
+        try:
+            if menu_open:
+                render_menu()
+            else:
+                redraw_full()
+        except Exception:
+            pass
+
+    old_winch = None
+    winch_installed = False
+    try:
+        try:
+            # Only works on the main thread / where SIGWINCH exists; otherwise
+            # we silently fall back to per-prompt sizing (still correct, just
+            # not live during a single edit).
+            old_winch = signal.getsignal(signal.SIGWINCH)
+            signal.signal(signal.SIGWINCH, _on_winch)
+            winch_installed = True
+        except (ValueError, OSError, AttributeError):
+            winch_installed = False
+
+        tty.setcbreak(sys.stdin.fileno())
+        draw_box()
+
+        while True:
+            try:
+                ch = sys.stdin.read(1)
+            except InterruptedError:
+                # Defensive: some platforms may still surface EINTR here. The
+                # handler already repainted, so just resume.
+                continue
+            if pending_bracket:
+                pending_bracket = False
+                if menu_open and ch == "A":
+                    selected = (selected - 1) % len(SLASH_MENU)
+                    render_menu()
+                    continue
+                if menu_open and ch == "B":
+                    selected = (selected + 1) % len(SLASH_MENU)
+                    render_menu()
+                    continue
+            if pending_escape:
+                pending_escape = False
+                if ch == "[":
+                    pending_bracket = True
+                    continue
+                if menu_open:
+                    buffer = ""
+                    close_menu()
+            if ch in {"\r", "\n"}:
+                if menu_open:
+                    _display, _description, insert, execute_now = SLASH_MENU[selected]
+                    buffer = insert
+                    close_menu()
+                    if execute_now:
+                        finish_line()
+                        return buffer
+                    continue
+                finish_line()
+                return buffer
+            if ch == "\x03":
+                # bash-style: Ctrl+C clears the current line and redraws a fresh
+                # prompt. It never exits the shell (use Ctrl+D or /exit to quit).
+                if menu_open:
+                    close_menu(restore_input=False)
+                buffer = ""
+                finish_line()
+                sys.stdout.write("^C\n")
+                sys.stdout.flush()
+                draw_box()
+                continue
+            if ch == "\x04":
+                if not buffer:
+                    if menu_open:
+                        close_menu(restore_input=False)
+                    raise EOFError
+                continue
+            if ch == "\x1b":
+                seq = ""
+                for _ in range(2):
+                    ready, _, _ = select.select([sys.stdin], [], [], 0.2)
+                    if not ready:
+                        break
+                    seq += sys.stdin.read(1)
+                if menu_open and seq == "[A":
+                    selected = (selected - 1) % len(SLASH_MENU)
+                    render_menu()
+                elif menu_open and seq == "[B":
+                    selected = (selected + 1) % len(SLASH_MENU)
+                    render_menu()
+                elif menu_open and seq in {"[5~"}:
+                    selected = max(0, selected - 8)
+                    render_menu()
+                elif menu_open and seq in {"[6~"}:
+                    selected = min(len(SLASH_MENU) - 1, selected + 8)
+                    render_menu()
+                elif not seq:
+                    pending_escape = True
+                elif menu_open:
+                    buffer = ""
+                    close_menu()
+                continue
+            if ch in {"\x7f", "\b"}:
+                if buffer:
+                    buffer = buffer[:-1]
+                    if not buffer and menu_open:
+                        close_menu()
+                    elif not menu_open:
+                        render_input()
+                continue
+            if ch == "/" and not buffer:
+                buffer = "/"
+                render_input()
+                selected = 0
+                open_menu()
+                continue
+            if ch.isprintable():
+                if menu_open:
+                    close_menu()
+                buffer += ch
+                render_input()
+    finally:
+        if menu_open:
+            try:
+                sys.stdout.write("\033[?1049l\033[?25h")
+                sys.stdout.flush()
+            except Exception:
+                pass
+        try:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
+        except Exception:
+            # Restoring terminal mode can fail with EIO if the tty was
+            # disrupted; never let that crash the shell.
+            pass
+        if winch_installed:
+            try:
+                signal.signal(signal.SIGWINCH, old_winch)
+            except (ValueError, OSError, TypeError):
+                pass
+
+
+def _handle_slash(command: str, state: dict) -> bool:
+    try:
+        parts = shlex.split(command.strip())
+    except ValueError as exc:
+        print(f"Invalid command: {exc}", file=sys.stderr)
+        return True
+    if not parts:
+        return True
+    name = parts[0].lower()
+    if name in {"/start", "/status", "/doctor", "/components"}:
+        main([name[1:], *parts[1:]])
+        return True
+    if name in {"/agents", "/teams", "/groups", "/tools", "/settings"}:
+        try:
+            main(["-u", _current(state).get("user") or DEFAULT_USER, name[1:], *parts[1:]])
+        except SystemExit:
+            pass
+        return True
+    if name == "/history":
+        _replay_current_session_history(state)
+        return True
+    if name == "/reset":
+        session = _agent_id(_current(state).get("session") or "default")
+        user = _current(state).get("user") or DEFAULT_USER
+        try:
+            _request_json("POST", f"{AGENT_BASE}/v1/agents/{session}/control",
+                headers=_headers_for_user(user), data={"action": "reset"})
+            print("Agent 已重置。")
+        except (OSError, RuntimeError) as exc:
+            print(f"reset failed: {exc}", file=sys.stderr)
+        return True
+    if name == "/compact":
+        from src.cli.commands.display_cmd import handle_compact_command
+        print(handle_compact_command([_agent_id(_current(state).get("session") or "default")],
+            user=_current(state).get("user") or DEFAULT_USER))
+        return True
+    if name == "/":
+        chosen = _choose_slash_command()
+        if not chosen:
+            return True
+        return _handle_slash(chosen, state)
+    if name in {"/exit", "/quit", "/q"}:
+        # `/exit all` / `/quit all` is shorthand for /shutdown.
+        if len(parts) >= 2 and parts[1].strip().lower() == "all":
+            name = "/shutdown"
+        else:
+            _save_state(state)
+            return False
+    if name == "/shutdown":
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            try:
+                answer = input(
+                    "Stop ALL background services (channels/agents will go offline)? [y/N] "
+                ).strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                answer = ""
+            if answer not in {"y", "yes"}:
+                print("aborted; backend left running.")
+                return True
+        rc = cmd_shutdown(None, state)
+        _save_state(state)
+        if rc != 0:
+            # Teardown not confirmed; stay in the shell so the user isn't
+            # dropped to a prompt with a half-running backend.
+            return True
+        return False
+    if name == "/platforms":
+        cmd_platforms(None, state)
+        return True
+    if name == "/state":
+        cmd_state(None, state)
+        return True
+    if name == "/restart":
+        cmd_restart(None, state)
+        return True
+    if name == "/use":
+        if len(parts) < 2:
+            return _choose_platform(state)
+        else:
+            _set_platform(state, parts[1])
+            _save_state(state)
+            current = _current(state)
+            print(f"platform: {current['platform']}")
+            print(f"session: {current['session']}")
+        return True
+    if name == "/platform":
+        return _handle_platform_command(parts[1:], state)
+    if name == "/new" and len(parts) >= 2 and parts[1].lower() == "session":
+        session = _switch_to_new_session(state)
+        print(f"session: {session}")
+        return True
+    if name in {"/resume", "/session"}:
+        if len(parts) == 1:
+            return _choose_resume(state)
+        else:
+            _set_session(state, parts[1])
+            _save_state(state)
+            print(f"session: {_current(state)['session']}")
+        return True
+    if name == "/mode":
+        if len(parts) == 1:
+            return _choose_mode(state)
+        requested = parts[1].strip().lower()
+        if requested not in VALID_MODES:
+            print(f"unknown mode: {parts[1]!r}. choices: {', '.join(VALID_MODES)}", file=sys.stderr)
+        else:
+            _current(state)["mode"] = requested
+            _save_state(state)
+            print(f"mode: {_current(state)['mode']}")
+        return True
+    if name in ("/login", "/user"):
+        return _login_interactive(state, parts[1].strip() if len(parts) >= 2 else "")
+    if name == "/cancel":
+        class CancelArgs:
+            user = ""
+            session = ""
+        cmd_cancel(CancelArgs(), state)
+        return True
+    if name == "/front":
+        _show_magic_link(state)
+        return True
+    if name == "/tunnel":
+        _cmd_tunnel(parts[1].strip() if len(parts) >= 2 else "")
+        return True
+    if name == "/model":
+        from src.cli.commands.model_cmd import handle_model_command
+        out = handle_model_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty())
+        if out:
+            print(out)
+        return True
+    current_user = (state.get("current", {}).get("user") or "").strip() or None
+    if name == "/team":
+        from src.cli.commands.display_cmd import handle_team_command
+        out = handle_team_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
+        if out:
+            print(out)
+        return True
+    if name == "/workflow":
+        from src.cli.commands.display_cmd import handle_workflow_command
+        out = handle_workflow_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
+        if out:
+            print(out)
+        return True
+    if name == "/skill":
+        from src.cli.commands.display_cmd import handle_skill_command
+        out = handle_skill_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
+        if out:
+            print(out)
+        return True
+    if name == "/expert":
+        from src.cli.commands.display_cmd import handle_expert_command
+        out = handle_expert_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
+        if out:
+            print(out)
+        return True
+    if name == "/cron":
+        from src.cli.commands.display_cmd import handle_cron_command
+        out = handle_cron_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty(), user=current_user)
+        if out:
+            print(out)
+        return True
+    if name == "/channel":
+        from src.cli.commands.channel_cmd import handle_channel_command
+        out = handle_channel_command(parts[1:], interactive=sys.stdin.isatty() and sys.stdout.isatty())
+        if out:
+            print(out)
+        return True
+    if name == "/help":
+        print(_rich_help_text())
+        print("\nAgent control: /agents · /groups · /history · /reset · /compact")
+        return True
+    print(f"unknown command: {name}. Try /help.")
+    return True
+
+
+def welcome_text(state: dict) -> str:
+    return _strip_ansi("\n".join(_welcome_lines(state))).strip()
+
+
+def _chat_state_lines(state: dict) -> list[str]:
+    current = _current(state)
+    return [
+        f"Agent: {current.get('platform', 'internal')}",
+        f"User: {current.get('user', DEFAULT_USER)}",
+        f"Mode: {_normalize_mode(current.get('mode'))}",
+    ]
+
+
+_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
+    ("Quick start", [
+        ("clawcross", "start the interactive shell"),
+        ("/model", "pick an LLM (curses TUI: ↑↓ / PgUp / PgDn / ENTER)"),
+        ("/use codex", "switch to the Codex CLI platform (any /platforms entry works)"),
+        ("type a message", "send to the active agent"),
+    ]),
+    ("LLM configuration", [
+        ("/model", "action picker (list / show / use / add / migrate / remove)"),
+        ("/model gpt-4o", "set directly (writes .env or updates the active profile)"),
+        ("/model list", "list saved profiles in ~/.clawcross/config/models.json"),
+        ("/model show", "show the active profile (provider/model/base_url/api_key)"),
+        ("/model use", "picker over saved profiles (or `/model use <name>` direct)"),
+        ("/model add <profile>", "create a new profile (CLI: prompts; channel: rejected)"),
+        ("/model migrate", "import current .env into a new profile"),
+        ("/model remove", "picker over saved profiles to delete one"),
+    ]),
+    ("Platform & session", [
+        ("/platform", "action picker (list / use). aliases: /platforms /use"),
+        ("/platform list", "list all agent platforms (internal + ACP tools)"),
+        ("/platform use [<name>]", "switch platform (no name -> picker)"),
+        ("/resume", "interactive picker (resumes & replays last 10 messages)"),
+        ("/resume <name>", "switch to / create session by name (no replay)"),
+        ("/session", "legacy alias for /resume"),
+        ("/new session", "create timestamped session (e.g. ClawCross-20260512-031544)"),
+        ("/mode", "picker over chat / readonly / manual / auto / bypass (or `/mode <name>` direct)"),
+        ("/cancel", "cancel in-flight generation (internal agent, or close the active ACP session)"),
+        ("/login [<name>]", "show current user; pick /change or /cancel (or set directly with a name)"),
+    ]),
+    ("Team resources", [
+        ("/team", "list teams (and a usage footer)"),
+        ("/team <name>", "team overview (members + alarm count) + sub-command hints"),
+        ("/team <name> members", "list internal + external agents"),
+        ("/team <name> personas", "list persona / expert prompts (oasis_experts.json)"),
+        ("/team <name> workflows", "list team-scoped workflows"),
+        ("/team <name> skills", "list team SKILL.md files"),
+        ("/team <name> crons", "list team-scoped cron alarms"),
+        ("/team new <name>", "create a new team folder"),
+        ("/team rename <old> <new>", "rename a team folder"),
+        ("/team delete <name>", "delete a team (and its internal agents)"),
+        ("/team member add <team> name <n> global <g> platform <p> [...]", "add external agent member"),
+        ("/team member edit|remove <team> <global>", "update / remove an external member"),
+    ]),
+    ("Experts / Personas", [
+        ("/expert <team>", "list a team's experts/personas"),
+        ("/expert show <team> <tag>", "show one expert's full persona"),
+        ("/expert add <team> tag <t> name <n> persona <text...>", "add a team expert (CLI: $EDITOR for persona)"),
+        ("/expert edit <team> <tag> [name <n>] [persona <text...>] [temp <f>]", "update an expert"),
+        ("/expert delete <team> <tag>", "delete an expert by tag"),
+    ]),
+    ("Workflows", [
+        ("/workflow", "action picker (list / show / run / new / delete)"),
+        ("/workflow list", "list all workflows (personal + every team, grouped)"),
+        ("/workflow show", "picker over workflows, then prints source"),
+        ("/workflow show <name>", "print the YAML or Python source by name"),
+        ("/workflow show <name> team <T>", "disambiguate when the name exists in several teams"),
+        ("/workflow run", "picker over runnable workflows, then prompts for question"),
+        ("/workflow run <name> question <text...>", "run a personal workflow"),
+        ("/workflow run <name> team <T> question <text...>", "run a team workflow"),
+        ("/workflow new <name> [team <T>] [from <file>]",
+         "create a YAML workflow. CLI: opens $EDITOR with a template. Channel: needs `from <file>`."),
+        ("/workflow delete <name> [team <T>]", "delete a workflow file"),
+        ("/workflow runs [all]", "list discussion runs (running by default; `all` = include finished)"),
+        ("/workflow log <topic_id>", "show a run's status + recent transcript"),
+    ]),
+    ("Skills", [
+        ("/skill", "list all skills aggregated across personal + every team"),
+        ("/skill <team>", "show skills scoped to one team + personal"),
+        ("/skill show <name> [team <T>]", "print a skill's SKILL.md content"),
+        ("/skill new <name> [team <T>] [from <file>]", "create a SKILL.md (CLI: $EDITOR)"),
+        ("/skill delete <name> [team <T>]", "delete a managed skill"),
+    ]),
+    ("Cron / Alarms", [
+        ("/cron", "list all cron entries (personal + all teams)"),
+        ("/cron <team>", "list one team's cron entries"),
+        ("/cron add [team <T>] target <X> [cron <expr>|once <ISO>] text <msg...>",
+         "create an alarm (team optional; CLI picks scope+target interactively)"),
+        ("/cron delete <task_id>", "delete a cron entry by id"),
+    ]),
+    ("Channels", [
+        ("/channel", "list 17 channels with configured/not status"),
+        ("/channel setup [<id>]", "guided setup (curses picker; CLI only)"),
+        ("/channel show <id>", "show JSON entries / env vars currently in .env"),
+        ("/channel clear <id>", "drop the env_key (bots_json) or unset env vars"),
+        ("/channel login weclaw", "run `weclaw login` — QR appears in your terminal"),
+        ("/channel logout weclaw", "stop the WeClaw daemon"),
+        ("/channel status weclaw", "ask weclaw for live status"),
+    ]),
+    ("Shell", [
+        ("/state", "dump persisted state.json"),
+        ("/restart", "request a backend restart"),
+        ("/front", "get a public magic link (when frontend is reachable)"),
+        ("/exit", "leave the shell (backend keeps running)"),
+        ("/shutdown", "stop ALL background services, then quit (alias: /exit all)"),
+    ]),
+]
+
+
+_HELP_TIPS = [
+    "Type / on an empty line to open the command picker. Some Windows terminals use a numbered fallback.",
+    "All `/<cmd>` commands also work as `clawcross <cmd>` and `/cross <cmd>` (channel).",
+    "`clawcross start` boots the full backend (web UI / API on PORT_FRONTEND).",
+    "Reset LLM profiles: rm ~/.clawcross/config/models.json (.env still works as fallback).",
+    "Reset shell state:  rm ~/.clawcross/state.json",
+]
+
+# ── Channel /cross help (no interactive-only commands, no terminal tips) ──
+
+_CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
+    ("Quick start", [
+        ("/cross help", "show these commands"),
+        ("/cross use codex", "switch to the Codex CLI platform"),
+        ("/cross use internal", "use the built-in internal agent"),
+        ("Send a message", "text without /cross runs as a prompt on the active agent"),
+    ]),
+    ("Platform & session", [
+        ("/cross platforms", "list all agent platforms"),
+        ("/cross use <platform>", "switch platform (internal / codex / claude / gemini / ...)"),
+        ("/cross resume", "show sessions for the current platform"),
+        ("/cross resume <id>", "switch to / create session by id"),
+        ("/cross session", "legacy alias for /cross resume"),
+        ("/cross new session", "create timestamped session"),
+        ("/cross mode [<mode>]", "picker over chat / readonly / manual / auto / bypass (or pass name direct)"),
+        ("/cross restart", "request a backend restart"),
+        ("/cross cancel", "cancel in-flight generation (internal agent, or close the active ACP session)"),
+    ]),
+    ("Model & LLM", [
+        ("/cross model", "list saved model profiles"),
+        ("/cross model show", "show the active profile"),
+        ("/cross model use <name>", "switch active profile"),
+        ("/cross model <model>", "set LLM model directly"),
+    ]),
+    ("Team resources", [
+        ("/cross team", "list teams"),
+        ("/cross team <name>", "team overview (members + alarm count)"),
+        ("/cross team <name> members", "list internal + external agents"),
+        ("/cross team <name> personas", "list persona / expert prompts"),
+        ("/cross team <name> workflows", "list team-scoped workflows"),
+        ("/cross team <name> skills", "list team SKILL.md files"),
+        ("/cross team <name> crons", "list team-scoped cron alarms"),
+        ("/cross team new <name>", "create a new team folder"),
+        ("/cross team rename <old> <new>", "rename a team folder"),
+        ("/cross team delete <name>", "delete a team (and its internal agents)"),
+        ("/cross team member add <team> ...", "add an external agent member"),
+        ("/cross team member edit|remove <team> <global>", "update / remove an external member"),
+    ]),
+    ("Experts / Personas", [
+        ("/cross expert <team>", "list a team's experts/personas"),
+        ("/cross expert show <team> <tag>", "show one expert's full persona"),
+        ("/cross expert add <team> tag <t> name <n> persona <text...>", "add a team expert"),
+        ("/cross expert edit <team> <tag> [name <n>] [persona <text...>]", "update an expert"),
+        ("/cross expert delete <team> <tag>", "delete an expert by tag"),
+    ]),
+    ("Workflows", [
+        ("/cross workflow", "list all workflows"),
+        ("/cross workflow show <name>", "print the YAML or Python source"),
+        ("/cross workflow show <name> team <T>", "disambiguate across teams"),
+        ("/cross workflow run <name> question <text...>", "run a personal workflow"),
+        ("/cross workflow run <name> team <T> question <text...>", "run a team workflow"),
+        ("/cross workflow new <name> [team <T>]", "create a workflow (CLI editor / channel `from <file>`)"),
+        ("/cross workflow delete <name> [team <T>]", "delete a workflow file"),
+        ("/cross workflow runs [all]", "list discussion runs (running by default)"),
+        ("/cross workflow log <topic_id>", "show a run's status + transcript"),
+    ]),
+    ("Skills", [
+        ("/cross skill", "list all skills"),
+        ("/cross skill <team>", "show skills scoped to one team"),
+        ("/cross skill show <name> [team <T>]", "print a skill's SKILL.md content"),
+        ("/cross skill new <name> [team <T>]", "create a new SKILL.md"),
+        ("/cross skill delete <name> [team <T>]", "delete a managed skill"),
+    ]),
+    ("Cron / Alarms", [
+        ("/cross cron", "list all cron entries"),
+        ("/cross cron list [<team>]", "list cron entries (optionally one team)"),
+        ("/cross cron add", "create a cron entry (interactive in CLI)"),
+        ("/cross cron delete <task_id>", "delete a cron entry by id"),
+    ]),
+    ("Channels", [
+        ("/cross channel", "list channels with configured/not status"),
+        ("/cross channel show <id>", "show current channel config"),
+        ("/cross channel clear <id>", "drop the channel config"),
+        ("/cross channel login weclaw", "run `weclaw login` (QR code)"),
+        ("/cross channel logout weclaw", "stop the WeClaw daemon"),
+        ("/cross channel status weclaw", "ask weclaw for live status"),
+    ]),
+    ("Shell", [
+        ("/cross state", "show current platform and session"),
+        ("/cross restart", "request a backend restart"),
+        ("/cross front", "get a public magic link"),
+        ("/cross exit", "leave cross shell (return to normal chat)"),
+    ]),
+]
+
+_CHAT_HELP_TIPS = [
+    "All commands use the /cross prefix in channels (e.g. /cross use codex).",
+    "Send any message without /cross to run it as a prompt on the active agent.",
+    "Send /cross front for a public magic link (web UI login).",
+    "Send /cross exit (or /cross off / /exit / /quit) to leave cross shell.",
+    "Some commands (model add, channel setup) need terminal — use `clawcross` CLI.",
+]
+
+
+def _rich_help_text() -> str:
+    """Categorised /help output with one example per command + tips."""
+    out: list[str] = []
+    for section_title, rows in _HELP_SECTIONS:
+        out.append(_style(section_title))
+        col = max(len(label) for label, _ in rows)
+        col = min(max(col, 18), 56)
+        for label, desc in rows:
+            pad = " " * max(2, col - len(label) + 2)
+            out.append(f"  {label}{pad}{desc}")
+        out.append("")
+    out.append(_style("Tips"))
+    for tip in _HELP_TIPS:
+        out.append(f"  • {tip}")
+    return "\n".join(out)
+
+
+def chat_help_text() -> str:
+    """Channel-flavoured help: /cross-prefixed commands, no interactive-only features."""
+    out: list[str] = ["Commands:", ""]
+    for section_title, rows in _CHAT_HELP_SECTIONS:
+        out.append(section_title)
+        col = max(len(label) for label, _ in rows)
+        col = min(max(col, 18), 56)
+        for label, desc in rows:
+            pad = " " * max(2, col - len(label) + 2)
+            out.append(f"  {label}{pad}{desc}")
+        out.append("")
+    out.append("Tips")
+    for tip in _CHAT_HELP_TIPS:
+        out.append(f"  \u2022 {tip}")
+    return "\n".join(out)
+
+
+def chat_welcome_text(state: dict, magic_link: str | None = None) -> str:
+    lines = [
+        *_claw_logo(),
+        "",
+        f"{APP_NAME} v{_package_version()}",
+        "Cross shell is on.",
+        "",
+        *_chat_state_lines(state),
+        "",
+        "Switch agents with /cross use codex.",
+        "Try /cross use claude or /cross use gemini.",
+        "Send a message to run it.",
+        "Send /cross help for commands.",
+        "Send /cross front for a public magic link.",
+        "Send /cross exit to leave.",
+    ]
+    if magic_link:
+        lines.extend([
+            "",
+            "Magic link:",
+            magic_link,
+        ])
+    return "\n".join(lines)
+
+
+def handle_channel_input(text: str, state: dict) -> tuple[bool, str]:
+    """Handle one ClawCross shell input line for non-terminal chat channels.
+
+    Returns (active, reply). active becomes False when /exit or /quit is used.
+    """
+    line = (text or "").strip()
+    if not line:
+        return True, ""
+    lower = line.lower()
+    if lower.startswith("/cross "):
+        line = "/" + line.split(maxsplit=1)[1].strip()
+        lower = line.lower()
+    elif lower.startswith("/cli "):
+        line = "/" + line.split(maxsplit=1)[1].strip()
+        lower = line.lower()
+    out = io.StringIO()
+    active = True
+    if lower in {"help", "/help"}:
+        return True, chat_help_text()
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/use":
+        parts = line.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                cmd_platforms(None, state)
+            table = _strip_ansi(out.getvalue()).strip()
+            return True, f"```\n{table}\n```"
+        platform = parts[1].strip().split()[0]
+        _set_chat_platform(state, platform)
+        current = _current(state)
+        return True, (
+            f"Agent switched to {current.get('platform', platform)}.\n"
+            "Send a message to continue on this agent."
+        )
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() in {"/resume", "/session"}:
+        parts = line.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            rows, error = _list_current_platform_sessions(state)
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                _print_session_rows(rows, state, error)
+            table = _strip_ansi(out.getvalue()).strip()
+            return True, f"```\n{table}\n```"
+        session = parts[1].strip().split()[0]
+        _set_session(state, session)
+        _save_state(state)
+        return True, f"session: {_current(state)['session']}"
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/model":
+        from src.cli.commands.model_cmd import handle_model_command
+        rest = line.split(maxsplit=1)
+        args = rest[1].strip().split() if len(rest) > 1 else []
+        return True, handle_model_command(args) or ""
+    current_user = (state.get("current", {}).get("user") or "").strip() or None
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/team":
+        from src.cli.commands.display_cmd import handle_team_command
+        rest = line.split(maxsplit=1)
+        args = rest[1].strip().split() if len(rest) > 1 else []
+        return True, handle_team_command(args, user=current_user) or ""
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/workflow":
+        from src.cli.commands.display_cmd import handle_workflow_command
+        rest = line.split(maxsplit=1)
+        args = rest[1].strip().split() if len(rest) > 1 else []
+        return True, handle_workflow_command(args, user=current_user) or ""
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/skill":
+        from src.cli.commands.display_cmd import handle_skill_command
+        rest = line.split(maxsplit=1)
+        args = rest[1].strip().split() if len(rest) > 1 else []
+        return True, handle_skill_command(args, user=current_user) or ""
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/expert":
+        from src.cli.commands.display_cmd import handle_expert_command
+        rest = line.split(maxsplit=1)
+        args = rest[1].strip().split() if len(rest) > 1 else []
+        return True, handle_expert_command(args, user=current_user) or ""
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/cron":
+        from src.cli.commands.display_cmd import handle_cron_command
+        rest = line.split(maxsplit=1)
+        args = rest[1].strip().split() if len(rest) > 1 else []
+        return True, handle_cron_command(args, user=current_user) or ""
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/channel":
+        from src.cli.commands.channel_cmd import handle_channel_command
+        rest = line.split(maxsplit=1)
+        args = rest[1].strip().split() if len(rest) > 1 else []
+        return True, handle_channel_command(args) or ""
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        if line.startswith("/"):
+            active = _handle_slash(line, state)
+        else:
+            run_prompt(line, state)
+    reply = _strip_ansi(out.getvalue()).strip()
+    return active, reply
+
+
+def repl(state: dict) -> int:
+    print_welcome(state)
+    _replay_current_session_history(state)
+    reader_fails = 0
+    while True:
+        try:
+            line = _read_interactive_line(_prompt_label(state))
+            reader_fails = 0
+        except EOFError:
+            print()
+            _save_state(state)
+            return 0
+        except KeyboardInterrupt:
+            print()
+            continue
+        except Exception as exc:
+            # Terminal/reader glitch (e.g. termios EIO after a disrupted
+            # stream). Reset the screen and keep going instead of crashing.
+            reader_fails += 1
+            try:
+                sys.stdout.write("\033[?1049l\033[?25h\r\033[K")
+                sys.stdout.flush()
+            except Exception:
+                pass
+            if reader_fails >= 3:
+                print(f"\ninput unavailable ({exc}); exiting.", file=sys.stderr)
+                _save_state(state)
+                return 1
+            continue
+        if not line.strip():
+            continue
+        if line.lstrip().startswith("/"):
+            if not _handle_slash(line, state):
+                return 0
+            continue
+        run_prompt(line, state)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="clawcross",
+        description="ClawCross Shell: Codex-style multi-platform agent CLI",
+    )
+    parser.add_argument(
+        "-V", "--version", action="version",
+        version=f"%(prog)s {_package_version()}",
+    )
+    parser.add_argument("-u", "--user", dest="global_user", help="User identity")
+    parser.add_argument("-s", "--session", "--agent", dest="global_session", help="Agent/session id")
+    parser.add_argument("-p", "--platform", dest="global_platform", help="Agent platform")
+    parser.add_argument("--mode", dest="global_mode", choices=list(VALID_MODES))
+    sub = parser.add_subparsers(dest="command")
+
+    run = sub.add_parser("run", help="Run one prompt on the current or selected platform")
+    run.add_argument("prompt", nargs="*", help="Prompt text")
+    run.add_argument("-p", "--platform", help="Platform, e.g. internal, codex, claude")
+    run.add_argument("-s", "--session", help="Session id")
+    run.add_argument("-u", "--user", help="User id")
+    run.add_argument("--mode", choices=list(VALID_MODES), help="Permission mode: chat / readonly / manual / auto / bypass")
+    run.add_argument("-m", "--model", help="Model name for internal route")
+
+    use = sub.add_parser("use", help="Persist the current platform")
+    use.add_argument("platform", help="Platform name")
+
+    sub.add_parser("platforms", help="List known platforms")
+    sub.add_parser("state", help="Show persisted shell state")
+    chat = sub.add_parser("chat", help="Enter interactive shell, or send a message")
+    chat.add_argument("prompt", nargs="?")
+    chat.add_argument("-s", "--session", "--agent")
+    chat.add_argument("-u", "--user")
+    chat.add_argument("-p", "--platform")
+    chat.add_argument("-m", "--model")
+    chat.add_argument("--mode", choices=list(VALID_MODES))
+    sub.add_parser("restart", help="Request a backend restart")
+    sub.add_parser("shutdown", aliases=["stop"], help="Stop all background services and exit the launcher")
+
+    user_p = sub.add_parser("login", aliases=["user"], help="Show or set the current username (identity used for all requests)")
+    user_p.add_argument("name", nargs="?", help="New username (omit to just show the current one)")
+
+    cancel = sub.add_parser("cancel", help="Cancel generation on the current platform (internal agent, or active ACP session)")
+    cancel.add_argument("-s", "--session", help="Session id")
+    cancel.add_argument("-u", "--user", help="User id")
+    compact = sub.add_parser("compact", help="Compress an Agent's conversation")
+    compact.add_argument("session", nargs="?", help="Agent id (default: current Agent)")
+
+    update = sub.add_parser(
+        "update",
+        help="Upgrade the global clawcross npm package; does not restart running services",
+    )
+    update.add_argument(
+        "version", nargs="?", default=None,
+        help="Specific version (e.g. 0.0.2). Defaults to latest.",
+    )
+
+    config = sub.add_parser("config", help="Read or write config/.env values")
+    config.add_argument("items", nargs="*", help="list | get KEY | set KEY VALUE | KEY VALUE")
+
+    model = sub.add_parser("model", help="Manage LLM model profiles (list/show/use/add/remove/migrate)")
+    model.add_argument("args", nargs="*", help="subcommand and arguments")
+
+    team = sub.add_parser("team", help="List teams (or show one team's members and alarms)")
+    team.add_argument("args", nargs="*", help="<team-name>")
+
+    workflow = sub.add_parser("workflow", help="List/show/run OASIS workflows")
+    workflow.add_argument("args", nargs="*", help="[show <name> | run <name> team <T> question <Q>]")
+
+    sub.add_parser("workflow-manual", help="Print the OASIS workflowpy authoring manual")
+
+    skill = sub.add_parser("skill", help="List personal and team skills")
+    skill.add_argument("args", nargs="*", help="[<agent>]")
+
+    expert = sub.add_parser("expert", help="Manage team personas/experts (list/show/add/edit/delete)")
+    expert.add_argument("args", nargs="*", help="[<team> | show <team> <tag> | add ... | edit ... | delete <team> <tag>]")
+
+    cron = sub.add_parser("cron", help="List cron alarms (optionally filtered by team)")
+    cron.add_argument("args", nargs="*", help="[<team>]")
+
+    channel = sub.add_parser("channel", help="List / setup channels (Telegram, Discord, ...)")
+    channel.add_argument("args", nargs="*", help="[list|status|show <id>|setup [<id>]|clear <id>]")
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
+    # Keep the terminal shell and the API CLI behind one installed command.
+    command_index = 2 if raw[:1] in (["-u"], ["--user"]) else (1 if raw and raw[0].startswith("--user=") else 0)
+    command = raw[command_index] if len(raw) > command_index else ""
+    lifecycle_commands = {"dev", "start", "start-foreground", "start-fg", "setup", "stop", "restart", "status", "doctor", "logs", "configure", "auto-model", "import-openclaw-llm", "check-openclaw", "components", "install-component", "start-tunnel", "stop-tunnel", "tunnel-status", "add-user", "evolve-skill"}
+    if command in lifecycle_commands:
+        if os.name == "nt":
+            launcher = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(PROJECT_ROOT / "launch/run.ps1")]
+        else:
+            launcher = ["bash", str(PROJECT_ROOT / "launch/run.sh")]
+        return subprocess.call([*launcher, *raw[command_index:]])
+    api_commands = {"agents", "teams", "groups", "settings", "tools", "tts", "profile", "visual", "topics", "personas", "workflows", "token"}
+    if command == 'autostart':
+        from launch.autostart import main as autostart_main
+        return autostart_main(raw[command_index+1:])
+    if command == 'join':
+        from src.cli.commands.join import main as join_main
+        user = raw[1] if command_index == 2 else raw[0].split('=', 1)[1] if command_index == 1 else None
+        return join_main(raw[command_index+1:], default_user=user)
+    if command in {'accounts', 'acp'}:
+        from src.cli.commands.local_runtime import main as runtime_main
+        user = raw[1] if command_index == 2 else raw[0].split('=', 1)[1] if command_index == 1 else None
+        return runtime_main(command, raw[command_index+1:], user=user)
+    if command == "tunnel":
+        return _cmd_tunnel(raw[command_index + 1] if len(raw) > command_index + 1 else "status")
+    if command in api_commands:
+        from src.cli.cli import main as api_main
+        return api_main(raw)
+    state = _load_state()
+    parser = build_parser()
+    if not raw:
+        if not sys.stdin.isatty():
+            parser.print_help()
+            return 0
+        return repl(state)
+    args = parser.parse_args(raw)
+    if args.global_user:
+        _current(state)["user"] = args.global_user
+    if args.global_platform:
+        _set_platform(state, args.global_platform)
+    if args.global_session:
+        _set_session(state, args.global_session)
+    if args.global_mode:
+        _current(state)["mode"] = args.global_mode
+    if args.command == "run":
+        return cmd_run(args, state)
+    if args.command == "use":
+        return cmd_use(args, state)
+    if args.command == "platforms":
+        return cmd_platforms(args, state)
+    if args.command == "state":
+        return cmd_state(args, state)
+    if args.command in ("login", "user"):
+        return cmd_user(args, state)
+    if args.command == "chat":
+        if args.prompt is not None:
+            args.prompt = [sys.stdin.read() if args.prompt == "-" else args.prompt]
+            return cmd_run(args, state)
+        for key in ("user", "session", "platform", "mode"):
+            value = getattr(args, key)
+            if value:
+                if key == "platform":
+                    _set_platform(state, value)
+                elif key == "session":
+                    _set_session(state, value)
+                else:
+                    _current(state)[key] = value
+        if not sys.stdin.isatty():
+            parser.error("chat needs a terminal, or provide a message / standard input with chat -")
+        return repl(state)
+    if args.command == "restart":
+        return cmd_restart(args, state)
+    if args.command in ("shutdown", "stop"):
+        return cmd_shutdown(args, state)
+    if args.command == "cancel":
+        return cmd_cancel(args, state)
+    if args.command == "compact":
+        from src.cli.commands.display_cmd import handle_compact_command
+        print(handle_compact_command([args.session or _agent_id(_current(state).get("session") or "default")],
+            user=_current(state).get("user") or DEFAULT_USER))
+        return 0
+    if args.command == "update":
+        return cmd_update(args, state)
+    if args.command == "config":
+        items = list(args.items or [])
+        if not items or items[0] == "list":
+            args.config_action = "list"
+            args.key = ""
+            args.value = []
+        elif items[0] == "get" and len(items) == 2:
+            args.config_action = "get"
+            args.key = items[1]
+            args.value = []
+        elif items[0] == "set" and len(items) >= 3:
+            args.config_action = "set"
+            args.key = items[1]
+            args.value = items[2:]
+        elif len(items) >= 2:
+            args.config_action = "set"
+            args.key = items[0]
+            args.value = items[1:]
+        else:
+            args.config_action = "usage"
+            args.key = ""
+            args.value = []
+        return cmd_config(args, state)
+    if args.command == "model":
+        from src.cli.commands.model_cmd import handle_model_command
+        out = handle_model_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
+        if out:
+            print(out)
+        return 0
+    if args.command == "team":
+        from src.cli.commands.display_cmd import handle_team_command
+        out = handle_team_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
+        if out:
+            print(out)
+        return 0
+    if args.command == "workflow":
+        from src.cli.commands.display_cmd import handle_workflow_command
+        out = handle_workflow_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
+        if out:
+            print(out)
+        return 0
+    if args.command == "workflow-manual":
+        from src.cli.commands.workflow_manual_cmd import handle_workflow_manual_command
+        out = handle_workflow_manual_command()
+        if out:
+            print(out)
+        return 0
+    if args.command == "skill":
+        from src.cli.commands.display_cmd import handle_skill_command
+        out = handle_skill_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
+        if out:
+            print(out)
+        return 0
+    if args.command == "expert":
+        from src.cli.commands.display_cmd import handle_expert_command
+        out = handle_expert_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
+        if out:
+            print(out)
+        return 0
+    if args.command == "cron":
+        from src.cli.commands.display_cmd import handle_cron_command
+        out = handle_cron_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
+        if out:
+            print(out)
+        return 0
+    if args.command == "channel":
+        from src.cli.commands.channel_cmd import handle_channel_command
+        out = handle_channel_command(list(args.args or []), interactive=sys.stdin.isatty() and sys.stdout.isatty())
+        if out:
+            print(out)
+        return 0
+    if args.command is None:
+        if not sys.stdin.isatty():
+            parser.print_help()
+            return 0
+        return repl(state)
+    parser.print_help()
+    return 0
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    raise SystemExit(main())

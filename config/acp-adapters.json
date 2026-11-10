@@ -1,0 +1,4 @@
+{
+  "codex": ["@agentclientprotocol/codex-acp", "2.5.0", "codex-acp"],
+  "claude": ["@agentclientprotocol/claude-agent-acp", "0.101.0", "claude-agent-acp"]
+}

@@ -1,0 +1,128 @@
+"""
+Pydantic request models for WeBot runtime APIs.
+"""
+
+from pydantic import BaseModel, Field
+
+
+class WeBotSubagentRefRequest(BaseModel):
+    user_id: str
+    password: str = ""
+    agent_ref: str
+
+
+class WeBotSubagentHistoryRequest(WeBotSubagentRefRequest):
+    limit: int = 12
+
+
+class WeBotToolPolicyUpdateRequest(BaseModel):
+    user_id: str
+    password: str = ""
+    policy: dict
+
+
+class WeBotRuntimeSettingsUpdateRequest(BaseModel):
+    user_id: str
+    password: str = ""
+    session_id: str = ""
+    settings: dict = Field(default_factory=dict)
+    reset: bool = False
+
+
+class WeBotSessionRuntimeRequest(BaseModel):
+    user_id: str
+    password: str = ""
+    session_id: str
+
+
+class WeBotPlanUpdateRequest(WeBotSessionRuntimeRequest):
+    title: str
+    status: str = "active"
+    items: list[dict] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
+
+
+class WeBotWorkflowPresetApplyRequest(WeBotSessionRuntimeRequest):
+    preset_id: str
+    metadata: dict = Field(default_factory=dict)
+
+
+class WeBotTodoUpdateRequest(WeBotSessionRuntimeRequest):
+    items: list[dict] = Field(default_factory=list)
+
+
+class WeBotSessionModeUpdateRequest(WeBotSessionRuntimeRequest):
+    mode: str = "execute"
+    reason: str = ""
+
+
+class WeBotLspRequest(WeBotSessionRuntimeRequest):
+    file: str
+    op: str = "diagnostics"
+    line: int = 0
+    col: int = 0
+    new_name: str = ""
+    timeout_seconds: int = 30
+    max_diagnostics: int = 50
+
+
+class WeBotSessionInboxListRequest(WeBotSessionRuntimeRequest):
+    target_ref: str = ""
+    status: str = "unread"
+    limit: int = 20
+
+
+class WeBotRunInterruptRequest(WeBotSessionRuntimeRequest):
+    run_id: str = ""
+    agent_ref: str = ""
+
+
+class WeBotKairosUpdateRequest(WeBotSessionRuntimeRequest):
+    enabled: bool = False
+    reason: str = ""
+
+
+class WeBotDreamRequest(WeBotSessionRuntimeRequest):
+    reason: str = ""
+
+
+class WeBotVerificationCreateRequest(WeBotSessionRuntimeRequest):
+    title: str
+    status: str = "passed"
+    details: str = ""
+
+
+class WeBotApprovalResolutionRequest(BaseModel):
+    user_id: str
+    password: str = ""
+    approval_id: str
+    action: str = "approve"
+    reason: str = ""
+    remember: bool = False
+    session_id: str = ""
+
+
+class WeBotClaudeKeepaliveUpdateRequest(WeBotSessionRuntimeRequest):
+    enabled: bool = False
+    prompt: str = "ping"
+    model: str = ""
+    timezone: str = ""
+    start_time: str = "06:00"
+    sleep_time: str = "23:00"
+    weekdays: str = "MTWRFSU"
+    use_caffeinate: bool = False
+    force_sleep_at_quiet_hours: bool = False
+    monitor_command: str = "claude-monitor --clear"
+    timeout_seconds: int = 90
+    metadata: dict = Field(default_factory=dict)
+
+
+class WeBotClaudeProbeRequest(WeBotSessionRuntimeRequest):
+    prompt: str = "Reply only CLAUDE_ACP_OK"
+    session_name: str = ""
+    timeout_seconds: int = 90
+
+
+class WeBotClaudeKickoffRequest(WeBotClaudeProbeRequest):
+    model: str = ""
+    use_acp: bool = True

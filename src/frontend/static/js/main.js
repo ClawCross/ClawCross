@@ -1,0 +1,15467 @@
+// ── Page Loading Overlay (smooth delayed show/hide) ──
+// Only shows the loading overlay if the operation takes > 300ms,
+// so fast operations feel instant without any flicker.
+const _pageLoading = {
+    timer: null,
+    visible: false,
+    startTime: 0,
+    DELAY: 300,        // ms before showing overlay
+    MIN_VISIBLE: 400,  // ms minimum visible time to avoid flash
+};
+
+function showPageLoading(text) {
+    _pageLoading.startTime = Date.now();
+    // Clear any pending hide
+    if (_pageLoading.timer) { clearTimeout(_pageLoading.timer); _pageLoading.timer = null; }
+    // Delay showing: only show if still loading after DELAY ms
+    _pageLoading.timer = setTimeout(() => {
+        const el = document.getElementById('page-loading-overlay');
+        if (!el) return;
+        if (text) {
+            const txt = el.querySelector('.page-loading-text');
+            if (txt) txt.textContent = text;
+        }
+        el.classList.add('loading-visible');
+        _pageLoading.visible = true;
+        _pageLoading.timer = null;
+    }, _pageLoading.DELAY);
+}
+
+function hidePageLoading() {
+    const elapsed = Date.now() - _pageLoading.startTime;
+    // If overlay was never shown (fast operation), just cancel the timer
+    if (_pageLoading.timer) {
+        clearTimeout(_pageLoading.timer);
+        _pageLoading.timer = null;
+    }
+    if (!_pageLoading.visible) return; // never became visible → nothing to hide
+    // If it just became visible, keep it for MIN_VISIBLE to avoid flash
+    const visibleSince = elapsed - _pageLoading.DELAY;
+    const remaining = Math.max(0, _pageLoading.MIN_VISIBLE - visibleSince);
+    setTimeout(() => {
+        const el = document.getElementById('page-loading-overlay');
+        if (el) el.classList.remove('loading-visible');
+        _pageLoading.visible = false;
+    }, remaining);
+}
+
+const i18n = {
+    'zh-CN': {
+        // 通用
+        loading: '加载中...',
+        error: '错误',
+        success: '成功',
+        cancel: '取消',
+        confirm: '确认',
+        close: '关闭',
+
+        // 登录页
+        login_title: 'Clawcross',
+        login_subtitle: '请登录以开始对话',
+        username: '用户名',
+        password: '密码',
+        login_btn: '登录',
+        local_login_btn: '本机免密登录',
+        login_verifying: '验证中...',
+        login_username_required: '请输入用户名',
+        login_password_required: '请输入密码',
+        login_error_invalid: '用户名只能包含字母、数字、下划线、短横线或中文',
+        login_error_failed: '登录失败',
+        login_error_invalid_response: '服务器返回了无效响应',
+        login_error_password_login_unavailable: '用户「{user_id}」未设置密码，无法使用密码登录。请先使用「本机免密登录」，再到设置页里为这个用户名创建密码。',
+        login_error_network: '网络错误',
+        login_error_timeout: '连接超时，请确认后端服务已启动后重试',
+        login_footer: '身份验证后方可使用，对话和文件按用户隔离',
+        local_login_banner_title: '已使用本机免密登录',
+        local_login_banner_body: '当前用户名「{user_id}」还没有密码。如需后续密码登录或远程访问，可在 Settings 里设置密码并保存为用户。',
+        local_login_banner_action: '去设置',
+        context_usage: '上下文已用 {percent}%',
+        llm_not_configured: 'LLM API 未配置，请先前往设置填写 API Key',
+        project_update_title: "项目更新",
+        project_update_hint: "检查远端 Git 更新，确认后拉取最新代码并重启服务。完整更新会使用远端覆盖本地冲突或未提交改动。",
+        project_update_branch_optional: "分支（可选）",
+        project_update_branch_placeholder: "留空使用当前分支，例如 main",
+        project_update_logs: "最近日志",
+        project_update_check: "检查更新",
+        project_update_start: "完整更新",
+        project_update_login: "请先登录。",
+        project_update_check_failed: "检查更新失败: {error}",
+        project_update_done: "更新完成，页面即将刷新。",
+        project_update_failed: "更新失败。",
+        project_update_restarting: "服务暂时不可用，可能正在重启：{error}",
+        project_update_started: "更新任务已启动。",
+        project_update_start_failed: "启动更新失败: {error}",
+        agent_center_native_settings: "模型、思考强度与 ClawCross 工具",
+        agent_center_runtime_control: "运行控制",
+        agent_center_runtime_details: "运行详情与审核",
+        studio_conversations: "Agents",
+        studio_new_conversation: "新建 Agent",
+        studio_history: "最近 Agent",
+        studio_history_empty: "暂无 Agent",
+
+        project_update_banner: '发现新版本 {latest}，点击查看并更新',
+        project_update_banner_dirty: '发现新版本 {latest}，但本地有未提交改动',
+        project_update_summary_placeholder: '点击"检查更新"后显示版本信息。',
+        project_update_status_label: '状态',
+        project_update_branch_label: '分支',
+        project_update_channel_label: '通道',
+        project_update_current_label: '当前版本',
+        project_update_remote_label: '远端版本',
+        project_update_dirty_warning: '本地工作区存在未提交改动；完整更新会使用远端覆盖本地。',
+        project_update_has_update: '检测到可用更新。',
+        project_update_has_update_npm: '检测到可用更新（npm 升级）。',
+        project_update_up_to_date: '当前已经是最新版本。',
+
+        // 头部
+        encrypted: '● 已加密',
+        history: '🤖Agents',
+        new_chat: '+新',
+        new_chat_mobile: '+',
+        logout: '退出',
+        current_session: '当前对话号',
+        more_actions: '更多操作',
+
+        // 移动端菜单
+        menu_history: '🤖 Agents',
+        menu_new: '➕ 新对话',
+        menu_oasis: '🏛️ TeamsWork',
+        menu_logout: '🚪 退出',
+        // 汉堡菜单 (no emoji, icon is separate)
+        hmenu_agents: 'Agents',
+        hmenu_agent_center: 'Agent 中心',
+        hmenu_settings: '偏好设置',
+        hmenu_new: '新对话',
+        hmenu_oasis: '工作流运行',
+        hmenu_logout: '退出',
+        hmenu_lang: '语言',
+        hmenu_public: '公开',
+        tab_agent_center: 'Agents',
+        agent_center_kicker: '观察 · 互动 · 培养',
+        agent_center_title: 'Agent 中心',
+        agent_center_refresh_status: '刷新状态',
+        native_session_register: '登记外部会话',
+        agent_center_search: '查找',
+        agent_center_search_placeholder: '名称、ID、标签',
+        agent_center_kind: '类型',
+        agent_center_status: '状态',
+        agent_center_active: '运行中',
+        agent_center_idle: '空闲',
+        agent_center_finished: '已结束',
+        agent_center_attention: '异常/待确认',
+        agent_center_all: '全部',
+        agent_center_status_hint: '外部运行时的 Session 在线不等于正在运行。',
+        agent_center_total: '总数',
+        agent_center_running: '运行中',
+        agent_center_uncertain: '状态待确认',
+        agent_center_empty: '当前筛选条件下没有 Agent',
+        agent_center_public: '未加入 Team',
+        agent_center_connection: '连接',
+        agent_center_evidence: '运行判断',
+        agent_center_confirmed: '已确认',
+        agent_center_session_only: '仅 Session',
+        agent_center_stop: '终止',
+        agent_center_stop_confirm: '确定终止这个 Agent 当前正在执行的任务？',
+        agent_center_stop_ok: '终止请求已发送',
+        agent_center_stop_none: '当前没有可终止的运行',
+        agent_center_stop_failed: '停止 Agent 失败',
+        agent_center_reset: '重置',
+        agent_center_reset_confirm: '重置这个 Agent 的会话和上下文？Agent 配置会保留。',
+        agent_center_reset_ok: 'Agent 会话已重置',
+        agent_center_reset_failed: '重置 Agent 失败',
+        agent_center_delete: '删除 Agent',
+        agent_center_delete_ok: 'Agent 已删除',
+        agent_center_delete_failed: '删除 Agent 失败',
+        agent_center_load_failed: '加载 Agent 列表失败',
+        agent_center_open_detail: '查看详情',
+        agent_center_profile: '身份档案',
+        agent_center_context: '上下文管理',
+        agent_center_tools: '工具设置',
+        agent_center_save: '保存设置',
+        agent_center_save_ok: 'Agent 设置已保存',
+        agent_center_save_failed: '保存设置失败',
+        agent_center_compact: '压缩上下文',
+        agent_center_compact_ok: '上下文压缩完成',
+        agent_center_compact_none: '当前没有可压缩的上下文',
+        agent_center_unrestricted_tools: '全部工具可用',
+        agent_center_no_tools: '禁止全部工具',
+        agent_center_used: '已用',
+        agent_center_remaining: '剩余',
+        public_starting: '启动中...',
+        public_stopping: '停止中...',
+
+        // 聊天区域
+        welcome_message: '你好，想做什么直接告诉我。',
+        new_session_message: '新对话已开始。想做什么直接告诉我。',
+        agent_meta_title: '会话标题',
+        agent_meta_title_placeholder: '留空则显示第一条消息',
+        input_placeholder: '说说你想做什么…',
+        send_btn: '发送',
+        cancel_btn: '终止',
+        busy_btn: '系统占用中',
+        new_system_msg: '有新的系统消息',
+        click_refresh: '点击刷新',
+        no_response: '（无响应）',
+        thinking_stopped: '⚠️ 已终止思考',
+        login_expired: '⚠️ 登录已过期，请重新登录',
+        agent_error: '❌ 错误',
+
+        // 工具面板
+        available_tools: '可用工具',
+        tool_calling: '（调用工具中...）',
+        tool_return: '🔧 工具返回',
+        tool_call_args: '调用参数',
+        tool_full_output: '完整结果',
+        tool_page_prev: '上一页',
+        tool_page_next: '下一页',
+        tool_page_label: '第 {current}/{total} 页',
+
+        // 文件上传
+        max_images: '最多上传5张图片',
+        max_files: '最多上传3个文件',
+        max_audios: '最多上传2个音频',
+        audio_too_large: '音频过大，上限 25MB',
+        video_too_large: '视频过大，上限 50MB',
+        pdf_too_large: 'PDF过大，上限 10MB',
+        file_too_large: '文件过大，上限 512KB',
+        unsupported_type: '不支持的文件类型',
+        supported_types: '支持: txt, md, csv, json, py, js, pdf, mp3, wav, avi, mp4 等',
+
+        // 录音
+        recording_title: '录音',
+        recording_stop: '点击停止录音',
+        mic_permission_denied: '无法访问麦克风，请检查浏览器权限设置。',
+        recording_too_long: '录音过长，上限 25MB',
+
+        // 历史会话
+        history_title: '🤖 Agents',
+        history_loading: '加载中...',
+        history_empty: '暂无历史对话',
+        history_error: '加载失败',
+        history_loading_msg: '加载历史消息...',
+        history_no_msg: '（此对话暂无消息记录）',
+        new_session_confirm: '开启新对话？当前对话的历史记录将保留，可通过切回对话号恢复。',
+        messages_count: '条消息',
+        session_id: '对话号',
+        delete_session: '删除',
+        delete_session_confirm: '确定删除此对话？删除后不可恢复。',
+        delete_all_confirm: '确定删除所有对话记录？此操作不可恢复！',
+        delete_success: '删除成功',
+        delete_fail: '删除失败',
+        delete_all: '🗑️ 清空全部',
+        subagents_title: '🧵 Subagents',
+        subagents_loading: '加载子 Agent...',
+        subagents_empty: '暂无子 Agent',
+        subagent_history: '历史',
+        subagent_hide_history: '收起',
+        subagent_stop: '停止',
+        subagent_open_parent: '父会话',
+        subagent_stop_confirm: '确定停止这个子 Agent？',
+        subagent_stop_success: '子 Agent 已停止',
+        subagent_stop_failed: '停止子 Agent 失败',
+        subagent_last_result: '最新结果',
+        subagent_history_empty: '暂无可显示的历史',
+        subagent_runtime_status: '运行状态',
+        subagent_runtime_loading: '加载运行时信息...',
+        subagent_runtime_unavailable: '当前无运行时数据',
+        subagent_runtime_workspace: 'Workspace',
+        subagent_runtime_mode: 'Mode',
+        subagent_runtime_plan: 'Plan',
+        subagent_runtime_todos: 'Todos',
+        subagent_runtime_verifications: 'Verifications',
+        subagent_runtime_approvals: 'Approvals',
+        subagent_runtime_runs: 'Runs',
+        subagent_runtime_inbox: 'Inbox',
+        subagent_runtime_artifacts: 'Artifacts',
+        subagent_runtime_relationships: 'Graph',
+        subagent_runtime_current: 'Current Session',
+        subagent_runtime_claude_code: 'Claude Code',
+        subagent_runtime_probe: '探测',
+        subagent_runtime_kickoff: 'Kickoff',
+        subagent_runtime_keepalive_on: 'Keepalive On',
+        subagent_runtime_keepalive_off: 'Keepalive Off',
+        subagent_runtime_claude_probe_ok: 'Claude Code 探测成功',
+        subagent_runtime_claude_probe_failed: 'Claude Code 探测失败',
+        subagent_runtime_keepalive_updated: 'Claude keepalive 已更新',
+        subagent_runtime_no_plan: '暂无计划',
+        subagent_runtime_no_todos: '暂无 Todo',
+        subagent_runtime_no_verifications: '暂无验证记录',
+        subagent_runtime_no_approvals: '暂无 approval 请求',
+        subagent_runtime_no_runs: '暂无运行记录',
+        subagent_runtime_no_inbox: '暂无 Inbox 消息',
+        subagent_runtime_inbox_read: '已读',
+        subagent_runtime_inbox_unread: '未读',
+        subagent_runtime_show_message: '查看正文',
+        subagent_runtime_no_artifacts: '暂无归档 artifacts',
+        subagent_runtime_no_relationships: '暂无父子关系',
+        subagent_runtime_parent: '父会话',
+        subagent_runtime_children: '子 Agent',
+        subagent_runtime_remote: 'Remote',
+        subagent_runtime_approve: '批准',
+        subagent_runtime_approve_remember: '批准并记住',
+        subagent_runtime_deny: '拒绝',
+        subagent_runtime_approval_ok: 'Approval 已处理',
+        subagent_runtime_approval_failed: 'Approval 处理失败',
+        approval_required_title: '⚠️ 工具调用需要批准',
+        approval_reason: '原因',
+        approval_approve: '批准',
+        approval_approve_remember: '批准并记住',
+        approval_deny: '拒绝',
+        approval_working: '处理中...',
+        approval_done: '✅ 已处理',
+        subagent_runtime_mode_plan: '切到 Plan',
+        subagent_runtime_mode_agent: '切到 Agent',
+        subagent_runtime_mode_review: '切到 Review',
+        subagent_runtime_mode_yolo: '切到 YOLO',
+        subagent_runtime_mode_execute: '切到 Execute',
+        subagent_runtime_mode_updated: '会话模式已更新',
+        subagent_runtime_mode_update_failed: '会话模式更新失败',
+        policy_panel_title: '🛡️ Tool Policy',
+        policy_panel_edit: '编辑',
+        policy_panel_close: '收起',
+        policy_panel_loading: '加载策略中...',
+        policy_panel_empty: '当前未配置用户级 WeBot policy，将使用内置默认 allow。',
+        policy_default_approval: '默认审批',
+        runtime_settings: '上下文与审核',
+        agent_workspaces: '工作区',
+        policy_panel_format: '格式化',
+        policy_panel_save: '保存',
+        policy_panel_saved: 'Tool policy 已保存',
+        policy_panel_load_failed: '加载 tool policy 失败',
+        policy_panel_save_failed: '保存 tool policy 失败',
+        policy_panel_invalid_json: 'Policy JSON 格式无效',
+        policy_panel_summary: 'default={defaultApproval} · tools={toolCount} · hooks={hookCount}',
+        policy_panel_source: '来源: {source}',
+        policy_panel_path: '文件: {path}',
+        policy_panel_dirty: '有未保存修改',
+
+        // TTS
+        tts_read: '朗读',
+        tts_stop: '停止',
+        tts_loading: '加载中...',
+        tts_request_failed: 'TTS 请求失败',
+        code_omitted: '（代码省略）',
+        image_placeholder: '(图片)',
+        audio_placeholder: '(语音)',
+        file_placeholder: '(文件)',
+
+        // OASIS
+        oasis_title: '工作流运行',
+        oasis_subtitle: '查看运行中和已结束的工作流实例',
+        oasis_topics: '运行列表',
+        oasis_topics_count: '个话题',
+        oasis_no_topics: '暂无工作流运行记录',
+        oasis_start_hint: '在聊天中让 Agent 发起 TeamsWork 讨论',
+        oasis_back: '← 返回',
+        oasis_conclusion: '讨论结论',
+        oasis_waiting: '等待专家发言...',
+        oasis_status_pending: '等待中',
+        oasis_status_discussing: '讨论中',
+        oasis_status_concluded: '已完成',
+        oasis_status_error: '出错',
+        oasis_status_cancelled: '已终止',
+        oasis_round: '轮',
+        oasis_posts: '帖',
+        oasis_expert_creative: '创意专家',
+        oasis_expert_critical: 'PUA专家',
+        oasis_expert_data: '数据分析师',
+        oasis_expert_synthesis: '综合顾问',
+        oasis_cancel: '终止讨论',
+        oasis_cancel_confirm: '确定要强制终止此讨论？',
+        oasis_cancel_success: '讨论已终止',
+        oasis_delete: '删除记录',
+        oasis_delete_confirm: '确定要永久删除此讨论记录？删除后不可恢复。',
+        oasis_delete_success: '记录已删除',
+        oasis_action_fail: '操作失败',
+
+        // 页面切换
+        tab_chat: '对话',
+        tab_group: '团队',
+        tab_orchestrate: '工作流',
+        tab_groupchat: '消息中心',
+        tip_open_msgcenter: '打开消息中心',
+
+        // 群聊
+        group_title: '👥 团队列表',
+        group_new: '+ 新建',
+        group_no_groups: '暂无团队',
+        group_rename_team: '重命名团队（仅文件夹）',
+        group_item_open_hint: '点击进入群聊',
+        group_select_hint: '选择一个团队进行管理',
+        group_create_hint: '创建或导入一个团队进行管理',
+        group_members_btn: '👤 成员',
+        group_mute: '🔇 急停',
+        group_unmute: '🔊 恢复',
+        group_members: '成员管理',
+        group_current_members: '当前成员',
+        group_add_agents: '添加 Agent Session',
+        group_input_placeholder: '发送消息...',
+        group_create_title: '新建团队',
+        group_name_placeholder: '团队名称',
+        group_no_sessions: '没有可用的 Agent Session',
+        group_create_btn: '创建',
+        group_delete_confirm: '确定删除此团队？',
+        group_owner: '群主',
+        group_agent: 'Agent',
+        group_msg_count: '条消息',
+        group_member_count: '人',
+        group_ext_platform: '连接方式',
+        group_ext_platform_acp: '本地 ACP（acpx，可不填 API URL）',
+        group_ext_tag_none: '（无标签）',
+        group_ext_tag_custom: '自定义…',
+        group_ext_url_optional: 'API URL（可选）',
+        group_ext_url_optional_acp: 'API URL（ACP 模式可不填）',
+        group_ext_url_hint_generic: '仅在使用 HTTP 网关时需要；纯 acpx 外部成员可留空。',
+
+        // 离线提示
+        offline_banner: '⚠️ 网络已断开，请检查连接',
+
+        // 编排面板
+        orch_expert_pool: '🧑‍💼 人设池',
+        orch_expert_pool_text: '人设池',
+        orch_preset_experts: '📚 预设人设',
+        orch_custom_experts: '🛠️ 自定义人设',
+        orch_agents_section: '🤖 Agent',
+        orch_agents_empty: '暂无 Agent，点击 ➕ 新建',
+        orch_add_agent_title: '新建 Agent',
+        orch_agent_platform: '平台',
+        acpx_required_for_external: 'ACP 客户端尚未就绪，请检查 Python 环境。',
+        orch_agent_runtime_name: '运行时名称（该平台上的会话名）',
+        orch_agent_name_required: '请输入名称',
+        orch_agent_runtime_required: '请输入运行时名称',
+        orch_agent_set_lead: '设为团队主 agent',
+        orch_agent_unset_lead: '取消团队主 agent',
+        orch_agent_remove_from_team: '移出团队',
+        orch_agent_delete: '删除 agent',
+        orch_node_tools: '工具',
+        orch_node_tools_none: '不用工具（轻量）',
+        orch_node_tools_all: '全部工具',
+        orch_node_tools_list: '指定工具',
+        orch_node_tools_hint: '带工具时该人设以临时 WeBot 会话运行，话题结束后清理。',
+        orch_gt_already_member: '已是成员',
+        orch_ia_name: 'Agent 名称',
+        orch_ia_tag: '标签 (Tag)',
+        orch_ia_tag_placeholder: '可拖入专家设置，或手动输入',
+        orch_ia_created: 'Agent 已创建',
+        orch_ia_tag_set: 'Tag 已设置为',
+        orch_manual_inject: '手动注入',
+        orch_start_node: '开始节点',
+        orch_end_node: '结束节点',
+        orch_script_node: '脚本节点',
+        orch_human_node: '人类节点',
+        orch_cond_node: '选择器',
+        orch_control_nodes: '控制节点',
+        orch_start_author: 'begin',
+        orch_end_author: 'bend',
+        orch_start_default_content: '讨论开始',
+        orch_end_default_content: '讨论结束',
+        orch_cond_already_selector: '已经是选择器节点',
+        orch_shortcuts_title: '快捷操作：',
+        orch_shortcuts_body: '拖入专家到画布 · 连接端口=工作流 · Ctrl+G=分组 · 双击快速添加',
+        // Orchestration toolbar buttons
+        orch_btn_arrange: '🔄 排列',
+        orch_btn_save: '💾 保存工作流',
+        orch_btn_load: '📂 加载工作流',
+        orch_btn_ai: '🤖 AI优化工作流',
+        orch_btn_export: '📋 复制工作流到粘贴板',
+        orch_btn_download: '⬇️ 导出工作流',
+        orch_btn_upload: '⬆️ 导入工作流',
+        orch_btn_focus: '🎯 专注',
+        orch_btn_status: '🔄 状态',
+        orch_btn_clear: '🗑️ 清空工作流',
+        orch_tip_arrange: '自动排列',
+        orch_tip_save: '保存工作流',
+        orch_tip_load: '加载工作流',
+        orch_tip_ai: 'AI优化工作流',
+        orch_tip_export: '复制工作流到粘贴板',
+        orch_tip_download: '导出工作流',
+        orch_tip_upload: '导入工作流',
+        orch_tip_status: '刷新 session 状态',
+        orch_tip_clear: '清空工作流',
+        orch_btn_generate_team: '📤 生成团队',
+        orch_tip_generate_team: '将画布中的角色自动加入团队',
+        orch_gt_title: '生成团队',
+        orch_gt_label_team: '目标团队',
+        orch_gt_new_team: '新建团队',
+        orch_gt_new_team_placeholder: '输入新团队名称',
+        orch_gt_select_team: '选择已有团队',
+        orch_gt_agents_title: '画布中的角色',
+        orch_gt_no_agents: '画布中没有可加入团队的角色（expert / session / external）',
+        orch_gt_conflict_skip: '跳过',
+        orch_gt_conflict_overwrite: '覆盖',
+        orch_gt_conflict_label: '⚠️ 已存在',
+        orch_gt_confirm: '确认生成',
+        orch_gt_cancel: '取消',
+        orch_gt_toast_ok: '✅ 已添加 {added} 个角色，跳过 {skipped} 个',
+        orch_gt_toast_err: '❌ 生成团队失败',
+        orch_gt_toast_no_team: '⚠️ 请选择或输入团队名',
+        // Canvas hints
+        orch_hint_drag: '拖入专家开始编排',
+        // Nav controls
+        orch_tip_up: '上移',
+        orch_tip_down: '下移',
+        orch_tip_left: '左移',
+        orch_tip_right: '右移',
+        orch_tip_reset: '重置视图',
+        orch_tip_zoomout: '缩小',
+        orch_tip_zoomin: '放大',
+        // Right panel
+        orch_settings: '⚙️ 设置',
+        orch_repeat: '每轮重复计划',
+        orch_rounds: '轮次:',
+        orch_threshold: '聚类阈值:',
+        orch_ai_gen: '🤖 AI 生成',
+        orch_ai_hint: '点击「🤖 AI编排」自动生成 YAML',
+        orch_prompt_label: '📨 发送的 Prompt',
+        orch_prompt_copy: '复制',
+        orch_prompt_hint: '点击 AI编排 后显示',
+        orch_agent_yaml_label: '🤖 Agent YAML',
+        orch_agent_yaml_copy: '复制',
+        orch_agent_yaml_hint: '等待 Agent 生成',
+        orch_rule_yaml: '📄 规则 YAML',
+        orch_rule_yaml_hint: '拖入专家后自动生成...',
+        orch_status_bar: '节点: {nodes} | 连线: {edges} | 分组: {groups}',
+        orch_status_bar_init: '节点: 0 | 连线: 0 | 分组: 0',
+        orch_manual_inject: '手动注入',
+        orch_start_node: '开始节点',
+        orch_end_node: '结束节点',
+        orch_script_node: '脚本节点',
+        orch_human_node: '人类节点',
+        orch_cond_node: '选择器',
+        orch_control_nodes: '控制节点',
+        orch_start_author: 'begin',
+        orch_end_author: 'bend',
+        orch_start_default_content: '讨论开始',
+        orch_end_default_content: '讨论结束',
+        orch_cond_already_selector: '已经是选择器节点',
+        orch_node_remove: '移除',
+        orch_default_author: '主持人',
+        orch_yaml_valid: '✅ 有效 YAML — {steps} 步骤 [{types}]',
+        orch_yaml_saved_suffix: ' | 💾 已保存: {file}',
+        orch_yaml_warn: '⚠️ YAML 校验问题: {error}',
+        orch_comm_fail: '# 通信失败: {msg}',
+        // Context menu
+        orch_ctx_duplicate: '📋 复用此专家 (同序号)',
+        orch_ctx_new_instance: '➕ 新建实例 (新序号)',
+        orch_ctx_group_parallel: '🔀 创建并行分组',
+        orch_ctx_group_all: '👥 创建全员分组',
+        orch_ctx_delete: '🗑️ 删除选中',
+        orch_ctx_refresh_yaml: '🔄 刷新 YAML',
+        orch_ctx_clear: '🗑️ 清空画布',
+        // Conditional edge
+        orch_ctx_set_cond: '⚡ 设为条件边',
+        orch_ctx_edit_cond: '✏️ 编辑条件边',
+        orch_ctx_remove_cond: '🔗 恢复为普通边',
+        orch_ctx_set_selector: '🎯 设为选择节点 (LLM路由)',
+        orch_ctx_unset_selector: '🔗 取消选择节点',
+        orch_modal_cond_edge: '⚡ 编辑条件边',
+        orch_cond_label_type: '条件类型',
+        orch_cond_label_keyword: '关键词',
+        orch_cond_label_number: '数值',
+        orch_cond_label_negate: '取反（NOT）',
+        orch_cond_opt_contains: '最后发言 包含关键词',
+        orch_cond_opt_not_contains: '最后发言 不包含关键词',
+        orch_cond_opt_count_gte: '发言总数 ≥ N',
+        orch_cond_opt_count_lt: '发言总数 < N',
+        orch_cond_opt_always: '始终为真（无条件）',
+        orch_cond_label_then: 'Then 目标（条件为真）',
+        orch_cond_label_else: 'Else 目标（条件为假/循环回边）',
+        orch_cond_none: '（无）',
+        orch_cond_val_required: '请填写关键词或数值',
+        // Group labels
+        orch_group_parallel: '🔀 并行',
+        orch_group_all: '👥 全员',
+        orch_group_dissolve: '解散',
+        // Modals
+        orch_modal_edit_manual: '📝 编辑手动注入内容',
+        orch_modal_author_ph: '作者',
+        orch_modal_content_ph: '注入内容...',
+        orch_modal_cancel: '取消',
+        orch_modal_save: '保存',
+        orch_modal_loading: '⏳ 加载中...',
+        orch_modal_select_layout: '📂 选择布局',
+        orch_modal_delete: '🗑️ 删除',
+        orch_modal_load: '加载',
+        // Toast messages
+        orch_toast_arranged: '已自动排列',
+        orch_toast_saved: '已保存: {name}',
+        orch_toast_save_fail: '保存失败',
+        orch_toast_no_layouts: '没有已保存的布局',
+        orch_toast_deleted: '已删除: {name}',
+        orch_toast_del_fail: '删除失败',
+        orch_toast_loaded: '已加载: {name}',
+        orch_toast_load_fail: '加载失败',
+        orch_toast_yaml_copied: 'YAML 已复制!',
+        orch_toast_gen_yaml: '请先生成 YAML',
+        orch_toast_prompt_copied: 'Prompt 已复制',
+        orch_toast_agent_yaml_copied: 'Agent YAML 已复制',
+        orch_toast_select_2: '请先选中至少2个节点',
+        orch_toast_add_first: '请先添加专家节点',
+        orch_toast_agent_unavail: 'Agent 不可用',
+        orch_toast_yaml_generated: 'YAML 已生成并保存! ✅',
+        orch_toast_agent_valid: 'Agent 生成了有效的 YAML! ✅',
+        orch_toast_session_updated: 'Session 状态已更新',
+        orch_toast_session_fail: '获取状态失败',
+        orch_toast_custom_added: '自定义人设已添加: {name}',
+        orch_toast_fill_info: '请填写完整信息',
+        orch_toast_net_error: '网络错误',
+        orch_toast_expert_deleted: '已删除: {name}',
+        orch_toast_expert_del_fail: '删除失败',
+        orch_toast_added_mobile: '已添加到画布',
+        // Team management
+        orch_btn_create_team: '➕ 创建',
+        orch_btn_delete_team: '🗑️ 删除',
+        orch_btn_download_snapshot: '⬇️ 快照',
+        orch_btn_upload_snapshot: '⬆️ 上传',
+        orch_tip_create_team: '创建新team',
+        orch_tip_delete_team: '删除当前team',
+        orch_tip_download_snapshot: '下载team快照',
+        orch_tip_upload_snapshot: '上传team快照',
+        orch_toast_team_name_required: '请输入team名称',
+        orch_toast_team_created: 'Team已创建',
+        orch_toast_team_create_failed: '创建team失败',
+        orch_toast_team_deleted: 'Team已删除（agent 保留）',
+        orch_toast_team_delete_failed: '删除team失败',
+        orch_toast_snapshot_downloaded: '快照已下载',
+        orch_toast_snapshot_download_failed: '下载快照失败',
+        orch_toast_snapshot_uploaded: '快照已上传，agent已恢复',
+        orch_toast_snapshot_upload_failed: '上传快照失败',
+        orch_toast_invalid_zip: '请选择.zip文件',
+        orch_toast_network_error: '网络错误',
+        orch_confirm_delete_team: '删除team "{name}"？（agent 保留）',
+        // Export preview modal
+        export_preview_title: '📦 导出团队快照',
+        export_preview_loading: '正在加载预览...',
+        export_preview_desc: '请选择要导出的内容：',
+        export_preview_tip: '💡 提示：取消勾选某分类后，该分类下的内容将不会被导出',
+        export_agents: 'WeBot Agents',
+        export_external_agents: '其他平台 Agents',
+        export_personas: '自定义人设',
+        export_skills: 'Skills',
+        export_managed_skills: '托管 Skills',
+        export_cron: '定时任务',
+        export_workflows: 'Workflows',
+        export_download: '📥 导出',
+        export_downloading: '导出中...',
+        export_none_selected: '请至少选择一项内容导出',
+        export_preview_empty: '暂无可导出的内容',
+        // Confirm dialogs
+        orch_confirm_del_expert: '删除自定义人设 "{name}"？',
+        orch_confirm_del_layout: '确定删除布局 "{name}"？',
+        orch_prompt_layout_name: '布局名称:',
+        // Agent status
+        orch_status_communicating: '🔄 正在与 Agent 通信 (Session: #{id})...',
+        orch_status_generating: '⏳ 生成中...',
+        orch_status_waiting: '⏳ 等待 Agent 返回...',
+        orch_status_auth_fail: '认证失败',
+        orch_status_agent_unavail: 'Agent 不可用',
+        orch_status_conn_error: '❌ 连接错误',
+        orch_no_custom: '暂无自定义人设',
+        orch_no_session: '暂无 Session',
+        orch_load_fail: '❌ 加载失败',
+        orch_add_expert_title: '🛠️ 添加自定义人设',
+        orch_add_expert_btn: '添加自定义人设',
+        orch_label_name: '名称',
+        orch_label_tag: 'Tag (英文)',
+        orch_label_temp: 'Temperature',
+        orch_label_persona: 'Persona (角色描述)',
+        orch_ph_name: '如：金融分析师',
+        orch_ph_tag: '如：finance',
+        orch_ph_persona: '描述这位专家的角色、专长和行为风格...',
+
+        // Add Workflow
+        wf_btn_title: '添加工作流',
+        wf_btn_label: '工作流',
+        wf_popup_title: '选择工作流',
+        wf_no_workflows: '暂无已保存的工作流',
+        wf_team_no_layouts: '该团队暂无已保存工作流',
+        wf_cancel: '取消',
+        wf_confirm: '添加',
+        wf_context_prefix: '[工作流: {name}] ',
+
+        // Persona
+        persona_btn_title: '引入专家人设',
+        persona_btn_label: '人设',
+        persona_popup_title: '🎭 选择专家人设',
+        persona_no_experts: '暂无可用专家',
+        persona_cancel: '取消',
+        persona_confirm: '使用',
+        persona_active: '当前人设',
+        persona_public: '📋 公共专家',
+        persona_agency: '🌐 Agency 专家',
+        persona_custom: '🔧 自定义人设',
+
+        // 其他
+        persona_search_placeholder: '🔍 搜索专家名称 / 标签...',
+        persona_no_match: '没有匹配的专家',
+        splash_subtitle: 'WeBot AI Agent',
+        secure_footer: 'Secured by Nginx Reverse Proxy & SSH Tunnel',
+        refresh: '刷新',
+        collapse: '收起',
+
+        // 设置
+        settings: '⚙️',
+        settings_title: '设置',
+        settings_save: '保存',
+        settings_saved: '✅ 设置已保存',
+        settings_save_fail: '❌ 保存失败',
+        settings_load_fail: '❌ 加载设置失败',
+        settings_restart_hint: '修改配置后请先「保存」，再点击「重启服务」使配置生效',
+        settings_restart_btn: '重启服务',
+        settings_restarting: '⏳ 正在重启...',
+        settings_restart_ok: '✅ 重启信号已发送（约 20 秒后自动刷新，也可随时手动刷新）',
+        settings_restart_fail: '❌ 重启失败',
+        settings_restart_confirm: '确定要重启所有服务吗？未保存的配置修改将丢失。',
+        menu_settings: '⚙️ 设置',
+        settings_group_llm: '默认模型',
+        settings_group_tts: '音频配置',
+        settings_group_oasis: 'OASIS 论坛',
+        settings_group_ports: '端口配置',
+        settings_group_network: '公网地址',
+        settings_group_bots: '机器人集成',
+        settings_group_comm: '通信模式',
+        settings_group_exec: '命令执行',
+        settings_group_tinyfish: 'TinyFish 搜索代理',
+        settings_group_security: '安全密钥',
+        settings_group_other: '其他',
+        settings_user_password_title: '当前用户密码',
+        settings_user_password_hint_local: '你现在以本机免密方式登录。为「{user_id}」设置密码后，这个用户名就可以用于密码登录。',
+        settings_user_password_hint_general: '为当前登录用户「{user_id}」设置或更新密码。保存后会写入 config/users.json。',
+        settings_user_password_status_missing: '未设置密码',
+        settings_user_password_status_set: '已设置密码，可更新',
+        settings_user_password_field: '新密码',
+        settings_user_password_confirm_field: '确认密码',
+        settings_user_password_placeholder: '输入要保存给当前用户名的密码',
+        settings_user_password_confirm_placeholder: '再次输入同一密码',
+        settings_user_password_save: '保存为用户',
+        settings_user_password_empty: '请输入密码',
+        settings_user_password_mismatch: '两次输入的密码不一致',
+        settings_user_password_saving: '保存中...',
+        settings_user_password_saved: '✅ 已为当前用户名保存密码',
+        settings_user_password_save_fail: '保存密码失败',
+        settings_user_password_opened: '已打开 Settings，可在“当前用户密码”里保存这个用户名的密码。',
+        settings_secret_saved_placeholder: '已保存（{mask}），留空不修改',
+        settings_llm_sync_title: '🔄 同步本地配置',
+        settings_openclaw_import: '🦞 从 OpenClaw 导入',
+        settings_openclaw_import_hint_ready: '自动读取已配置的 API Key、模型和 Provider',
+        settings_openclaw_import_hint_missing: '⚠️ 未检测到 OpenClaw（未安装）',
+        settings_openclaw_importing: '正在从 OpenClaw 读取配置...',
+        settings_openclaw_imported: '✅ 已从 OpenClaw 导入配置',
+        settings_openclaw_detect_hint: '，点击“检测模型”确认',
+        settings_antigravity_ready_subtitle: '通过 Google One Pro 会员免费访问 Claude / Gemini / GPT',
+        settings_antigravity_missing_subtitle: '⚠️ Antigravity 未运行（未启动或无法连接）',
+        settings_help_audio_group: '留空时会自动跟随当前 LLM provider。检测到 OpenAI 时默认使用 gpt-4o-mini-tts / alloy / whisper-1；检测到 Gemini 时默认使用 gemini-2.5-flash-preview-tts / charon。',
+        settings_help_tts_model: '留空时自动跟随当前 LLM provider。OpenAI 默认是 gpt-4o-mini-tts，Gemini 默认是 gemini-2.5-flash-preview-tts。',
+        settings_help_tts_voice: '留空时自动跟随当前 LLM provider。OpenAI 默认声音是 alloy，Gemini 默认声音是 charon。',
+        settings_help_stt_model: '留空时自动跟随当前 LLM provider。OpenAI 默认是 whisper-1；Gemini 目前没有内置 STT 默认值，可按需手动填写。',
+        settings_help_bots_group: '多平台渠道使用 NoneBot adapter JSON 数组和中心化 WHITELIST_FILE；移动端可在创造页的 Channel 设置入口按渠道选择平台并管理连接格式。',
+        settings_help_telegram_bots: 'NoneBot Telegram adapter 的 bot JSON 数组，例如 [{"token":"123:abc"}]。',
+        settings_help_qq_bots: 'NoneBot QQ adapter 的 bot JSON 数组，例如 [{"id":"app_id","secret":"bot_secret","intents":{"public_messages":true,"direct_message":true}}]。',
+        settings_help_whitelist_file: '中心化白名单 JSON 文件路径，默认 data/whitelist.json。',
+        settings_help_tinyfish_group: '只填 TinyFish API Key 也能完成接入。保存时会自动补齐默认 Base URL/DB/Targets 配置并验证 API；若修改 cron，仍需重启服务让 scheduler 生效。',
+        settings_help_tinyfish_api_key: 'TinyFish Web Agent API Key。用于提交网站自动化采集任务。',
+        settings_help_tinyfish_base_url: 'TinyFish API 基础地址，默认 https://agent.tinyfish.ai。',
+        settings_help_tinyfish_db_path: '存储搜索采集结果的 SQLite 路径。',
+        settings_help_tinyfish_targets_path: '搜索目标 JSON 配置文件路径。默认是 config/tinyfish_targets.json。',
+        settings_help_tinyfish_enabled: '设为 true 启用内建每日监控任务；设为 false 关闭。',
+        settings_help_tinyfish_cron: '5 段 cron 表达式，例如 0 9 * * * 代表每天早上 9 点。',
+        settings_tinyfish_quick_setup: '填入 API Key 后点击保存，系统会自动验证并补齐其余默认配置。',
+        settings_tinyfish_run_now: '立即运行',
+        settings_tinyfish_refresh: '刷新结果',
+        settings_tinyfish_loading: '正在加载 TinyFish 监控状态...',
+        settings_tinyfish_not_configured: 'TinyFish 尚未配置完整。',
+        settings_tinyfish_api_ready: 'TinyFish API 已就绪',
+        settings_tinyfish_targets_optional: '未配置目标文件；补充目标后才能运行监控。',
+        settings_tinyfish_auto_testing: '正在验证 TinyFish API 并补齐默认配置...',
+        settings_tinyfish_auto_configured: '✅ TinyFish API 已验证，默认配置已补齐',
+        settings_tinyfish_auto_config_failed: '❌ TinyFish API 验证失败',
+        settings_tinyfish_run_submitted: '✅ TinyFish 监控任务已提交',
+        settings_tinyfish_run_failed: '❌ TinyFish 运行失败',
+        settings_tinyfish_sites: '最新站点快照',
+        settings_tinyfish_changes: '最近价格变化',
+        settings_tinyfish_recent_runs: '最近运行',
+        settings_tinyfish_no_sites: '暂无站点快照',
+        settings_tinyfish_no_changes: '暂无价格变化记录',
+        settings_tinyfish_no_runs: '暂无运行记录',
+        settings_tinyfish_live_title: '实时爬取过程',
+        settings_tinyfish_live_run: 'Live Crawl',
+        settings_tinyfish_live_stop: '停止查看',
+        settings_tinyfish_live_target_loading: '正在加载目标...',
+        settings_tinyfish_live_target_empty: '暂无可用目标',
+        settings_tinyfish_live_status_idle: '选择一个目标后即可查看实时爬取过程',
+        settings_tinyfish_live_status_connecting: '正在连接 TinyFish SSE',
+        settings_tinyfish_live_status_running: 'TinyFish 正在实时爬取中',
+        settings_tinyfish_live_status_done: 'TinyFish 实时任务结束',
+        settings_tinyfish_live_open_watch: '打开 TinyFish Live Watch',
+        settings_tinyfish_live_no_events: '还没有实时事件',
+        settings_tinyfish_live_stream_closed: '实时流已结束',
+        settings_tinyfish_live_stopped: '已停止本地实时查看',
+        settings_tinyfish_live_missing_target: '请先选择一个目标站点',
+        settings_tinyfish_live_result_title: '本次实时任务结果',
+        settings_antigravity_preset: '🚀 Antigravity 免费模型预设',
+        settings_antigravity_hint: '一键填入 Antigravity-Manager 反代配置，通过 Google One Pro 会员免费使用模型。确保 Antigravity-Manager 已在本机运行。',
+        settings_antigravity_apply: '应用 Antigravity 预设',
+        settings_antigravity_applied: '✅ 已应用 Antigravity 预设，请选择模型后保存',
+        settings_group_tunnel: '🌐 公网隧道',
+        tunnel_start: '开启公网访问',
+        tunnel_stop: '关闭公网访问',
+        tunnel_starting: '启动中...',
+        tunnel_stopping: '停止中...',
+        tunnel_running: '公网访问已开启',
+        tunnel_stopped: '公网访问已关闭',
+        tunnel_url_pending: '公网地址生成中...',
+        tunnel_url_hint: '点击复制公网地址',
+
+        // 对话切换（WeBot / ACP 工具）
+        oc_tab_internal: '🤖 WeBot',
+        oc_tab_codex: 'Codex',
+        oc_tab_claude: 'Claude',
+        oc_tab_gemini: 'Gemini',
+        oc_select_acp_hint: '请先选择一个 ACP 工具标签',
+        oc_acp_unavailable: 'ACP 客户端尚未就绪',
+        oc_acp_via: '经 acpx（ACP）连接本地 CLI；上下文由该会话内的 CLI 保持。',
+        oc_acp_session_pick_label: '已有会话',
+        oc_acp_session_pick_none: '— 选择已有会话（不选则新建）—',
+        oc_acp_session_refresh: '刷新',
+        oc_acp_session_refresh_title: '执行 acpx（工具）sessions list 更新列表',
+        oc_acp_session_or_new: '或新建',
+        oc_acp_session_label: '名称',
+        oc_acp_session_placeholder: '可选；留空则按左侧 Clawcross 会话区分',
+        oc_acp_session_ensure: '预热',
+        oc_acp_session_ensure_title: '仅创建/预热 ACP 会话，不发送消息',
+        oc_acp_session_warming: '创建中…',
+        oc_acp_session_ready: 'ACP 会话已就绪',
+        oc_acp_session_failed: '创建失败',
+        oc_internal_session_refresh_title: '从服务器刷新 WeBot 会话列表',
+        // Run mode (permission mode)
+        run_mode_label: '模式',
+        run_mode_manual: 'Manual · 人工审核',
+        run_mode_bypass: 'Bypass · 无审核',
+        run_mode_readonly: '只读模式',
+        run_mode_chat: '交流模式 · 无工具',
+        run_mode_auto: 'Auto · 替我审核',
+        run_mode_title: '交流：无工具；只读：查看和搜索；Manual：人工审核；Auto：模型代审；Bypass：无审核',
+    },
+    'en': {
+        // General
+        loading: 'Loading...',
+        error: 'Error',
+        success: 'Success',
+        cancel: 'Cancel',
+        confirm: 'Confirm',
+        close: 'Close',
+
+        // Login
+        login_title: 'Clawcross',
+        login_subtitle: 'Please login to start',
+        username: 'Username',
+        password: 'Password',
+        login_btn: 'Login',
+        local_login_btn: 'Local No-Password Login',
+        login_verifying: 'Verifying...',
+        login_username_required: 'Please enter username',
+        login_password_required: 'Please enter password',
+        login_error_invalid: 'Username can only contain letters, numbers, underscore, hyphen or Chinese',
+        login_error_failed: 'Login failed',
+        login_error_invalid_response: 'Invalid server response',
+        login_error_password_login_unavailable: 'User "{user_id}" does not have a password configured. Use Local No-Password Login first, then create a password for this username in Settings.',
+        login_error_network: 'Network error',
+        login_error_timeout: 'Connection timed out. Confirm the backend service is running and try again',
+        login_footer: 'Authentication required. Conversations and files are isolated by user',
+        local_login_banner_title: 'Local no-password login active',
+        local_login_banner_body: 'The current username "{user_id}" does not have a password yet. Open Settings to save one for future password or remote login.',
+        local_login_banner_action: 'Open Settings',
+        context_usage: 'Context {percent}% used',
+        llm_not_configured: 'LLM API not configured. Click here to set up API Key.',
+        project_update_title: "Project update",
+        project_update_hint: "Check for remote Git updates, then download the latest code and restart services. A full update overwrites local conflicts and uncommitted changes.",
+        project_update_branch_optional: "Branch (optional)",
+        project_update_branch_placeholder: "Leave empty for the current branch, e.g. main",
+        project_update_logs: "Recent logs",
+        project_update_check: "Check for updates",
+        project_update_start: "Full update",
+        project_update_login: "Please sign in first.",
+        project_update_check_failed: "Update check failed: {error}",
+        project_update_done: "Update complete. Reloading the page.",
+        project_update_failed: "Update failed.",
+        project_update_restarting: "Service temporarily unavailable; it may be restarting: {error}",
+        project_update_started: "Update started.",
+        project_update_start_failed: "Could not start the update: {error}",
+        agent_center_native_settings: "Model, reasoning and ClawCross tools",
+        agent_center_runtime_control: "Runtime controls",
+        agent_center_runtime_details: "Runtime details and approvals",
+        studio_conversations: "Agents",
+        studio_new_conversation: "New Agent",
+        studio_history: "Recent Agents",
+        studio_history_empty: "No Agents yet",
+
+        project_update_banner: 'New version {latest} is available. Click to review and update.',
+        project_update_banner_dirty: 'New version {latest} is available, but local changes block auto update.',
+        project_update_summary_placeholder: 'Click "Check for updates" to view version info.',
+        project_update_status_label: 'Status',
+        project_update_branch_label: 'Branch',
+        project_update_channel_label: 'Channel',
+        project_update_current_label: 'Current',
+        project_update_remote_label: 'Latest',
+        project_update_dirty_warning: 'Local working tree has uncommitted changes; a full update would overwrite local with remote.',
+        project_update_has_update: 'Update available.',
+        project_update_has_update_npm: 'Update available (npm upgrade).',
+        project_update_up_to_date: 'Already on the latest version.',
+
+        // Header
+        encrypted: '● Encrypted',
+        history: '🤖 Agents',
+        new_chat: '+New',
+        new_chat_mobile: '+',
+        logout: 'Logout',
+        current_session: 'Current session',
+        more_actions: 'More actions',
+
+        // Mobile menu
+        menu_history: '🤖 Agents',
+        menu_new: '➕ New Chat',
+        menu_oasis: '🏛️ TeamsWork',
+        menu_logout: '🚪 Logout',
+        // Hamburger menu (no emoji, icon is separate)
+        hmenu_agents: 'Agents',
+        hmenu_agent_center: 'Agent Center',
+        hmenu_settings: 'Preferences',
+        hmenu_new: 'New Chat',
+        hmenu_oasis: 'Workflow runs',
+        hmenu_logout: 'Logout',
+        hmenu_lang: 'Language',
+        hmenu_public: 'Public',
+        tab_agent_center: 'Agents',
+        agent_center_kicker: 'Observe · Interact · Grow',
+        agent_center_title: 'Agent Center',
+        agent_center_refresh_status: 'Refresh status',
+        native_session_register: 'Register external session',
+        agent_center_search: 'Find',
+        agent_center_search_placeholder: 'Name, ID, or tag',
+        agent_center_kind: 'Kind',
+        agent_center_status: 'Status',
+        agent_center_active: 'Active',
+        agent_center_idle: 'Idle',
+        agent_center_finished: 'Finished',
+        agent_center_attention: 'Attention',
+        agent_center_all: 'All',
+        agent_center_status_hint: 'An online runtime session does not prove that the agent is running.',
+        agent_center_total: 'Total',
+        agent_center_running: 'Running',
+        agent_center_uncertain: 'Uncertain',
+        agent_center_empty: 'No agents match the current filters',
+        agent_center_public: 'No Team',
+        agent_center_connection: 'Connection',
+        agent_center_evidence: 'Run evidence',
+        agent_center_confirmed: 'Confirmed',
+        agent_center_session_only: 'Session only',
+        agent_center_stop: 'Request stop',
+        agent_center_stop_confirm: 'Request this Agent to stop?',
+        agent_center_stop_ok: 'Stop request sent',
+        agent_center_stop_none: 'No active run was found',
+        agent_center_stop_failed: 'Failed to stop Agent',
+        agent_center_reset: 'Reset',
+        agent_center_reset_confirm: 'Reset this Agent session and context? Its configuration will be kept.',
+        agent_center_reset_ok: 'Agent session reset',
+        agent_center_reset_failed: 'Failed to reset Agent',
+        agent_center_delete: 'Delete Agent',
+        agent_center_delete_ok: 'Agent deleted',
+        agent_center_delete_failed: 'Failed to delete Agent',
+        agent_center_load_failed: 'Failed to load Agent catalog',
+        agent_center_open_detail: 'View details',
+        agent_center_profile: 'Identity profile',
+        agent_center_context: 'Context management',
+        agent_center_tools: 'Tool settings',
+        agent_center_save: 'Save settings',
+        agent_center_save_ok: 'Agent settings saved',
+        agent_center_save_failed: 'Failed to save settings',
+        agent_center_compact: 'Compact context',
+        agent_center_compact_ok: 'Context compacted',
+        agent_center_compact_none: 'No context can be compacted yet',
+        agent_center_unrestricted_tools: 'All tools available',
+        agent_center_no_tools: 'All tools disabled',
+        agent_center_used: 'Used',
+        agent_center_remaining: 'Remaining',
+        public_starting: 'Starting...',
+        public_stopping: 'Stopping...',
+
+        // Chat area
+        welcome_message: 'Hi, tell me what you would like to do.',
+        new_session_message: 'New conversation started. Tell me what you would like to do.',
+        agent_meta_title: 'Conversation title',
+        agent_meta_title_placeholder: 'Empty: the first message is shown',
+        input_placeholder: 'Tell me what you would like to do…',
+        send_btn: 'Send',
+        cancel_btn: 'Stop',
+        busy_btn: 'System Busy',
+        new_system_msg: 'New system message',
+        click_refresh: 'Click to refresh',
+        no_response: '(No response)',
+        thinking_stopped: '⚠️ Thinking stopped',
+        login_expired: '⚠️ Session expired, please login again',
+        agent_error: '❌ Error',
+
+        // Tool panel
+        available_tools: 'Tool access',
+        tool_calling: '(Calling tool...)',
+        tool_return: '🔧 Tool Return',
+        tool_call_args: 'Arguments',
+        tool_full_output: 'Full Output',
+        tool_page_prev: 'Prev',
+        tool_page_next: 'Next',
+        tool_page_label: 'Page {current}/{total}',
+
+        // File upload
+        max_images: 'Maximum 5 images',
+        max_files: 'Maximum 3 files',
+        max_audios: 'Maximum 2 audio files',
+        audio_too_large: 'Audio too large, limit 25MB',
+        video_too_large: 'Video too large, limit 50MB',
+        pdf_too_large: 'PDF too large, limit 10MB',
+        file_too_large: 'File too large, limit 512KB',
+        unsupported_type: 'Unsupported file type',
+        supported_types: 'Supported: txt, md, csv, json, py, js, pdf, mp3, wav, avi, mp4, etc.',
+
+        // Recording
+        recording_title: 'Record',
+        recording_stop: 'Click to stop recording',
+        mic_permission_denied: 'Cannot access microphone. Please check browser permissions.',
+        recording_too_long: 'Recording too long, limit 25MB',
+
+        // History sessions
+        history_title: '🤖 Agents',
+        history_loading: 'Loading...',
+        history_empty: 'No history',
+        history_error: 'Failed to load',
+        history_loading_msg: 'Loading messages...',
+        history_no_msg: '(No messages in this conversation)',
+        new_session_confirm: 'Start new conversation? Current history will be preserved.',
+        messages_count: 'messages',
+        session_id: 'Session',
+        delete_session: 'Delete',
+        delete_session_confirm: 'Delete this conversation? This cannot be undone.',
+        delete_all_confirm: 'Delete ALL conversations? This cannot be undone!',
+        delete_success: 'Deleted',
+        delete_fail: 'Delete failed',
+        delete_all: '🗑️ Clear All',
+        subagents_title: '🧵 Subagents',
+        subagents_loading: 'Loading subagents...',
+        subagents_empty: 'No subagents yet',
+        subagent_history: 'History',
+        subagent_hide_history: 'Hide',
+        subagent_stop: 'Stop',
+        subagent_open_parent: 'Parent',
+        subagent_stop_confirm: 'Stop this subagent?',
+        subagent_stop_success: 'Subagent stopped',
+        subagent_stop_failed: 'Failed to stop subagent',
+        subagent_last_result: 'Latest result',
+        subagent_history_empty: 'No history available',
+        subagent_runtime_status: 'Runtime status',
+        subagent_runtime_loading: 'Loading runtime data...',
+        subagent_runtime_unavailable: 'No runtime data available',
+        subagent_runtime_workspace: 'Workspace',
+        subagent_runtime_mode: 'Mode',
+        subagent_runtime_plan: 'Plan',
+        subagent_runtime_todos: 'Todos',
+        subagent_runtime_verifications: 'Verifications',
+        subagent_runtime_approvals: 'Approvals',
+        subagent_runtime_runs: 'Runs',
+        subagent_runtime_inbox: 'Inbox',
+        subagent_runtime_artifacts: 'Artifacts',
+        subagent_runtime_relationships: 'Graph',
+        subagent_runtime_current: 'Current Session',
+        subagent_runtime_claude_code: 'Claude Code',
+        subagent_runtime_probe: 'Probe',
+        subagent_runtime_kickoff: 'Kickoff',
+        subagent_runtime_keepalive_on: 'Keepalive On',
+        subagent_runtime_keepalive_off: 'Keepalive Off',
+        subagent_runtime_claude_probe_ok: 'Claude Code probe passed',
+        subagent_runtime_claude_probe_failed: 'Claude Code probe failed',
+        subagent_runtime_keepalive_updated: 'Claude keepalive updated',
+        subagent_runtime_no_plan: 'No plan yet',
+        subagent_runtime_no_todos: 'No todos yet',
+        subagent_runtime_no_verifications: 'No verifications yet',
+        subagent_runtime_no_approvals: 'No approval requests',
+        subagent_runtime_no_runs: 'No runs yet',
+        subagent_runtime_no_inbox: 'No inbox messages',
+        subagent_runtime_inbox_read: 'Read',
+        subagent_runtime_inbox_unread: 'Unread',
+        subagent_runtime_show_message: 'Show message',
+        subagent_runtime_no_artifacts: 'No runtime artifacts',
+        subagent_runtime_no_relationships: 'No parent/child links',
+        subagent_runtime_parent: 'Parent session',
+        subagent_runtime_children: 'Child subagents',
+        subagent_runtime_remote: 'Remote',
+        subagent_runtime_approve: 'Approve',
+        subagent_runtime_approve_remember: 'Approve + remember',
+        subagent_runtime_deny: 'Deny',
+        subagent_runtime_approval_ok: 'Approval resolved',
+        subagent_runtime_approval_failed: 'Failed to resolve approval',
+        approval_required_title: '⚠️ Tool call needs approval',
+        approval_reason: 'Reason',
+        approval_approve: 'Approve',
+        approval_approve_remember: 'Approve + remember',
+        approval_deny: 'Deny',
+        approval_working: 'Working...',
+        approval_done: '✅ Done',
+        subagent_runtime_mode_plan: 'Set Plan',
+        subagent_runtime_mode_agent: 'Set Agent',
+        subagent_runtime_mode_review: 'Set Review',
+        subagent_runtime_mode_yolo: 'Set YOLO',
+        subagent_runtime_mode_execute: 'Set Execute',
+        subagent_runtime_mode_updated: 'Session mode updated',
+        subagent_runtime_mode_update_failed: 'Failed to update session mode',
+        policy_panel_title: '🛡️ Tool Policy',
+        policy_panel_edit: 'Edit',
+        policy_panel_close: 'Hide',
+        policy_panel_loading: 'Loading policy...',
+        policy_panel_empty: 'No user WeBot policy is configured yet. Built-in default allow is active.',
+        policy_default_approval: 'Default approval',
+        runtime_settings: 'Context and approvals',
+        agent_workspaces: 'Workspaces',
+        policy_panel_format: 'Format',
+        policy_panel_save: 'Save',
+        policy_panel_saved: 'Tool policy saved',
+        policy_panel_load_failed: 'Failed to load tool policy',
+        policy_panel_save_failed: 'Failed to save tool policy',
+        policy_panel_invalid_json: 'Invalid policy JSON',
+        policy_panel_summary: 'default={defaultApproval} · tools={toolCount} · hooks={hookCount}',
+        policy_panel_source: 'Source: {source}',
+        policy_panel_path: 'File: {path}',
+        policy_panel_dirty: 'Unsaved changes',
+
+        // TTS
+        tts_read: 'Read',
+        tts_stop: 'Stop',
+        tts_loading: 'Loading...',
+        tts_request_failed: 'TTS request failed',
+        code_omitted: '(code omitted)',
+        image_placeholder: '(image)',
+        audio_placeholder: '(audio)',
+        file_placeholder: '(file)',
+
+        // OASIS
+        oasis_title: 'Workflow runs',
+        oasis_subtitle: 'Active and completed workflow instances',
+        oasis_topics: 'Run list',
+        oasis_topics_count: 'topics',
+        oasis_no_topics: 'No workflow runs yet',
+        oasis_start_hint: 'Ask Agent to start a TeamsWork discussion in chat',
+        oasis_back: '← Back',
+        oasis_conclusion: 'Conclusion',
+        oasis_waiting: 'Waiting for experts...',
+        oasis_status_pending: 'Pending',
+        oasis_status_discussing: 'Discussing',
+        oasis_status_concluded: 'Completed',
+        oasis_status_error: 'Error',
+        oasis_status_cancelled: 'Cancelled',
+        oasis_round: 'rounds',
+        oasis_posts: 'posts',
+        oasis_expert_creative: 'Creative Expert',
+        oasis_expert_critical: 'PUA Expert',
+        oasis_expert_data: 'Data Analyst',
+        oasis_expert_synthesis: 'Synthesis Advisor',
+        oasis_cancel: 'Stop Discussion',
+        oasis_cancel_confirm: 'Force stop this discussion?',
+        oasis_cancel_success: 'Discussion stopped',
+        oasis_delete: 'Delete',
+        oasis_delete_confirm: 'Permanently delete this discussion? This cannot be undone.',
+        oasis_delete_success: 'Record deleted',
+        oasis_action_fail: 'Action failed',
+
+        // Page switch
+        tab_chat: 'Chat',
+        tab_group: 'Team',
+        tab_orchestrate: 'Workflow',
+        tab_groupchat: 'Messages',
+        tip_open_msgcenter: 'Open Message Center',
+
+        // Group chat
+        group_title: '👥 Team List',
+        group_new: '+ New',
+        group_no_groups: 'No teams',
+        group_rename_team: 'Rename team (folder only)',
+        group_item_open_hint: 'Click to open team',
+        group_select_hint: 'Select a team to manage',
+        group_create_hint: 'Create or import a team to manage',
+        group_members_btn: '👤 Members',
+        group_mute: '🔇 Stop',
+        group_unmute: '🔊 Resume',
+        group_members: 'Member Management',
+        group_current_members: 'Current Members',
+        group_add_agents: 'Add Agent Session',
+        group_input_placeholder: 'Send a message...',
+        group_create_title: 'Create Team',
+        group_name_placeholder: 'Team name',
+        group_no_sessions: 'No available Agent Sessions',
+        group_create_btn: 'Create',
+        group_delete_confirm: 'Delete this team?',
+        group_owner: 'Owner',
+        group_agent: 'Agent',
+        group_msg_count: 'messages',
+        group_member_count: 'members',
+        group_ext_platform: 'Connection',
+        group_ext_platform_acp: 'Local ACP (acpx; API URL optional)',
+        group_ext_tag_none: '(no tag)',
+        group_ext_tag_custom: 'Custom…',
+        group_ext_url_optional: 'API URL (optional)',
+        group_ext_url_optional_acp: 'API URL (optional for ACP)',
+        group_ext_url_hint_generic: 'Only needed for HTTP routing; leave empty for acpx-only members.',
+
+        // Offline
+        offline_banner: '⚠️ Network disconnected, please check connection',
+
+        // Orchestration panel
+        orch_expert_pool: '🧑‍💼 Expert Pool',
+        orch_expert_pool_text: 'Expert Pool',
+        orch_preset_experts: '📚 Preset Experts',
+        orch_custom_experts: '🛠️ Custom Experts',
+        orch_agents_section: '🤖 Agents',
+        orch_agents_empty: 'No agents yet — click ➕ to create one',
+        orch_add_agent_title: 'New Agent',
+        orch_agent_platform: 'Platform',
+        acpx_required_for_external: 'The ACP client is unavailable. Check the Python environment.',
+        orch_agent_runtime_name: 'Runtime name (the session name on that platform)',
+        orch_agent_name_required: 'Name is required',
+        orch_agent_runtime_required: 'Runtime name is required',
+        orch_agent_set_lead: 'Make team lead',
+        orch_agent_unset_lead: 'Unset team lead',
+        orch_agent_remove_from_team: 'Remove from team',
+        orch_agent_delete: 'Delete agent',
+        orch_node_tools: 'Tools',
+        orch_node_tools_none: 'No tools (light)',
+        orch_node_tools_all: 'All tools',
+        orch_node_tools_list: 'Selected tools',
+        orch_node_tools_hint: 'With tools the persona runs as a temporary WeBot session, cleaned up when the topic ends.',
+        orch_gt_already_member: 'Already a member',
+        orch_ia_name: 'Agent Name',
+        orch_ia_tag: 'Tag',
+        orch_ia_tag_placeholder: 'Drag an expert to set, or type manually',
+        orch_ia_created: 'Agent created',
+        orch_ia_tag_set: 'Tag set to',
+        orch_manual_inject: 'Manual Inject',
+        orch_start_node: 'Start Node',
+        orch_end_node: 'End Node',
+        orch_script_node: 'Script Node',
+        orch_human_node: 'Human Node',
+        orch_cond_node: 'Selector',
+        orch_control_nodes: 'Control',
+        orch_start_author: 'begin',
+        orch_end_author: 'bend',
+        orch_start_default_content: 'Discussion started',
+        orch_end_default_content: 'Discussion ended',
+        orch_cond_already_selector: 'is already a selector',
+        orch_shortcuts_title: 'Shortcuts: ',
+        orch_shortcuts_body: 'Drag expert to canvas · Connect ports=workflow · Ctrl+G=group · Double-click to add',
+        // Orchestration toolbar buttons
+        orch_btn_arrange: '🔄 Arrange',
+        orch_btn_save: '💾 Save Workflow',
+        orch_btn_load: '📂 Load Workflow',
+        orch_btn_ai: '🤖 AI Optimize Workflow',
+        orch_btn_export: '📋 Copy Workflow to Clipboard',
+        orch_btn_focus: '🎯 Focus',
+        orch_btn_status: '🔄 Status',
+        orch_btn_clear: '🗑️ Clear Workflow',
+        orch_tip_arrange: 'Auto arrange',
+        orch_tip_save: 'Save workflow',
+        orch_tip_load: 'Load workflow',
+        orch_tip_ai: 'AI optimize workflow',
+        orch_tip_export: 'Copy workflow to clipboard',
+        orch_tip_status: 'Refresh session status',
+        orch_tip_clear: 'Clear workflow',
+        orch_btn_generate_team: '📤 Generate Team',
+        orch_tip_generate_team: 'Auto-add canvas agents to a team',
+        orch_gt_title: 'Generate Team from Workflow',
+        orch_gt_label_team: 'Target Team',
+        orch_gt_new_team: 'Create new team',
+        orch_gt_new_team_placeholder: 'Enter new team name',
+        orch_gt_select_team: 'Select existing team',
+        orch_gt_agents_title: 'Canvas Agents',
+        orch_gt_no_agents: 'No eligible agents on canvas (expert / session / external)',
+        orch_gt_conflict_skip: 'Skip',
+        orch_gt_conflict_overwrite: 'Overwrite',
+        orch_gt_conflict_label: '⚠️ Exists',
+        orch_gt_confirm: 'Confirm',
+        orch_gt_cancel: 'Cancel',
+        orch_gt_toast_ok: '✅ Added {added}, skipped {skipped}',
+        orch_gt_toast_err: '❌ Failed to generate team',
+        orch_gt_toast_no_team: '⚠️ Please select or enter a team name',
+        // Canvas hints
+        orch_hint_drag: 'Drag experts to start orchestrating',
+        // Nav controls
+        orch_tip_up: 'Pan up',
+        orch_tip_down: 'Pan down',
+        orch_tip_left: 'Pan left',
+        orch_tip_right: 'Pan right',
+        orch_tip_reset: 'Reset view',
+        orch_tip_zoomout: 'Zoom out',
+        orch_tip_zoomin: 'Zoom in',
+        // Right panel
+        orch_settings: '⚙️ Settings',
+        orch_repeat: 'Repeat plan each round',
+        orch_rounds: 'Rounds:',
+        orch_threshold: 'Cluster threshold:',
+        orch_ai_gen: '🤖 AI Generate',
+        orch_ai_hint: 'Click "🤖 AI Orch" to auto-generate YAML',
+        orch_prompt_label: '📨 Prompt Sent',
+        orch_prompt_copy: 'Copy',
+        orch_prompt_hint: 'Shown after AI Orch',
+        orch_agent_yaml_label: '🤖 Agent YAML',
+        orch_agent_yaml_copy: 'Copy',
+        orch_agent_yaml_hint: 'Waiting for Agent',
+        orch_rule_yaml: '📄 Rule YAML',
+        orch_rule_yaml_hint: 'Auto-generated after adding experts...',
+        orch_status_bar: 'Nodes: {nodes} | Edges: {edges} | Groups: {groups}',
+        orch_status_bar_init: 'Nodes: 0 | Edges: 0 | Groups: 0',
+        orch_manual_inject: 'Manual Inject',
+        orch_start_node: 'Start Node',
+        orch_end_node: 'End Node',
+        orch_script_node: 'Script Node',
+        orch_human_node: 'Human Node',
+        orch_cond_node: 'Selector',
+        orch_control_nodes: 'Control',
+        orch_start_author: 'begin',
+        orch_end_author: 'bend',
+        orch_start_default_content: 'Discussion started',
+        orch_end_default_content: 'Discussion ended',
+        orch_cond_already_selector: 'is already a selector',
+        orch_node_remove: 'Remove',
+        orch_default_author: 'Moderator',
+        orch_yaml_valid: '✅ Valid YAML — {steps} steps [{types}]',
+        orch_yaml_saved_suffix: ' | 💾 Saved: {file}',
+        orch_yaml_warn: '⚠️ YAML validation issue: {error}',
+        orch_comm_fail: '# Communication failed: {msg}',
+        // Context menu
+        orch_ctx_duplicate: '📋 Duplicate (same instance)',
+        orch_ctx_new_instance: '➕ New Instance',
+        orch_ctx_group_parallel: '🔀 Group as Parallel',
+        orch_ctx_group_all: '👥 Group as All Experts',
+        orch_ctx_delete: '🗑️ Delete Selected',
+        orch_ctx_refresh_yaml: '🔄 Refresh YAML',
+        orch_ctx_clear: '🗑️ Clear Canvas',
+        // Conditional edge
+        orch_ctx_set_cond: '⚡ Set as Conditional Edge',
+        orch_ctx_edit_cond: '✏️ Edit Conditional Edge',
+        orch_ctx_remove_cond: '🔗 Revert to Fixed Edge',
+        orch_ctx_set_selector: '🎯 Set as Selector Node (LLM Router)',
+        orch_ctx_unset_selector: '🔗 Unset Selector Node',
+        orch_modal_cond_edge: '⚡ Edit Conditional Edge',
+        orch_cond_label_type: 'Condition Type',
+        orch_cond_label_keyword: 'Keyword',
+        orch_cond_label_number: 'Number',
+        orch_cond_label_negate: 'Negate (NOT)',
+        orch_cond_opt_contains: 'Last post contains keyword',
+        orch_cond_opt_not_contains: 'Last post NOT contains keyword',
+        orch_cond_opt_count_gte: 'Post count ≥ N',
+        orch_cond_opt_count_lt: 'Post count < N',
+        orch_cond_opt_always: 'Always true (unconditional)',
+        orch_cond_label_then: 'Then Target (condition true)',
+        orch_cond_label_else: 'Else Target (condition false / loop back)',
+        orch_cond_none: '(none)',
+        orch_cond_val_required: 'Please enter keyword or number',
+        // Group labels
+        orch_group_parallel: '🔀 Parallel',
+        orch_group_all: '👥 All Experts',
+        orch_group_dissolve: 'Dissolve',
+        // Modals
+        orch_modal_edit_manual: '📝 Edit Manual Injection',
+        orch_modal_author_ph: 'Author',
+        orch_modal_content_ph: 'Injection content...',
+        orch_modal_cancel: 'Cancel',
+        orch_modal_save: 'Save',
+        orch_modal_loading: '⏳ Loading...',
+        orch_modal_select_layout: '📂 Select Layout',
+        orch_modal_delete: '🗑️ Delete',
+        orch_modal_load: 'Load',
+        // Toast messages
+        orch_toast_arranged: 'Auto-arranged',
+        orch_toast_saved: 'Saved: {name}',
+        orch_toast_save_fail: 'Save failed',
+        orch_toast_no_layouts: 'No saved layouts found',
+        orch_toast_deleted: 'Deleted: {name}',
+        orch_toast_del_fail: 'Delete failed',
+        orch_toast_loaded: 'Loaded: {name}',
+        orch_toast_load_fail: 'Load failed',
+        orch_toast_yaml_copied: 'YAML copied!',
+        orch_toast_gen_yaml: 'Generate YAML first',
+        orch_toast_prompt_copied: 'Prompt copied',
+        orch_toast_agent_yaml_copied: 'Agent YAML copied',
+        orch_toast_select_2: 'Select at least 2 nodes',
+        orch_toast_add_first: 'Add expert nodes first',
+        orch_toast_agent_unavail: 'Agent unavailable',
+        orch_toast_yaml_generated: 'YAML generated and saved! ✅',
+        orch_toast_agent_valid: 'Agent generated valid YAML! ✅',
+        orch_toast_session_updated: 'Session status updated',
+        orch_toast_session_fail: 'Failed to get status',
+        orch_toast_custom_added: 'Custom expert added: {name}',
+        orch_toast_fill_info: 'Please fill in all fields',
+        orch_toast_net_error: 'Network error',
+        orch_toast_expert_deleted: 'Deleted: {name}',
+        orch_toast_expert_del_fail: 'Delete failed',
+        orch_toast_added_mobile: 'added to canvas',
+        // YAML file operations
+        orch_btn_download: '⬇️ Export Workflow',
+        orch_btn_upload: '⬆️ Import Workflow',
+        orch_tip_download: 'Export workflow',
+        orch_tip_upload: 'Import workflow',
+        orch_toast_yaml_downloaded: 'YAML file downloaded',
+        orch_toast_yaml_uploaded: 'YAML imported: {name}',
+        orch_toast_yaml_upload_fail: 'YAML import failed',
+        orch_toast_yaml_parse_fail: 'Invalid YAML file',
+        orch_toast_drop_yaml: 'Drop YAML file here to import',
+        orch_drop_hint: 'Release to import YAML file',
+        orch_toast_not_yaml: 'Only .yaml / .yml files supported',
+        // Team management
+        orch_btn_create_team: '➕ Create',
+        orch_btn_delete_team: '🗑️ Delete',
+        orch_btn_download_snapshot: '⬇️ Snapshot',
+        orch_btn_upload_snapshot: '⬆️ Upload',
+        orch_tip_create_team: 'Create new team',
+        orch_tip_delete_team: 'Delete current team',
+        orch_tip_download_snapshot: 'Download team snapshot',
+        orch_tip_upload_snapshot: 'Upload team snapshot',
+        orch_toast_team_name_required: 'Please enter team name',
+        orch_toast_team_created: 'Team created',
+        orch_toast_team_create_failed: 'Failed to create team',
+        orch_toast_team_deleted: 'Team deleted (its agents stay)',
+        orch_toast_team_delete_failed: 'Failed to delete team',
+        orch_toast_snapshot_downloaded: 'Snapshot downloaded',
+        orch_toast_snapshot_download_failed: 'Failed to download snapshot',
+        orch_toast_snapshot_uploaded: 'Snapshot uploaded and agents restored',
+        orch_toast_snapshot_upload_failed: 'Failed to upload snapshot',
+        orch_toast_invalid_zip: 'Please select a .zip file',
+        orch_toast_network_error: 'Network error',
+        orch_confirm_delete_team: 'Delete team "{name}"? (its agents stay)',
+        // Export preview modal
+        export_preview_title: '📦 Export Team Snapshot',
+        export_preview_loading: 'Loading preview...',
+        export_preview_desc: 'Please select items to export:',
+        export_preview_tip: '💡 Tip: Uncheck a category to exclude it from export',
+        export_agents: 'WeBot Agents',
+        export_external_agents: 'Other-platform Agents',
+        export_personas: 'Custom Personas',
+        export_skills: 'Skills',
+        export_managed_skills: 'Managed Skills',
+        export_cron: 'Cron Jobs',
+        export_workflows: 'Workflows',
+        export_download: '📥 Export',
+        export_downloading: 'Exporting...',
+        export_none_selected: 'Please select at least one item to export',
+        export_preview_empty: 'No items available for export',
+        // Confirm dialogs
+        orch_confirm_del_expert: 'Delete custom expert "{name}"?',
+        orch_confirm_del_layout: 'Delete layout "{name}"?',
+        orch_prompt_layout_name: 'Layout name:',
+        // Agent status
+        orch_status_communicating: '🔄 Communicating with Agent (Session: #{id})...',
+        orch_status_generating: '⏳ Generating...',
+        orch_status_waiting: '⏳ Waiting for Agent response...',
+        orch_status_auth_fail: 'Authentication failed',
+        orch_status_agent_unavail: 'Agent unavailable',
+        orch_status_conn_error: '❌ Connection error',
+        orch_no_custom: 'No custom experts yet',
+        orch_no_session: 'No sessions yet',
+        orch_load_fail: '❌ Load failed',
+        orch_add_expert_title: '🛠️ Add Custom Expert',
+        orch_add_expert_btn: 'Add custom expert',
+        orch_label_name: 'Name',
+        orch_label_tag: 'Tag (English)',
+        orch_label_temp: 'Temperature',
+        orch_label_persona: 'Persona (Role Description)',
+        orch_ph_name: 'e.g. Financial Analyst',
+        orch_ph_tag: 'e.g. finance',
+        orch_ph_persona: 'Describe this expert\'s role, expertise and behavior style...',
+
+        // Add Workflow
+        wf_btn_title: 'Add Workflow',
+        wf_btn_label: 'Workflow',
+        wf_popup_title: 'Select Workflow',
+        wf_no_workflows: 'No saved workflows',
+        wf_team_no_layouts: 'No saved workflows for this team',
+        wf_cancel: 'Cancel',
+        wf_confirm: 'Add',
+        wf_context_prefix: '[Workflow: {name}] ',
+
+        // Persona
+        persona_btn_title: 'Use Expert Persona',
+        persona_btn_label: 'Persona',
+        persona_popup_title: '🎭 Select Expert Persona',
+        persona_no_experts: 'No experts available',
+        persona_cancel: 'Cancel',
+        persona_confirm: 'Use',
+        persona_active: 'Active Persona',
+        persona_public: '📋 Public Experts',
+        persona_agency: '🌐 Agency Experts',
+        persona_custom: '🔧 Custom Experts',
+
+        // Others
+        persona_search_placeholder: '🔍 Search expert name / tag...',
+        persona_no_match: 'No matching experts',
+        splash_subtitle: 'WeBot AI Agent',
+        secure_footer: 'Secured by Nginx Reverse Proxy & SSH Tunnel',
+        refresh: 'Refresh',
+        collapse: 'Collapse',
+
+        // Settings
+        settings: '⚙️',
+        settings_title: 'Settings',
+        settings_save: 'Save',
+        settings_saved: '✅ Settings saved',
+        settings_save_fail: '❌ Save failed',
+        settings_load_fail: '❌ Failed to load settings',
+        settings_restart_hint: 'After editing, click "Save" first, then "Restart" to apply changes',
+        settings_restart_btn: 'Restart',
+        settings_restarting: '⏳ Restarting...',
+        settings_restart_ok: '✅ Restart signal sent (auto-refresh in ~20s, or refresh manually anytime)',
+        settings_restart_fail: '❌ Restart failed',
+        settings_restart_confirm: 'Restart all services? Unsaved changes will be lost.',
+        menu_settings: '⚙️ Settings',
+        settings_group_llm: 'Default model',
+        settings_group_tts: 'Audio',
+        settings_group_oasis: 'OASIS Forum',
+        settings_group_ports: 'Ports',
+        settings_group_network: 'Public URLs',
+        settings_group_bots: 'Bot Integration',
+        settings_group_comm: 'Communication Mode',
+        settings_group_exec: 'Command Execution',
+        settings_group_tinyfish: 'TinyFish Monitor',
+        settings_group_security: 'Security',
+        settings_group_other: 'Other',
+        settings_user_password_title: 'Current User Password',
+        settings_user_password_hint_local: 'You are currently using local no-password login. Set a password for "{user_id}" to enable password login for this username.',
+        settings_user_password_hint_general: 'Set or update the password for the currently logged-in user "{user_id}". It will be written to config/users.json.',
+        settings_user_password_status_missing: 'No password saved yet',
+        settings_user_password_status_set: 'Password saved, you can update it',
+        settings_user_password_field: 'New Password',
+        settings_user_password_confirm_field: 'Confirm Password',
+        settings_user_password_placeholder: 'Enter the password to save for this username',
+        settings_user_password_confirm_placeholder: 'Enter the same password again',
+        settings_user_password_save: 'Save as User',
+        settings_user_password_empty: 'Please enter a password',
+        settings_user_password_mismatch: 'The two passwords do not match',
+        settings_user_password_saving: 'Saving...',
+        settings_user_password_saved: '✅ Password saved for the current username',
+        settings_user_password_save_fail: 'Failed to save password',
+        settings_user_password_opened: 'Settings is open. Use "Current User Password" to save a password for this username.',
+        settings_secret_saved_placeholder: 'Saved ({mask}). Leave blank to keep it unchanged',
+        settings_llm_sync_title: '🔄 Sync Local Config',
+        settings_openclaw_import: '🦞 Import from OpenClaw',
+        settings_openclaw_import_hint_ready: 'Read the configured API key, model, and provider from OpenClaw',
+        settings_openclaw_import_hint_missing: '⚠️ OpenClaw was not detected',
+        settings_openclaw_importing: 'Reading configuration from OpenClaw...',
+        settings_openclaw_imported: '✅ Imported configuration from OpenClaw',
+        settings_openclaw_detect_hint: '. Click "Detect Models" to confirm.',
+        settings_antigravity_ready_subtitle: 'Use Claude / Gemini / GPT via Google One Pro',
+        settings_antigravity_missing_subtitle: '⚠️ Antigravity is not running or cannot be reached',
+        settings_help_audio_group: 'Leave these blank to follow the current LLM provider automatically. OpenAI defaults to gpt-4o-mini-tts / alloy / whisper-1; Gemini defaults to gemini-2.5-flash-preview-tts / charon.',
+        settings_help_tts_model: 'Leave blank to follow the current LLM provider automatically. OpenAI defaults to gpt-4o-mini-tts, Gemini defaults to gemini-2.5-flash-preview-tts.',
+        settings_help_tts_voice: 'Leave blank to follow the current LLM provider automatically. OpenAI uses alloy by default, Gemini uses charon.',
+        settings_help_stt_model: 'Leave blank to follow the current LLM provider automatically. OpenAI defaults to whisper-1; Gemini does not currently have a built-in STT default.',
+        settings_help_bots_group: 'Multi-platform channels use NoneBot adapter JSON arrays and the centralized WHITELIST_FILE. On mobile, use Channel Settings on the Create tab to choose platforms and manage connection formats.',
+        settings_help_telegram_bots: 'Bot JSON array for the NoneBot Telegram adapter, for example [{"token":"123:abc"}].',
+        settings_help_qq_bots: 'Bot JSON array for the NoneBot QQ adapter, for example [{"id":"app_id","secret":"bot_secret","intents":{"public_messages":true,"direct_message":true}}].',
+        settings_help_whitelist_file: 'Central whitelist JSON path. Defaults to data/whitelist.json.',
+        settings_help_tinyfish_group: 'Only the TinyFish API key is required for the initial setup. Saving auto-fills the default base URL, DB path, and target path, then validates the API. Restart is still required if you change the cron schedule.',
+        settings_help_tinyfish_api_key: 'TinyFish Web Agent API key used to submit internet search and crawl runs.',
+        settings_help_tinyfish_base_url: 'TinyFish API base URL. Defaults to https://agent.tinyfish.ai.',
+        settings_help_tinyfish_db_path: 'SQLite path used to store search results and data snapshots.',
+        settings_help_tinyfish_targets_path: 'JSON file listing search targets. Defaults to config/tinyfish_targets.json.',
+        settings_help_tinyfish_enabled: 'Set true to enable the built-in daily monitor job; set false to disable it.',
+        settings_help_tinyfish_cron: 'Five-field cron expression, for example 0 9 * * * for every day at 9:00.',
+        settings_tinyfish_quick_setup: 'Enter the API key and save. Clawcross will validate TinyFish and fill the remaining default settings automatically.',
+        settings_tinyfish_run_now: 'Run Now',
+        settings_tinyfish_refresh: 'Refresh',
+        settings_tinyfish_loading: 'Loading TinyFish monitor status...',
+        settings_tinyfish_not_configured: 'TinyFish is not fully configured yet.',
+        settings_tinyfish_api_ready: 'TinyFish API is ready',
+        settings_tinyfish_targets_optional: 'No target file yet. Add targets before running the monitor.',
+        settings_tinyfish_auto_testing: 'Validating TinyFish API and filling default settings...',
+        settings_tinyfish_auto_configured: '✅ TinyFish API validated and defaults applied',
+        settings_tinyfish_auto_config_failed: '❌ TinyFish API validation failed',
+        settings_tinyfish_run_submitted: '✅ TinyFish monitor run submitted',
+        settings_tinyfish_run_failed: '❌ TinyFish run failed',
+        settings_tinyfish_sites: 'Latest Site Snapshots',
+        settings_tinyfish_changes: 'Recent Price Changes',
+        settings_tinyfish_recent_runs: 'Recent Runs',
+        settings_tinyfish_no_sites: 'No site snapshots yet',
+        settings_tinyfish_no_changes: 'No data changes recorded yet',
+        settings_tinyfish_no_runs: 'No monitor runs recorded yet',
+        settings_tinyfish_live_title: 'Live Crawl',
+        settings_tinyfish_live_run: 'Live Crawl',
+        settings_tinyfish_live_stop: 'Stop Viewing',
+        settings_tinyfish_live_target_loading: 'Loading targets...',
+        settings_tinyfish_live_target_empty: 'No configured targets',
+        settings_tinyfish_live_status_idle: 'Choose a target to watch the crawl in real time',
+        settings_tinyfish_live_status_connecting: 'Connecting to TinyFish SSE',
+        settings_tinyfish_live_status_running: 'TinyFish crawl is running live',
+        settings_tinyfish_live_status_done: 'TinyFish live run finished',
+        settings_tinyfish_live_open_watch: 'Open TinyFish Live Watch',
+        settings_tinyfish_live_no_events: 'No live events yet',
+        settings_tinyfish_live_stream_closed: 'Live stream closed',
+        settings_tinyfish_live_stopped: 'Stopped local live viewing',
+        settings_tinyfish_live_missing_target: 'Choose a target site first',
+        settings_tinyfish_live_result_title: 'Live Run Result',
+        settings_antigravity_preset: '🚀 Antigravity Free Models Preset',
+        settings_antigravity_hint: 'Auto-fill Antigravity-Manager config. Uses Google One Pro membership for free model access. Make sure Antigravity-Manager is running locally.',
+        settings_antigravity_apply: 'Apply Antigravity Preset',
+        settings_antigravity_applied: '✅ Antigravity preset applied. Select a model and save.',
+        settings_group_tunnel: '🌐 Public Tunnel',
+        tunnel_start: 'Enable public access',
+        tunnel_stop: 'Disable public access',
+        tunnel_starting: 'Starting...',
+        tunnel_stopping: 'Stopping...',
+        tunnel_running: 'Public access is on',
+        tunnel_stopped: 'Public access is off',
+        tunnel_url_pending: 'Public URL is still being generated...',
+        tunnel_url_hint: 'Click to copy public URL',
+
+        // Chat switcher (WeBot / ACP tools)
+        oc_tab_internal: '🤖 WeBot',
+        oc_tab_codex: 'Codex',
+        oc_tab_claude: 'Claude',
+        oc_tab_gemini: 'Gemini',
+        oc_select_acp_hint: 'Pick an ACP tool tab first',
+        oc_acp_unavailable: 'ACP client unavailable',
+        oc_acp_via: 'Via acpx (ACP); the local CLI keeps context for this chat session.',
+        oc_acp_session_pick_label: 'Existing session',
+        oc_acp_session_pick_none: '— Pick existing (or leave empty for new) —',
+        oc_acp_session_refresh: 'Refresh',
+        oc_acp_session_refresh_title: 'Run acpx (tool) sessions list',
+        oc_acp_session_or_new: 'or new',
+        oc_acp_session_label: 'Name',
+        oc_acp_session_placeholder: 'Optional; empty = scope by Clawcross session',
+        oc_acp_session_ensure: 'Warm up',
+        oc_acp_session_ensure_title: 'Create/warm ACP session only (no message sent)',
+        oc_acp_session_warming: 'Creating…',
+        oc_acp_session_ready: 'ACP session ready',
+        oc_acp_session_failed: 'Creation failed',
+        oc_internal_session_refresh_title: 'Refresh WeBot session list from server',
+        // Run mode (permission mode)
+        run_mode_label: 'Mode',
+        run_mode_manual: 'Manual · Human review',
+        run_mode_bypass: 'Bypass · No review',
+        run_mode_readonly: 'Read-only',
+        run_mode_chat: 'Chat · No tools',
+        run_mode_auto: 'Auto · Review for me',
+        run_mode_title: 'Chat: no tools; Read-only: view and search; Manual: human review; Auto: model review; Bypass: no review',
+    }
+};
+
+// 当前语言
+let currentLang = window.InterfacePreferences?.language() || localStorage.getItem('clawcross_ui_locale') || localStorage.getItem('lang') || 'en';
+// 确保语言值有效
+if (!i18n[currentLang] && !window.ClawCrossLocale?.has(currentLang)) { currentLang = 'zh-CN'; localStorage.setItem('lang', 'zh-CN'); }
+
+// 获取翻译文本
+function t(key, params) {
+    let text = window.ClawCrossLocale?.lookup(key,currentLang) || (i18n[currentLang] && i18n[currentLang][key]) || i18n[currentLang.startsWith('zh')?'zh-CN':'en'][key] || key;
+    if (params) {
+        Object.keys(params).forEach(k => {
+            text = text.replace(new RegExp('\{' + k + '\}', 'g'), params[k]);
+        });
+    }
+    return text;
+}
+
+// 切换语言
+function toggleLanguage() { ClawCrossLocale.open(); }
+
+// 应用翻译到页面
+function applyTranslations() {
+    // 更新语言按钮显示
+    const langBtn = document.getElementById('lang-toggle-btn');
+    if (langBtn) {
+        langBtn.textContent = ClawCrossLocale.name(currentLang);
+    }
+
+    // 更新 data-i18n 属性的元素
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (el.tagName === 'INPUT' && el.hasAttribute('placeholder')) {
+            el.placeholder = t(key);
+        } else if (el.tagName === 'TEXTAREA' && el.hasAttribute('placeholder')) {
+            el.placeholder = t(key);
+        } else {
+            el.textContent = t(key);
+        }
+    });
+
+    // 更新 data-i18n-placeholder 属性
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+    });
+
+    // 更新 data-i18n-title 属性
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        el.title = t(el.getAttribute('data-i18n-title'));
+    });
+
+    const welcome = document.querySelector('#chat-box > [data-conversation-welcome]');
+    if (welcome) {
+        const label = welcome.dataset.welcomeLabel || '';
+        welcome.outerHTML = ConversationStart.welcome({label});
+    }
+
+    // 更新 title
+    document.title = 'Clawcross | AI Agent';
+
+    // 刷新编排面板的专家列表（专家名称和分类标签跟随语言切换）
+    if (typeof orchRenderExpertSidebar === 'function') {
+        orchRenderExpertSidebar();
+    }
+    // 刷新画布上已有的节点名称（跟随语言切换）
+    if (typeof orch !== 'undefined' && orch.nodes && typeof orchRenderNode === 'function' && typeof orchRenderEdges === 'function') {
+        orch.nodes.forEach(node => {
+            const el = document.getElementById('onode-' + node.id);
+            if (el) el.remove();
+            orchRenderNode(node);
+        });
+        orchRenderEdges();
+    }
+    if (typeof renderPersonaPreview === 'function') {
+        renderPersonaPreview();
+    }
+    if (typeof renderSubagentPanel === 'function' && Array.isArray(_subagentPanelItems) && _subagentPanelItems.length > 0) {
+        renderSubagentPanel(_subagentPanelItems);
+    }
+    if (typeof _syncWeBotPolicyEditor === 'function') {
+        _syncWeBotPolicyEditor();
+    }
+}
+
+function renderMarkdown(content) {
+    if (window.ClawcrossMarkdown) return window.ClawcrossMarkdown.render(content);
+    let raw = content == null ? '' : String(content);
+    if (raw.indexOf('\\') !== -1) {
+        raw = raw.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n').replace(/\\t/g, '\t');
+    }
+    return (typeof marked !== 'undefined' && raw) ? marked.parse(raw) : '';
+}
+
+function highlightMarkdownIn(root) {
+    if (window.ClawcrossMarkdown && typeof window.ClawcrossMarkdown.rewriteLocalFileLinks === 'function') {
+        window.ClawcrossMarkdown.rewriteLocalFileLinks(root);
+    }
+    if (window.ClawcrossMarkdown) {
+        window.ClawcrossMarkdown.highlight(root);
+        return;
+    }
+    if (!root || typeof hljs === 'undefined') return;
+    root.querySelectorAll('pre code').forEach((block) => hljs.highlightElement(block));
+}
+
+function renderMarkdownInto(element, content) {
+    if (window.ClawcrossMarkdown) {
+        window.ClawcrossMarkdown.renderInto(element, content);
+        return;
+    }
+    if (!element) return;
+    element.innerHTML = renderMarkdown(content);
+    highlightMarkdownIn(element);
+}
+
+let currentUserId = null;
+let currentUserHasPassword = false;
+let currentLoginMode = '';
+let localLoginBannerDismissed = false;
+let projectUpdateBannerDismissed = false;
+let projectUpdateBannerState = null;
+let currentSessionId = null;
+let currentAbortController = null;
+// Active browser-side streams are owned by their chat context, not by the
+// currently visible page.  This lets a stream keep collecting output while
+// the user visits another session/platform and restores it on return.
+const activeChatRuns = new Map();
+let projectUpdatePollTimer = null;
+let cancelTargetSessionId = null;  // 终止按钮绑定的会话ID
+let pendingImages = []; // [{base64: "data:image/...", name: "file.jpg"}, ...]
+let pendingFiles = [];  // [{name: "data.csv", content: "...(text content)"}, ...]
+let pendingAudios = []; // [{base64: "data:audio/...", name: "recording.wav", format: "wav"}, ...]
+let isRecording = false;
+
+let agentCenterAgents = [];
+let agentCenterLoading = false;
+let agentCenterSelectedKey = '';
+
+function agentCenterEscape(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function agentCenterStatusClass(status) {
+    const normalized = String(status || 'unknown').toLowerCase();
+    return /^[a-z_-]+$/.test(normalized) ? normalized : 'unknown';
+}
+
+function agentCenterState(agent) {
+    return String(agent?.status?.state || 'unknown').toLowerCase();
+}
+
+function agentCenterActions(agent) {
+    return Array.isArray(agent?.status?.actions) ? agent.status.actions : [];
+}
+
+function setAgentCenterNotice(message, isError = false) {
+    const notice = document.getElementById('agent-center-notice');
+    if (!notice) return;
+    notice.textContent = message || t('agent_center_status_hint');
+    notice.classList.toggle('agent-center-error', Boolean(isError));
+}
+
+function fillAgentCenterFilter(id, values) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const previous = select.value;
+    const options = [...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b)));
+    select.innerHTML = `<option value="">${agentCenterEscape(t('agent_center_all'))}</option>` + options
+        .map(value => `<option value="${agentCenterEscape(value)}">${agentCenterEscape(id === 'agent-center-team-filter' ? workspaceTeamLabel(value) : value)}</option>`)
+        .join('');
+    if (options.includes(previous)) select.value = previous;
+}
+
+function updateAgentCenterFilters() {
+    fillAgentCenterFilter('agent-center-kind-filter', agentCenterAgents.map(agent => agent.platform));
+    fillAgentCenterFilter('agent-center-team-filter', agentCenterAgents.flatMap(agent => agent.teams || []));
+}
+
+function renderAgentCenterSummary() {
+    const summary = document.getElementById('agent-center-summary');
+    if (!summary) return;
+    const running = agentCenterAgents.filter(agent => agentCenterState(agent) === 'running').length;
+    const uncertain = agentCenterAgents.filter(agent => ['unknown', 'unavailable'].includes(agentCenterState(agent))).length;
+    summary.innerHTML = `
+        <span class="agent-center-stat">${agentCenterEscape(t('agent_center_total'))} <strong>${agentCenterAgents.length}</strong></span>
+        <span class="agent-center-stat">${agentCenterEscape(t('agent_center_running'))} <strong>${running}</strong></span>
+        <span class="agent-center-stat">${agentCenterEscape(t('agent_center_uncertain'))} <strong>${uncertain}</strong></span>
+    `;
+}
+
+function renderAgentCenterGrid() {
+    const grid = document.getElementById('agent-center-grid');
+    if (!grid) return;
+    if (agentCenterLoading) {
+        grid.innerHTML = `<div class="agent-center-empty">${agentCenterEscape(t('loading'))}</div>`;
+        return;
+    }
+    const platformFilter = document.getElementById('agent-center-kind-filter')?.value || '';
+    const statusFilter = document.getElementById('agent-center-status-filter')?.value || '';
+    const team = document.getElementById('agent-center-team-filter')?.value || '';
+    const query = (document.getElementById('agent-center-search-filter')?.value || '').trim().toLocaleLowerCase();
+    const rows = agentCenterAgents.filter(agent => {
+        const state = agentCenterState(agent);
+        if (platformFilter && agent.platform !== platformFilter) return false;
+        if (team && !(agent.teams || []).includes(team)) return false;
+        if (statusFilter === 'active' && state !== 'running') return false;
+        if (statusFilter === 'idle' && !['idle', 'online'].includes(state)) return false;
+        if (statusFilter === 'finished') return false;
+        if (statusFilter === 'attention' && !['unknown', 'unavailable'].includes(state)) return false;
+        if (query) {
+            const searchable = [agent.name, agent.agent_id, agent.settings?.persona, agent.platform, ...(agent.teams || [])]
+                .filter(Boolean).join(' ').toLocaleLowerCase();
+            if (!searchable.includes(query)) return false;
+        }
+        return true;
+    });
+    if (!rows.length) {
+        grid.innerHTML = `<div class="agent-center-empty">${agentCenterEscape(t('agent_center_empty'))}</div>`;
+        return;
+    }
+
+    grid.innerHTML = rows.map(agent => {
+        const state = agentCenterState(agent);
+        const teams = agent.teams || [];
+        const teamLabel = teams.length ? teams.map(workspaceTeamLabel).join(', ') : t('agent_center_public');
+        const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
+        const webot = agent.platform === 'webot';
+        const contextPercent = Math.max(0, Math.min(100, Number(agent.status?.context?.percent || 0)));
+        return `
+            <article class="agent-center-card ${agent.agent_id === agentCenterSelectedKey ? 'is-selected' : ''}"
+                tabindex="0" role="button"
+                data-agent="${agentCenterEscape(agent.agent_id)}"
+                onclick="openAgentCenterDetail(this.dataset.agent)"
+                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAgentCenterDetail(this.dataset.agent)}">
+                <div class="agent-center-card-portrait ${webot ? 'internal' : 'external'}">
+                    <span class="agent-center-card-sigil" aria-hidden="true">${agent.settings?.avatar ? Avatars.markup(agent.settings.avatar,agent.name,{agentId:agent.agent_id}) : (window.StudioSidebar?.platformIcon(agent.platform) || '<svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg>')}</span>
+                </div>
+                <div class="agent-center-card-body">
+                    <div class="agent-center-card-top">
+                        <div class="agent-center-identity">
+                            <div class="agent-center-card-number">NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(agent.platform)} · ${agentCenterEscape(agent.location?.name || '本机')}${agent.location?.kind==='ssh'?' · SSH':''}</div>
+                            <div class="agent-center-name" title="${agentCenterEscape(agent.name)}">${agentCenterEscape(agent.name)}</div>
+                            <div class="agent-center-id" title="${agentCenterEscape(agent.agent_id)}">${agentCenterEscape(agent.agent_id)}</div>
+                        </div>
+                        <span class="agent-center-status ${agentCenterStatusClass(state)}">${agentCenterEscape(state)}</span>
+                    </div>
+                    <div class="agent-center-badges">
+                        <span class="agent-center-badge">${agentCenterEscape(agent.platform)}</span>
+                        ${teams.slice(0, 1).map(item => `<span class="agent-center-badge">${agentCenterEscape(workspaceTeamLabel(item))}</span>`).join('')}
+                    </div>
+                    <dl class="agent-center-meta">
+                        <dt>Team</dt><dd title="${agentCenterEscape(teamLabel)}">${agentCenterEscape(teamLabel)}</dd>
+                        <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(state)}</dd>
+                    </dl>
+                    ${webot ? `<div class="agent-center-mini-meter" title="Context ${contextPercent}%"><span style="width:${contextPercent}%"></span></div>` : ''}
+                    <div class="agent-center-card-hint">${agentCenterEscape(t('agent_center_open_detail'))} →</div>
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+function agentCenterSelectedAgent() {
+    return agentCenterAgents.find(agent => agent.agent_id === agentCenterSelectedKey) || null;
+}
+
+function agentCenterFormatTokens(value) {
+    const amount = Number(value || 0);
+    return Number.isFinite(amount) ? Math.max(0, Math.round(amount)).toLocaleString() : '0';
+}
+
+function setAgentCenterDetailNotice(message, isError = false) {
+    const el = document.getElementById('agent-dex-note');
+    if (!el) return;
+    el.textContent = message || '';
+    el.classList.toggle('agent-center-error', Boolean(isError));
+}
+
+function renderAgentCenterDetail() {
+    const panel = document.getElementById('agent-center-detail');
+    const host = document.getElementById('agent-center-detail-content');
+    const agent = agentCenterSelectedAgent();
+    if (!panel || !host || !agent) {
+        if (panel) panel.hidden = true;
+        return;
+    }
+    panel.hidden = false;
+    const state = agentCenterState(agent);
+    const teams = agent.teams || [];
+    const actions = agentCenterActions(agent);
+    const webot = agent.platform === 'webot';
+    const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
+    const context = agent.status?.context || {};
+    const contextPercent = Math.max(0, Math.min(100, Number(context.percent || 0)));
+    const personaText = agent.settings?.persona || '';
+    const button = (action, label, extra = '') => actions.includes(action)
+        ? `<button class="agent-center-btn ${extra}" type="button" onclick="controlAgentFromCenter('${action}', this)">${agentCenterEscape(t(label))}</button>` : '';
+
+    host.innerHTML = `
+        <div class="agent-dex-hero ${webot ? 'internal' : 'external'}">
+            <button class="agent-dex-close" type="button" onclick="closeAgentCenterDetail()" aria-label="Close">×</button>
+            <div class="agent-dex-portrait" aria-hidden="true">${agent.settings?.avatar ? Avatars.markup(agent.settings.avatar,agent.name,{agentId:agent.agent_id}) : (window.StudioSidebar?.platformIcon(agent.platform) || '<svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg>')}</div>
+            <div class="agent-dex-index">${agentCenterEscape(agent.platform)} · ${agentCenterEscape(state)}</div>
+            <div class="agent-dex-title">${agentCenterEscape(agent.name)}</div>
+            <div class="agent-dex-subtitle">${agentCenterEscape(agent.agent_id)} · ${agentCenterEscape(agent.platform)}</div>
+        </div>
+        <div class="agent-dex-body">
+            <section class="agent-dex-section">
+                <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_profile'))}</div>
+                <dl class="agent-dex-facts">
+                    <dt>Platform</dt><dd>${agentCenterEscape(agent.platform)}</dd>
+                    <dt>Persona</dt><dd>${agentCenterEscape(personaText ? (personaText.length > 80 ? personaText.slice(0, 80) + '…' : personaText) : '-')}</dd>
+                    <dt>Team</dt><dd>${agentCenterEscape(teams.length ? teams.map(workspaceTeamLabel).join(', ') : t('agent_center_public'))}</dd>
+                    <dt>${currentLang === 'zh-CN' ? '所在群聊' : 'Conversations'}</dt><dd>${agentCenterEscape((agent.groups || []).map(g => `${g.title} (${g.group_id})`).join(', ') || '-')}</dd>
+                    <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(state)}</dd>
+                </dl>
+            </section>
+            <section class="agent-dex-section"><button class="agent-center-btn primary" type="button" onclick="AgentSettings.open('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? 'Agent 设置' : 'Agent settings'}</button></section>
+            ${webot ? `
+            <section class="agent-dex-section">
+                <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_context'))}</div>
+                <div class="agent-dex-context-row"><span>${agentCenterEscape(t('agent_center_used'))}</span><strong>${contextPercent}%</strong></div>
+                <div class="agent-dex-context-meter"><span style="width:${contextPercent}%"></span></div>
+                <div class="agent-dex-context-row"><span>${agentCenterFormatTokens(context.tokens)} / ${agentCenterFormatTokens(context.budget)} tokens</span><span>${agentCenterEscape(t('agent_center_remaining'))} ${agentCenterFormatTokens(context.remaining)}</span></div>
+                <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button></div>
+            </section>` : ''}
+            <section class="agent-dex-section agent-dex-skills-section">
+                <div class="agent-dex-section-title">${currentLang === 'zh-CN' ? '工作区 Skills' : 'Workspace skills'}</div>
+                <div id="agent-dex-skills-list" class="agent-dex-skills-list" data-agent-id="${agentCenterEscape(agent.agent_id)}"><span class="agent-dex-note">${agentCenterEscape(t('loading'))}</span></div>
+            </section>
+            <section class="agent-dex-section">
+                <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_runtime_control'))}</div>
+                <div class="agent-dex-actions">${button('cancel', 'agent_center_stop')}${button('reset', 'agent_center_reset')}<button class="agent-center-btn danger" type="button" onclick="deleteAgentFromCenter(this)">${agentCenterEscape(t('agent_center_delete'))}</button></div>
+            </section>
+            <div id="agent-dex-note" class="agent-dex-note"></div>
+        </div>`;
+    loadAgentCenterSkills(agent.agent_id);
+}
+
+async function loadAgentCenterSkills(agentId) {
+    const host = document.getElementById('agent-dex-skills-list');
+    if (!host || host.dataset.agentId !== agentId) return;
+    try {
+        const result = await agentApi('GET', `/v1/agents/${encodeURIComponent(agentId)}/skills`);
+        if (!host.isConnected || host.dataset.agentId !== agentId) return;
+        if (!result.skills?.length) {
+            host.textContent = currentLang === 'zh-CN' ? '此 Agent 可用的工作区中还没有 Skill。' : 'No skills are available in this Agent’s workspaces yet.';
+            return;
+        }
+        host.replaceChildren(...result.skills.map(skill => {
+            const row = document.createElement('div'); row.className = 'agent-dex-skill-row';
+            const heading = document.createElement('div'); heading.className = 'agent-dex-skill-heading';
+            const title = document.createElement('strong'); title.textContent = skill.name;
+            const source = document.createElement('small');
+            const sourceLabels = currentLang === 'zh-CN'
+                ? {user:'用户空间',team:'团队',companion:'伴生工作区',cli:'CLI 工作区',custom:'自定义工作区'}
+                : {user:'User space',team:'Team',companion:'Companion',cli:'CLI workspace',custom:'Custom workspace'};
+            source.textContent = skill.source === 'team'
+                ? `${sourceLabels.team} · ${skill.team_name || ''}`
+                : (sourceLabels[skill.source] || skill.source || 'Workspace');
+            const description = document.createElement('span'); description.textContent = skill.description || skill.category || skill.id;
+            heading.append(title, source); row.append(heading, description); return row;
+        }));
+    } catch (error) { if (host.isConnected) host.textContent = error.message || String(error); }
+}
+
+async function loadAgentCenterRuntimeSettings(details) {
+    const id = details.dataset.agentId;
+    const host = details.querySelector('[data-runtime-summary]');
+    host.textContent = t('loading');
+    try {
+        const [data, remembered] = await Promise.all([
+            agentApi('GET', '/proxy_webot_runtime_settings?session_id=' + encodeURIComponent(id)),
+            agentApi('GET', '/v1/agents/' + encodeURIComponent(id) + '/remembered-approvals'),
+        ]);
+        if (!details.isConnected || id !== agentCenterSelectedKey) return;
+        const approval = data.settings.approval;
+        const zh = currentLang === 'zh-CN';
+        const mode = data.effective_mode || approval.mode;
+        const modeLabels = zh ? {chat:'纯文字',readonly:'只读',manual:'人工审核',auto:'AI 审核',bypass:'无需审核'} : {chat:'Chat',readonly:'Read only',manual:'Human review',auto:'AI review',bypass:'No review'};
+        const sandboxLabels = zh ? {off:'关闭',auto:'自动选择',srt:'SRT',landlock:'Linux Landlock'} : {off:'Off',auto:'Automatic',srt:'SRT',landlock:'Linux Landlock'};
+        const grants = approval.sandbox_grants || [];
+        const actions = remembered.actions || [];
+        host.innerHTML = `<dl class="agent-dex-facts"><dt>${zh?'模式':'Mode'}</dt><dd>${agentCenterEscape(modeLabels[mode] || mode)}</dd>
+            <dt>${zh?'命令沙盒':'Command sandbox'}</dt><dd>${agentCenterEscape(sandboxLabels[approval.command_sandbox] || approval.command_sandbox)}</dd>
+            <dt>${zh?'安全等级':'Security'}</dt><dd>${approval.sandbox_security === 'strict' ? (zh?'严格 · 禁止提权':'Strict · No escalation') : (zh?'普通 · 审核后有限提权':'Standard · Reviewed escalation')}</dd>
+            <dt>${zh?'预设网站':'Allowed websites'}</dt><dd>${agentCenterEscape((approval.sandbox_allowed_domains || []).join(', ') || (zh?'无':'None'))}</dd></dl>
+            <h4>${zh?'KEEP Y · 已记住的授权':'KEEP Y · Remembered grants'} <span>${grants.length + actions.length}</span></h4>
+            ${grants.length ? `<ul class="agent-dex-grants">${grants.map(grant=>`<li>${agentCenterEscape(({network:zh?'联网':'Network',read_path:zh?'只读':'Read',write_path:zh?'读写':'Read/write'})[grant.access] || grant.access)} · ${agentCenterEscape(grant.target)}</li>`).join('')}</ul>` : ''}
+            ${actions.length ? `<ul class="agent-dex-grants">${actions.map(action=>`<li><span>${agentCenterEscape(action.tool)} · ${agentCenterEscape(action.summary)}</span><button type="button" class="agent-center-btn" data-tool="${agentCenterEscape(action.tool)}" data-key="${agentCenterEscape(action.key)}" onclick="revokeAgentCenterApproval(this)">${zh?'移除':'Remove'}</button></li>`).join('')}</ul>` : ''}
+            ${!grants.length && !actions.length ? `<p class="agent-dex-note">${zh?'当前 Agent 没有已记住的授权。':'No remembered grants for this Agent.'}</p>` : ''}`;
+    } catch (error) { if (details.isConnected) host.textContent = error.message; }
+}
+
+async function revokeAgentCenterApproval(button) {
+    const details = button.closest('[data-agent-id]');
+    button.disabled = true;
+    try {
+        await agentApi('DELETE', '/v1/agents/' + encodeURIComponent(details.dataset.agentId) + '/remembered-approvals/' + encodeURIComponent(button.dataset.tool) + '/' + encodeURIComponent(button.dataset.key));
+        await loadAgentCenterRuntimeSettings(details);
+    } catch (error) { button.disabled = false; setAgentCenterDetailNotice(error.message, true); }
+}
+
+document.addEventListener('clawcross:runtime-settings-saved', event => {
+    const details = document.querySelector('.agent-dex-advanced[open]');
+    if (details?.dataset.agentId === event.detail.agentId) loadAgentCenterRuntimeSettings(details);
+});
+
+async function openAgentCenterDetail(agentId) {
+    agentCenterSelectedKey = agentId;
+    renderAgentCenterGrid();
+    renderAgentCenterDetail();
+    if (agentCenterSelectedAgent()?.platform === 'webot' && allTools.length === 0) {
+        await loadTools();
+        renderAgentCenterDetail();
+    }
+}
+
+function closeAgentCenterDetail() {
+    agentCenterSelectedKey = '';
+    const panel = document.getElementById('agent-center-detail');
+    if (panel) panel.hidden = true;
+    renderAgentCenterGrid();
+}
+
+async function agentApi(method, path, body) {
+    const response = await fetch(path, {
+        method,
+        headers: body ? {'Content-Type': 'application/json'} : {},
+        body: body ? JSON.stringify(body) : undefined,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload.detail;
+        const error = new Error((detail && (detail.error || detail)) || payload.error || `HTTP ${response.status}`);
+        throw Object.assign(error, {status: response.status, payload});
+    }
+    return payload;
+}
+
+// The agent for this runtime: a new one, or the one already registered for it.
+async function ensureAgent(fields) {
+    try {
+        return await agentApi('POST', '/v1/agents', fields);
+    } catch (error) {
+        if (error.status === 409 && error.payload?.detail?.agent) return error.payload.detail.agent;
+        throw error;
+    }
+}
+
+async function compactAgentFromCenter(button) {
+    const agent = agentCenterSelectedAgent();
+    if (!agent || agent.platform !== 'webot') return;
+    button.disabled = true;
+    try {
+        const payload = await agentApi('POST', `/v1/agents/${encodeURIComponent(agent.agent_id)}/control`, {action: 'compact'});
+        await refreshAgentCenter();
+        setAgentCenterDetailNotice(payload.triggered ? t('agent_center_compact_ok') : t('agent_center_compact_none'));
+    } catch (error) {
+        setAgentCenterDetailNotice(`${t('agent_center_compact')}: ${error.message || error}`, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function refreshAgentCenter() {
+    if (agentCenterLoading) return;
+    agentCenterLoading = true;
+    const refreshButton = document.getElementById('agent-center-refresh-btn');
+    if (refreshButton) refreshButton.disabled = true;
+    renderAgentCenterGrid();
+    setAgentCenterNotice(t('loading'));
+    try {
+        const [agents, teams] = await Promise.all([
+            agentApi('GET', '/v1/agents?status=1'),
+            agentApi('GET', '/v1/teams'),
+        ]);
+        const teamsOf = {};
+        for (const team of teams.data || []) {
+            if (team.virtual || team.is_default || team.kind === 'user_space' || team.team === '__default__') continue;
+            for (const member of team.members || []) {
+                (teamsOf[member.agent.agent_id] = teamsOf[member.agent.agent_id] || []).push(team.team);
+            }
+        }
+        agentCenterAgents = (agents.data || []).map(agent => ({...agent, teams: teamsOf[agent.agent_id] || []}));
+        for (const agent of agentCenterAgents) if (agent.location?.kind==='ssh' && !_acpToolsCache.includes(agent.platform)) _acpToolsCache.push(agent.platform);
+        updateAgentCenterFilters();
+        renderAgentCenterSummary();
+        setAgentCenterNotice(t('agent_center_status_hint'));
+    } catch (error) {
+        agentCenterAgents = [];
+        renderAgentCenterSummary();
+        setAgentCenterNotice(`${t('agent_center_load_failed')}: ${error.message || error}`, true);
+    } finally {
+        agentCenterLoading = false;
+        if (refreshButton) refreshButton.disabled = false;
+        renderAgentCenterGrid();
+        renderAgentCenterDetail();
+    }
+}
+
+async function openAgentCenter() {
+    const modal = document.getElementById('agent-center-modal');
+    if (!modal || !currentUserId) return;
+    modal.style.display = 'flex';
+    window.StudioSidebar?.updateNavigation('agents');
+    await refreshAgentCenter();
+}
+
+function closeAgentCenter() {
+    const modal = document.getElementById('agent-center-modal');
+    if (modal) modal.style.display = 'none';
+    agentCenterSelectedKey = '';
+    window.StudioSidebar?.updateNavigation();
+}
+
+const _AGENT_CENTER_CONTROL_TEXT = {
+    cancel: ['agent_center_stop_confirm', 'agent_center_stop_ok', 'agent_center_stop_failed'],
+    reset: ['agent_center_reset_confirm', 'agent_center_reset_ok', 'agent_center_reset_failed'],
+};
+
+async function controlAgentFromCenter(action, button) {
+    const agent = agentCenterSelectedAgent();
+    const [confirmKey, okKey, failKey] = _AGENT_CENTER_CONTROL_TEXT[action];
+    if (!agent || !window.confirm(t(confirmKey))) return;
+    button.disabled = true;
+    try {
+        const result = await agentApi('POST', `/v1/agents/${encodeURIComponent(agent.agent_id)}/control`, {action});
+        setAgentCenterNotice(result.cancelled === false ? t('agent_center_stop_none') : t(okKey));
+        await refreshAgentCenter();
+    } catch (error) {
+        setAgentCenterNotice(`${t(failKey)}: ${error.message || error}`, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function deleteAgentFromCenter(button) {
+    const agent = agentCenterSelectedAgent();
+    if (!agent) return;
+    button.disabled = true;
+    try {
+        if (!await deleteAgent(agent, agent.name)) return;
+        setAgentCenterNotice(t('agent_center_delete_ok'));
+        closeAgentCenterDetail();
+        await refreshAgentCenter();
+    } catch (error) {
+        setAgentCenterNotice(`${t('agent_center_delete_failed')}: ${error.message || error}`, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.getElementById('agent-center-modal')?.style.display !== 'none') {
+        if (agentCenterSelectedKey) closeAgentCenterDetail();
+        else closeAgentCenter();
+    }
+});
+
+// OpenAI API 配置（前端不再存储 authToken，认证由服务端 session 完成）
+const TEXT_EXTENSIONS = new Set([
+    // 通用文本与数据
+    '.txt','.md','.markdown','.rst','.adoc','.org','.tex','.bib',
+    '.csv','.tsv','.json','.ndjson','.jsonl','.xml','.yaml','.yml','.toml','.ini','.cfg','.conf','.properties','.env','.log',
+    // Web 前端
+    '.html','.htm','.css','.scss','.sass','.less','.styl','.js','.mjs','.cjs','.ts','.tsx','.jsx','.vue','.svelte','.astro',
+    // 后端 / 通用语言
+    '.py','.pyi','.pyx','.ipynb','.rb','.gemspec','.php','.go','.rs','.java','.kt','.kts','.scala','.groovy','.gradle',
+    '.c','.h','.cpp','.cc','.cxx','.hpp','.hh','.hxx','.m','.mm','.cs','.fs','.fsx','.fsi','.vb',
+    '.swift','.dart','.lua','.pl','.pm','.tcl','.r','.jl','.nim','.zig','.cr','.ex','.exs','.erl','.hrl','.elm','.clj','.cljs','.cljc','.hs','.ml','.mli','.ocaml',
+    // Shell / 运维 / 构建
+    '.sh','.bash','.zsh','.fish','.bat','.cmd','.ps1','.psm1','.awk','.sed',
+    '.dockerfile','.makefile','.mk','.cmake','.bazel','.bzl','.sbt',
+    // 数据库 / 查询 / 配置即代码
+    '.sql','.prisma','.graphql','.gql','.proto','.thrift','.tf','.hcl','.nomad',
+    // 模板
+    '.j2','.jinja','.jinja2','.ejs','.hbs','.mustache','.twig','.liquid','.njk',
+    // 其他
+    '.editorconfig','.gitignore','.gitattributes','.prettierrc','.eslintrc','.npmrc','.babelrc','.lock','.sum','.mod'
+]);
+const AUDIO_EXTENSIONS = new Set(['.mp3','.wav','.ogg','.m4a','.flac','.aac','.opus','.aiff','.amr']);
+// 注意：.webm 既可能是音频也可能是视频；分流时以 MIME 为准（见 handleFileSelect）
+const VIDEO_EXTENSIONS = new Set(['.avi','.mp4','.mkv','.mov','.webm','.wmv','.flv','.m4v','.3gp','.ogv']);
+const MAX_FILE_SIZE = 512 * 1024; // 512KB per text file
+const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB per PDF
+const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB per audio
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB per video
+
+function compressImage(file) {
+    return ClawCrossAttachments.prepareImage(file);
+}
+
+// ===== File Upload Logic (images + text files + PDF + audio) =====
+function handleFileSelect(event) {
+    const files = event.target.files;
+    if (!files.length) return;
+    for (const file of files) {
+        const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+        const mime = file.type || '';
+        // 分流优先级：MIME > 扩展名。video/audio 都接受的 .webm 以 MIME 决定。
+        const isImage = mime.startsWith('image/') || ['.heic','.heif','.jpg','.jpeg','.png','.webp','.gif'].includes(ext);
+        const isVideo = mime.startsWith('video/') || (!mime && VIDEO_EXTENSIONS.has(ext));
+        const isAudio = (!isVideo) && (mime.startsWith('audio/') || (!mime && AUDIO_EXTENSIONS.has(ext)));
+        const isPdf = mime === 'application/pdf' || ext === '.pdf';
+        if (isImage) {
+            if (pendingImages.length >= 5) { alert(t('max_images')); break; }
+            compressImage(file).then((compressed) => {
+                if (pendingImages.length >= 5) { alert(t('max_images')); return; }
+                pendingImages.push({ base64: compressed, name: file.name });
+                renderImagePreviews();
+            }).catch(error => alert(`${file.name}: ${error.message}`));
+        } else if (isAudio) {
+            if (file.size > MAX_AUDIO_SIZE) { alert(`${file.name}: ${t('audio_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); continue; }
+            if (pendingAudios.length >= 2) { alert(t('max_audios')); break; }
+            const fmt = ({'mp3':'mp3','wav':'wav','ogg':'ogg','m4a':'m4a','webm':'webm','flac':'flac','aac':'aac','opus':'opus','aiff':'aiff','amr':'amr'})[ext.slice(1)] || 'mp3';
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                pendingAudios.push({ base64: e.target.result, name: file.name, format: fmt });
+                renderAudioPreviews();
+            };
+            reader.readAsDataURL(file);
+        } else if (isVideo) {
+            if (file.size > MAX_VIDEO_SIZE) { alert(`${file.name}: ${t('video_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); continue; }
+            if (pendingFiles.length >= 3) { alert(t('max_files')); break; }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                pendingFiles.push({ name: file.name, content: e.target.result, type: 'media' });
+                renderFilePreviews();
+            };
+            reader.readAsDataURL(file);
+        } else if (isPdf) {
+            if (file.size > MAX_PDF_SIZE) { alert(`${file.name}: ${t('pdf_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); continue; }
+            if (pendingFiles.length >= 3) { alert(t('max_files')); break; }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                pendingFiles.push({ name: file.name, content: e.target.result, type: 'pdf' });
+                renderFilePreviews();
+            };
+            reader.readAsDataURL(file);
+        } else {
+            if (!TEXT_EXTENSIONS.has(ext)) { alert(`${t('unsupported_type')}: ${ext}\n${t('supported_types')}`); continue; }
+            if (file.size > MAX_FILE_SIZE) { alert(`${file.name}: ${t('file_too_large')} (${(file.size/1024).toFixed(0)}KB)`); continue; }
+            if (pendingFiles.length >= 3) { alert(t('max_files')); break; }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                pendingFiles.push({ name: file.name, content: e.target.result, type: 'text' });
+                renderFilePreviews();
+            };
+            reader.readAsText(file);
+        }
+    }
+    event.target.value = '';
+}
+
+// ===== Audio Recording =====
+async function toggleRecording() {
+    if (isRecording) {
+        stopRecording();
+    } else {
+        await startRecording();
+    }
+}
+
+// --- WAV 编码辅助函数 ---
+function encodeWAV(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+    function writeString(offset, string) {
+        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+    }
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+    for (let i = 0; i < samples.length; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return new Blob([buffer], { type: 'audio/wav' });
+}
+
+let audioContext = null;
+let audioSourceNode = null;
+let audioProcessorNode = null;
+let recordedSamples = [];
+
+async function startRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const AudioCtx = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+        audioContext = new AudioCtx({ sampleRate: 16000 });
+        audioSourceNode = audioContext.createMediaStreamSource(stream);
+        audioProcessorNode = audioContext.createScriptProcessor(4096, 1, 1);
+        recordedSamples = [];
+        audioProcessorNode.onaudioprocess = (e) => {
+            const data = e.inputBuffer.getChannelData(0);
+            recordedSamples.push(new Float32Array(data));
+        };
+        audioSourceNode.connect(audioProcessorNode);
+        audioProcessorNode.connect(audioContext.destination);
+        isRecording = true;
+        document.getElementById('record-btn').classList.add('recording');
+        document.getElementById('record-btn').title = t('recording_stop');
+    } catch (err) {
+        alert(t('mic_permission_denied') + '\n' + err.message);
+    }
+}
+
+function stopRecording() {
+    if (!audioContext) return;
+    const stream = audioSourceNode.mediaStream;
+    audioProcessorNode.disconnect();
+    audioSourceNode.disconnect();
+    stream.getTracks().forEach(t => t.stop());
+    // 合并所有采样
+    let totalLen = 0;
+    for (const chunk of recordedSamples) totalLen += chunk.length;
+    const merged = new Float32Array(totalLen);
+    let offset = 0;
+    for (const chunk of recordedSamples) { merged.set(chunk, offset); offset += chunk.length; }
+    const sampleRate = audioContext.sampleRate;
+    audioContext.close();
+    audioContext = null;
+    audioSourceNode = null;
+    audioProcessorNode = null;
+    recordedSamples = [];
+    isRecording = false;
+    document.getElementById('record-btn').classList.remove('recording');
+    document.getElementById('record-btn').title = t('recording_title');
+    const blob = encodeWAV(merged, sampleRate);
+    if (blob.size > MAX_AUDIO_SIZE) { alert(t('recording_too_long')); return; }
+    if (pendingAudios.length >= 2) { alert(t('max_audios')); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const ts = new Date().toLocaleTimeString(currentLang === 'zh-CN' ? 'zh-CN' : 'en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        const recName = currentLang === 'zh-CN' ? `录音_${ts}.wav` : `recording_${ts}.wav`;
+        pendingAudios.push({ base64: e.target.result, name: recName, format: 'wav' });
+        renderAudioPreviews();
+    };
+    reader.readAsDataURL(blob);
+}
+
+function removeAudio(index) {
+    pendingAudios.splice(index, 1);
+    renderAudioPreviews();
+}
+
+function renderAudioPreviews() {
+    const area = document.getElementById('audio-preview-area');
+    if (pendingAudios.length === 0) {
+        area.style.display = 'none';
+        area.innerHTML = '';
+        return;
+    }
+    area.style.display = 'flex';
+    area.innerHTML = pendingAudios.map((a, i) => `
+        <div class="audio-preview-item">
+            <span class="file-icon">🎤</span>
+            <span class="file-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+            <button class="remove-btn" onclick="removeAudio(${i})">&times;</button>
+        </div>
+    `).join('');
+}
+
+function handlePasteImage(event) {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+        if (!item.type.startsWith('image/')) continue;
+        event.preventDefault();
+        if (pendingImages.length >= 5) { alert(t('max_images')); break; }
+        const file = item.getAsFile();
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            pendingImages.push({ base64: e.target.result, name: 'pasted_image.png' });
+            renderImagePreviews();
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function removeImage(index) {
+    pendingImages.splice(index, 1);
+    renderImagePreviews();
+}
+
+function removeFile(index) {
+    pendingFiles.splice(index, 1);
+    renderFilePreviews();
+}
+
+function renderImagePreviews() {
+    const area = document.getElementById('image-preview-area');
+    if (pendingImages.length === 0) {
+        area.style.display = 'none';
+        area.innerHTML = '';
+        return;
+    }
+    area.style.display = 'flex';
+    area.innerHTML = pendingImages.map((img, i) => `
+        <div class="image-preview-item">
+            <img src="${img.base64}" alt="${img.name}">
+            <button class="remove-btn" onclick="removeImage(${i})">&times;</button>
+        </div>
+    `).join('');
+}
+
+function renderFilePreviews() {
+    const area = document.getElementById('file-preview-area');
+    if (pendingFiles.length === 0) {
+        area.style.display = 'none';
+        area.innerHTML = '';
+        return;
+    }
+    area.style.display = 'flex';
+    area.innerHTML = pendingFiles.map((f, i) => `
+        <div class="file-preview-item">
+            <span class="file-icon">${f.type === 'media' ? '🎬' : '📄'}</span>
+            <span class="file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+            <button class="remove-btn" onclick="removeFile(${i})">&times;</button>
+        </div>
+    `).join('');
+}
+
+// ===== Session (conversation) ID management =====
+function generateSessionId() {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+}
+
+function initSession() {
+    let saved = sessionStorage.getItem('sessionId');
+    if (!saved) {
+        saved = generateSessionId();
+        sessionStorage.setItem('sessionId', saved);
+    }
+    currentSessionId = saved;
+    updateSessionDisplay();
+    if(new URLSearchParams(location.search).get('embedded')==='1'){
+        // The parent selects the actual Agent. Loading an unrelated saved
+        // conversation here serializes two history requests before first paint.
+        renderWeBotWelcomeMessage();
+        return Promise.resolve();
+    }
+    return loadSessionList()
+        .then(() => switchToSession(currentSessionId, true, { quiet: true }))
+        .catch(() => {});
+}
+
+function updateSessionDisplay() {
+    const el = document.getElementById('session-display');
+    if (el && currentSessionId) {
+        el.textContent = '#' + currentSessionId.slice(-6);
+        el.title = t('session_id') + ': ' + currentSessionId;
+    }
+}
+
+let sessionContextUsageState = {
+    percent: 0,
+    remaining: 0,
+    tokens: 0,
+    budget: 0,
+    source: '',
+    breakdown: {},
+    cacheRead: 0,
+};
+// 上下文分项：key 与后端 context_breakdown 对齐，[中文, English]
+const CONTEXT_BREAKDOWN_LABELS = {
+    system_prompt: ['系统提示词', 'System prompt'],
+    tools: ['工具定义', 'Tool definitions'],
+    runtime_state: ['运行时状态', 'Runtime state'],
+    summary: ['压缩摘要', 'Compacted summary'],
+    messages: ['对话消息', 'Messages'],
+    tool_results: ['工具结果', 'Tool results'],
+    output: ['上轮输出', 'Last output'],
+};
+// 手动压缩按钮状态（持久化到 re-render 之间）
+let sessionCompactBusy = false;
+let sessionCompactStatus = '';
+let sessionBackendCompaction = null;
+
+function backendCompactionLabel(status) {
+    if (!status) return '';
+    const zh = currentLang === 'zh-CN';
+    const kind = status.kind === 'automatic' ? (zh ? '自动' : 'Automatic') : (zh ? '手动' : 'Manual');
+    if (status.state === 'checking') return zh ? '正在检查对话容量…' : 'Checking conversation size…';
+    if (status.state === 'running') return zh
+        ? `正在整理对话 · ${kind} · ${Number(status.elapsed_seconds || 0)} 秒`
+        : `Compacting conversation · ${kind} · ${Number(status.elapsed_seconds || 0)}s`;
+    if (status.state === 'completed') return zh ? '对话整理已完成' : 'Conversation compaction completed';
+    if (status.state === 'failed') return zh ? '对话整理失败，请展开加号查看详情' : 'Compaction failed; open + for details';
+    return '';
+}
+
+function updateBackendCompactionStatus(status) {
+    sessionBackendCompaction = status || null;
+    if (status && ['completed', 'failed', 'cancelled', 'missing', 'idle'].includes(status.state)) {
+        sessionCompactBusy = false;
+        if (sessionCompactStatus.includes('正在后台整理') || sessionCompactStatus.includes('Summarizing older')) sessionCompactStatus = '';
+    }
+    const indicator = document.getElementById('session-compaction-indicator');
+    if (indicator) {
+        indicator.textContent = backendCompactionLabel(status);
+        indicator.hidden = !indicator.textContent;
+        indicator.title = status?.error || '';
+    }
+    renderSessionContextDetail();
+}
+
+function formatContextTokenCount(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return '0';
+    return Math.round(n).toLocaleString();
+}
+
+function getContextPercentValue(percent, tokens, budget) {
+    const tokenValue = Number(tokens);
+    const budgetValue = Number(budget);
+    if (Number.isFinite(tokenValue) && Number.isFinite(budgetValue) && budgetValue > 0) {
+        return Math.max(0, Math.min(100, (tokenValue / budgetValue) * 100));
+    }
+    const percentValue = Number(percent);
+    return Number.isFinite(percentValue) ? Math.max(0, Math.min(100, percentValue)) : 0;
+}
+
+function formatContextBadgePercent(percentValue) {
+    if (!Number.isFinite(percentValue) || percentValue <= 0) return '0';
+    if (percentValue < 1) return '<1';
+    return String(Math.round(percentValue));
+}
+
+function formatContextDetailPercent(percentValue) {
+    if (!Number.isFinite(percentValue) || percentValue <= 0) return '0';
+    if (percentValue < 0.01) return '<0.01';
+    if (percentValue < 1) return percentValue.toFixed(2);
+    if (percentValue < 10) return percentValue.toFixed(1);
+    return String(Math.round(percentValue));
+}
+
+function renderContextBreakdown(state) {
+    const zh = currentLang === 'zh-CN';
+    const breakdown = state.breakdown || {};
+    const rows = Object.keys(CONTEXT_BREAKDOWN_LABELS)
+        .filter((key) => Number(breakdown[key]) > 0)
+        .map((key) => `
+        <div class="oc-context-usage-detail-row">
+            <span>${CONTEXT_BREAKDOWN_LABELS[key][zh ? 0 : 1]}</span>
+            <strong>${formatContextTokenCount(breakdown[key])} tokens</strong>
+        </div>`);
+    if (!rows.length) return '';
+    if (Number(state.cacheRead) > 0) {
+        rows.push(`
+        <div class="oc-context-usage-detail-row">
+            <span>${zh ? '其中缓存命中' : 'Cache hits (of input)'}</span>
+            <strong>${formatContextTokenCount(state.cacheRead)} tokens</strong>
+        </div>`);
+    }
+    return `
+        <div class="oc-context-usage-detail-section">
+            <div class="oc-context-usage-detail-title">${zh ? '组成' : 'Breakdown'}</div>
+            ${rows.join('')}
+            <div class="oc-context-usage-detail-note">${zh
+                ? (state.source === 'api' ? '合计为 API 实测值；分项采用稳定输入差分或本地分词估算' : '当前占用为估算；压缩后已按新上下文更新，待下一次 API 调用校准')
+                : (state.source === 'api' ? 'API total; components inferred from stable input differences or local tokenization' : 'Estimated from the compacted context; awaiting next API measurement')}</div>
+        </div>`;
+}
+
+function renderSessionContextDetail() {
+    const detail = document.getElementById('session-context-detail');
+    if (!detail) return;
+
+    const state = sessionContextUsageState || {};
+    const percentValue = getContextPercentValue(state.percent, state.tokens, state.budget);
+    const usedLabel = currentLang === 'zh-CN' ? '已使用' : 'Used';
+    const totalLabel = currentLang === 'zh-CN' ? '总量' : 'Total';
+    const remainingLabel = currentLang === 'zh-CN' ? '剩余' : 'Remaining';
+    const percentLabel = currentLang === 'zh-CN' ? '占比' : 'Percent';
+    const compactLabel = currentLang === 'zh-CN' ? '压缩历史' : 'Compress history';
+    const compactBusyLabel = currentLang === 'zh-CN' ? '压缩中…' : 'Compressing…';
+    const backendBusy = ['checking', 'running'].includes(sessionBackendCompaction?.state);
+
+    detail.innerHTML = `
+        <div class="oc-context-usage-detail-row">
+            <span>${percentLabel}</span>
+            <strong>${formatContextDetailPercent(percentValue)}%</strong>
+        </div>
+        <div class="oc-context-usage-detail-row">
+            <span>${usedLabel}${state.source === 'estimate' ? (currentLang === 'zh-CN' ? '（估算）' : ' (estimated)') : ''}</span>
+            <strong>${formatContextTokenCount(state.tokens)} tokens</strong>
+        </div>
+        <div class="oc-context-usage-detail-row">
+            <span>${totalLabel}</span>
+            <strong>${formatContextTokenCount(state.budget)} tokens</strong>
+        </div>
+        <div class="oc-context-usage-detail-row">
+            <span>${remainingLabel}</span>
+            <strong>${formatContextTokenCount(state.remaining)} tokens</strong>
+        </div>
+        ${renderRuntimeContextUsage(state, state.budget || 1000000)}
+        ${renderContextBreakdown(state)}
+        <div class="oc-context-usage-detail-actions" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+            <button type="button" id="session-compact-btn" class="oc-context-compact-btn"
+                onclick="compactCurrentSession(event)"
+                style="cursor:pointer;padding:5px 10px;border-radius:6px;border:1px solid var(--oc-border,#3a3a3a);background:transparent;color:inherit;font-size:12px;"
+                ${sessionCompactBusy || backendBusy ? 'disabled' : ''}>
+                ${sessionCompactBusy || backendBusy ? compactBusyLabel : compactLabel}
+            </button>
+            <div class="oc-context-compact-result" style="font-size:11px;opacity:.85;"
+                ${sessionCompactStatus ? '' : 'hidden'}>${sessionCompactStatus}</div>
+            <div class="oc-context-compact-result" role="status">${escapeHtml(backendCompactionLabel(sessionBackendCompaction))}${sessionBackendCompaction?.error ? ': ' + escapeHtml(sessionBackendCompaction.error) : ''}</div>
+            <button type="button" class="oc-context-compact-btn" onclick="openRuntimeSettings(currentSessionId)">${t('runtime_settings')}</button>
+        </div>
+    `;
+}
+
+function toggleSessionContextDetail(event) {
+    if (event) event.stopPropagation();
+    const detail = document.getElementById('session-context-detail');
+    if (!detail) return;
+    renderSessionContextDetail();
+    const nextHidden = !detail.hidden;
+    detail.hidden = nextHidden;
+    const badge = document.getElementById('session-context-usage');
+    if (badge) badge.setAttribute('aria-expanded', String(!nextHidden));
+}
+
+function handleSessionContextDetailKeydown(event) {
+    if (!event) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleSessionContextDetail(event);
+    }
+}
+
+function closeSessionContextDetail() {
+    const detail = document.getElementById('session-context-detail');
+    if (detail) detail.hidden = true;
+    const badge = document.getElementById('session-context-usage');
+    if (badge) badge.setAttribute('aria-expanded', 'false');
+}
+
+// 手动压缩当前会话历史（绕过自动触发阈值）。
+async function compactCurrentSession(event) {
+    if (event) event.stopPropagation();
+    if (sessionCompactBusy || ['checking', 'running'].includes(sessionBackendCompaction?.state)) return;
+    const zh = currentLang === 'zh-CN';
+    if (!currentSessionId) {
+        sessionCompactStatus = zh ? '无活动会话' : 'No active session';
+        renderSessionContextDetail();
+        return;
+    }
+    sessionCompactBusy = true;
+    sessionCompactStatus = '';
+    renderSessionContextDetail();
+    const compactSessionId = currentSessionId;
+    const compactPath = `/v1/agents/${encodeURIComponent(compactSessionId)}/control`;
+    try {
+        let job = await agentApi('POST', compactPath, {action: 'compact_async'});
+        if (currentSessionId !== compactSessionId) return;
+        updateBackendCompactionStatus(job);
+        const jobId = job.job_id;
+        while (job.state === 'running') {
+            sessionCompactStatus = zh ? '正在后台整理早期对话…' : 'Summarizing older conversations in the background…';
+            renderSessionContextDetail();
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            if (currentSessionId !== compactSessionId) return;
+            job = await agentApi('POST', compactPath, {action: 'compact_status'});
+            if (currentSessionId !== compactSessionId) return;
+            updateBackendCompactionStatus(job);
+            if (job.job_id && job.job_id !== jobId) throw new Error(zh ? '压缩任务已被替换' : 'Compaction job changed');
+        }
+        if (job.state !== 'completed') throw new Error(job.error || (zh ? '压缩任务已取消' : 'Compaction was cancelled'));
+        const data = job.result;
+        if (!data.triggered) {
+            const reason = data.reason || '';
+            if (reason === 'empty') {
+                sessionCompactStatus = zh ? '会话为空，无需压缩' : 'Session empty, nothing to compress';
+            } else if (reason === 'no_benefit') {
+                sessionCompactStatus = zh ? '摘要未减少占用；近期原文仍按设置保留' : 'Summary did not reduce usage; recent turns remain intact';
+            } else if (reason === 'preserved_recent_turns') {
+                sessionCompactStatus = zh ? '没有可折叠的早期对话；近期原文按设置保留' : 'No eligible older turns; recent turns are preserved';
+            } else {
+                sessionCompactStatus = zh ? '未压缩（未达条件）' : 'Not compressed';
+            }
+        } else {
+            const before = Number(data.before_tokens || 0);
+            const after = Number(data.after_tokens || 0);
+            const saved = Number(data.saved_tokens || 0);
+            const pct = before > 0 ? Math.round(saved / before * 100) : 0;
+            sessionCompactStatus = zh
+                ? `历史估算已压缩：${before.toLocaleString()} → ${after.toLocaleString()} tokens（省 ${saved.toLocaleString()}，-${pct}%）`
+                : `Estimated history compressed: ${before.toLocaleString()} → ${after.toLocaleString()} tokens (saved ${saved.toLocaleString()}, -${pct}%)`;
+            const meta = data.metadata || {};
+            if (Number.isFinite(meta.preserved_tokens)) {
+                sessionCompactStatus += zh
+                    ? `；近期保留原文约 ${meta.preserved_tokens.toLocaleString()} tokens`
+                    : `; preserved recent content ~${meta.preserved_tokens.toLocaleString()} tokens`;
+            }
+            sessionCompactStatus += zh ? '。当前占用已按压缩后上下文估算，待下次 API 调用校准。'
+                : '. Current usage reflects the compacted context estimate; the next API call will calibrate it.';
+            // 刷新上下文徽章
+            try {
+                const status = await fetchSessionStatus(currentSessionId);
+                if (status.context) showSessionContextUsage(status.context);
+            } catch (e) { /* 徽章刷新失败不影响结果展示 */ }
+        }
+    } catch (e) {
+        if (currentSessionId !== compactSessionId) return;
+        sessionCompactStatus = (zh ? '压缩失败：' : 'Failed: ') + (e && e.message ? e.message : e);
+    } finally {
+        sessionCompactBusy = false;
+        renderSessionContextDetail();
+    }
+}
+
+function updateSessionContextUsageBadge(percent, remaining, tokens, budget, source, breakdown, cacheRead) {
+    const badge = document.getElementById('session-context-usage');
+    if (!badge) return;
+    const remainingValue = Number(remaining);
+    const tokenValue = Number(tokens);
+    const budgetValue = Number(budget);
+    const percentValue = getContextPercentValue(percent, tokenValue, budgetValue);
+    const validPercent = Number.isFinite(percentValue) ? Math.max(0, Math.min(100, percentValue)) : null;
+    const validRemaining = Number.isFinite(remainingValue) ? Math.max(0, Math.round(remainingValue)) : null;
+    const validTokens = Number.isFinite(tokenValue) ? Math.max(0, Math.round(tokenValue)) : 0;
+    const validBudget = Number.isFinite(budgetValue) ? Math.max(0, Math.round(budgetValue)) : 0;
+
+    sessionContextUsageState = {
+        percent: validPercent || 0,
+        remaining: validRemaining || 0,
+        tokens: validTokens,
+        budget: validBudget,
+        source: String(source || ''),
+        breakdown: (breakdown && typeof breakdown === 'object') ? breakdown : {},
+        cacheRead: Math.max(0, Math.round(Number(cacheRead) || 0)),
+    };
+    renderSessionContextDetail();
+
+    if (validPercent === null || !currentSessionId) {
+        badge.style.display = 'inline-flex';
+        badge.textContent = t('context_usage').replace('{percent}', '0');
+        badge.title = currentLang === 'zh-CN'
+            ? '当前会话上下文已使用 0%'
+            : 'Current session context is 0% used';
+        badge.classList.remove('warn', 'critical');
+        return;
+    }
+
+    const remainingText = validRemaining === null
+        ? ''
+        : (currentLang === 'zh-CN'
+            ? `，剩余约 ${validRemaining.toLocaleString()} tokens`
+            : `. About ${validRemaining.toLocaleString()} tokens remaining`);
+    const badgePercent = formatContextBadgePercent(validPercent);
+    const detailPercent = formatContextDetailPercent(validPercent);
+    badge.textContent = t('context_usage').replace('{percent}', badgePercent) + (source === 'estimate' ? (currentLang === 'zh-CN' ? '（估算）' : ' (estimated)') : '');
+    badge.title = (currentLang === 'zh-CN'
+        ? `当前会话上下文已使用 ${detailPercent}%${remainingText}；点击查看已用和总量`
+        : `Current session context is ${detailPercent}% used${remainingText}. Click for used and total tokens`);
+    if (source === 'estimate') badge.title += currentLang === 'zh-CN' ? '；待下一次 API 调用校准' : '; awaiting the next API measurement';
+    badge.style.display = 'inline-flex';
+    badge.classList.toggle('warn', validPercent >= 80 && validPercent < 95);
+    badge.classList.toggle('critical', validPercent >= 95);
+}
+
+// ===== Agent Meta Modal Logic =====
+let _agentMetaCallback = null;  // resolve fn for the modal promise
+let _agentMetaMode = 'create';  // 'create' or 'edit'
+let _agentMetaSessionId = null;
+
+async function openAgentMetaModal(mode, sessionId, existingMeta) {
+    _agentMetaMode = mode;
+    _agentMetaSessionId = sessionId;
+    document.getElementById('agent-meta-error').textContent = '';
+    document.getElementById('agent-meta-platform-field').hidden = mode !== 'create';
+    const templateField=document.getElementById('agent-meta-template-field');
+    if(templateField)templateField.hidden = mode !== 'create';
+    const platformSelect = document.getElementById('agent-meta-platform');
+    platformSelect.innerHTML = '<option value="webot">WeBot</option>' + ADD_EXT_PLATFORM_FALLBACK.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(addExtPlatformLabel(p))}</option>`).join('');
+    platformSelect.value = 'webot';
+    agentMetaPlatformChanged();
+    const modal = document.getElementById('agent-meta-modal');
+    document.getElementById('agent-meta-modal-title').textContent =
+        currentLang === 'zh-CN' ? (mode === 'edit' ? '伙伴设置' : '认识你的新伙伴') : (mode === 'edit' ? 'Companion settings' : 'Meet your new companion');
+    document.getElementById('studio-agent-advanced').open=false;
+    document.querySelector('#studio-agent-advanced > summary').textContent=currentLang==='zh-CN'?'高级设置':'Advanced settings';
+    document.getElementById('agent-meta-name-label').textContent=currentLang==='zh-CN'?'伙伴叫什么？':'What shall we call your companion?';
+    document.getElementById('agent-meta-name').placeholder=ClawCrossLocale.text('我的伙伴','My companion');
+    document.querySelector('#agent-meta-modal .agent-meta-btn-save').textContent=currentLang==='zh-CN'?'开始认识':'Meet my companion';
+    document.querySelector('#agent-meta-modal .agent-meta-btn-cancel').textContent=currentLang==='zh-CN'?'取消':'Cancel';
+
+    document.getElementById('agent-meta-name').value = (existingMeta && existingMeta.name) || (mode==='create'?ClawCrossLocale.text('我的伙伴','My companion'):'');
+    document.getElementById('agent-meta-title').value = (existingMeta && existingMeta.title) || '';
+    document.getElementById('agent-meta-title').hidden = mode === 'create';
+    document.querySelector('[data-agent-conversation-title]').hidden = mode === 'create';
+    document.querySelectorAll('#agent-meta-modal .agent-meta-category').forEach(section => { section.open = false; });
+
+    // ── Populate tools checkbox list ──
+    const toolsContainer = document.getElementById('agent-meta-tools-container');
+    // Determine which tools are currently enabled for this agent
+    const existingTools = existingMeta ? existingMeta.tools : null;
+    const enabledToolNames = Array.isArray(existingTools) ? new Set(existingTools) : null; // null = all
+    // allTools comes from loadTools() global
+    if (allTools.length > 0) {
+        toolsContainer.innerHTML = `
+            <div class="agent-meta-tools-actions">
+                <button type="button" onclick="_agentMetaToolsSelectAll(true)" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;background:#f0fdf4;color:#16a34a;cursor:pointer;">全选</button>
+                <button type="button" onclick="_agentMetaToolsSelectAll(false)" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;background:#fef2f2;color:#dc2626;cursor:pointer;">全不选</button>
+            </div>` +
+            allTools.map(t => {
+                const checked = (enabledToolNames === null || enabledToolNames.has(t.name)) ? 'checked' : '';
+                return `<label class="agent-meta-tool-chip" title="${escapeHtml(t.description || '')}">
+                    <input type="checkbox" class="agent-meta-tool-cb" value="${escapeHtml(t.name)}" ${checked} style="margin:0;">
+                    <span class="agent-meta-tool-name">${escapeHtml(t.name)}</span>
+                </label>`;
+            }).join('');
+    } else {
+        toolsContainer.innerHTML = '<span style="color:#9ca3af;font-size:12px;">无可用工具（请先登录加载工具列表）</span>';
+    }
+
+    // The agent's persona is its own text; a library persona is copied into it.
+    document.getElementById('agent-meta-persona').value = (existingMeta && existingMeta.persona) || '';
+    const librarySelect = document.getElementById('agent-meta-persona-library');
+    _agentMetaPersonas=[];
+    librarySelect.innerHTML='<option value="">—</option>';
+    const params = new URLSearchParams({full:'1'});
+    if (_currentAgentTeam) params.set('team',_currentAgentTeam);
+    void fetch('/proxy_visual/experts?' + params).then(r=>r.json()).then(rows=>{
+        if (_agentMetaSessionId!==sessionId || modal.style.display==='none') return;
+        _agentMetaPersonas=(Array.isArray(rows)?rows:[]).filter(e=>e.tag && e.persona);
+        librarySelect.innerHTML='<option value="">—</option>'+_agentMetaPersonas.map((e,i)=>`<option value="${i}">${escapeHtml(e.name || e.tag)}</option>`).join('');
+    }).catch(error=>console.warn('Failed to load the persona library',error));
+    if(mode==='create' && window.AgentCreationPresets)void AgentCreationPresets.mount('studio-agent-creation-presets',row=>{
+        if(!row){_syncAgentMetaTemplatePlatform();return;}
+        document.querySelectorAll('.agent-meta-tool-cb').forEach(checkbox=>{checkbox.checked=row.tools===null || row.tools.includes(checkbox.value);});
+        document.getElementById('studio-agent-template-hint').textContent=currentLang==='zh-CN'?(row.id==='admin'?'高权限管理能力，默认人工审核。':row.id==='group'?'严格沙盒与独立工作区，不开放跨会话指挥。':'模式、沙盒与工具范围会随模板保存。'):(row.id==='admin'?'Administrative capabilities with human review.':row.id==='group'?'Strict isolation and a private workspace, without cross-session control.':'The template saves mode, sandbox and tool scope.');
+        _syncAgentMetaTemplatePlatform();
+    });
+    modal.style.display = 'flex';
+    document.getElementById('agent-meta-name').focus();
+    return new Promise(resolve => { _agentMetaCallback = resolve; });
+}
+
+function agentMetaPlatformChanged() {
+    const container = document.getElementById('agent-meta-component');
+    const platform = document.getElementById('agent-meta-platform').value;
+    const component = AcpLaunchSettings.component(platform);
+    container.innerHTML = platform === 'webot' || !component ? ''
+        : `<p style="margin:4px 0;color:#64748b;font-size:11px;">${currentLang === 'zh-CN' ? '安装连接组件，并在主机登录所选平台。' : 'Install the connector and sign in to this platform on the host.'}</p>${componentControlMarkup(component)}`;
+    initComponentControls(container);
+    _syncAgentMetaTemplatePlatform();
+}
+
+function _syncAgentMetaTemplatePlatform() {
+    const external=document.getElementById('agent-meta-platform').value!=='webot';
+    window.AgentCreationPresets?.platform('studio-agent-creation-presets',external);
+    const preset=window.AgentCreationPresets?.selected('studio-agent-creation-presets');
+    const submit=document.querySelector('#agent-meta-modal .agent-meta-btn-save');
+    const incompatible=external && ['chat','group'].includes(preset?.id);
+    if(submit)submit.disabled=_agentMetaMode==='create' && (!preset || incompatible);
+    if(_agentMetaMode==='create' && incompatible)document.getElementById('agent-meta-error').textContent=currentLang==='zh-CN'?'此隔离模板需要 WeBot，请切换平台或选择其他模板。':'This isolated template requires WeBot. Change platform or template.';
+    else document.getElementById('agent-meta-error').textContent='';
+}
+
+let _agentMetaPersonas = [];
+
+function _agentMetaCopyPersona(index) {
+    const picked = _agentMetaPersonas[Number(index)];
+    if (picked) document.getElementById('agent-meta-persona').value = picked.persona;
+}
+
+function _agentMetaToolsSelectAll(selectAll) {
+    document.querySelectorAll('.agent-meta-tool-cb').forEach(cb => { cb.checked = selectAll; });
+}
+
+function closeAgentMetaModal() {
+    document.getElementById('agent-meta-modal').style.display = 'none';
+    if (_agentMetaCallback) { _agentMetaCallback(null); _agentMetaCallback = null; }
+}
+
+function _collectAgentMeta() {
+    const name = document.getElementById('agent-meta-name').value.trim() || null;
+    const role = document.getElementById('agent-meta-persona').value.trim();
+    const persona = _agentMetaMode==='create'?AgentCreationBasics.persona('studio-agent-creation-basics',role):role;
+
+    // The agent's own tools: all of them (null), or the ones checked.
+    const checkboxes = [...document.querySelectorAll('.agent-meta-tool-cb')];
+    const checkedNames = checkboxes.filter(cb => cb.checked).map(cb => cb.value);
+    const preset=_agentMetaMode==='create'?window.AgentCreationPresets?.selected('studio-agent-creation-presets'):null;
+    const tools=checkboxes.length?(_agentMetaMode==='create' || checkedNames.length!==allTools.length?checkedNames:null):(preset?.tools ?? null);
+
+    const meta = { persona, tools };
+    if (_agentMetaMode === 'edit') meta.title = document.getElementById('agent-meta-title').value.trim();
+    if (_agentMetaMode === 'create') {meta.platform = document.getElementById('agent-meta-platform').value;meta.creation_template=preset?.id || 'personal';}
+    if (name !== null) meta.name = name;
+    return meta;
+}
+
+async function submitAgentMeta() {
+    if (document.querySelector('#agent-meta-modal .agent-meta-btn-save').disabled) return;
+    if (_agentMetaMode==='create' && !document.getElementById('agent-meta-name').value.trim()) {
+        document.getElementById('agent-meta-error').textContent=currentLang==='zh-CN'?'先给伙伴取个名字吧。':'Give your companion a name first.';
+        document.getElementById('agent-meta-name').focus();
+        return;
+    }
+    const meta = _collectAgentMeta();
+    if (_agentMetaMode === 'edit' && _agentMetaSessionId) {
+        try {
+            await saveSessionAgent(_agentMetaSessionId, meta);
+        } catch (e) { console.warn('Failed to update agent', e); }
+    }
+    document.getElementById('agent-meta-modal').style.display = 'none';
+    if (_agentMetaCallback) { _agentMetaCallback(meta); _agentMetaCallback = null; }
+}
+
+// ===== Team Selection for Agent Sidebar =====
+let _currentAgentTeam = '';  // Current selected team in agent sidebar
+
+async function loadAgentTeams() {
+    try {
+        const resp = await fetch('/teams');
+        const data = await resp.json();
+        const select = document.getElementById('agent-team-select');
+        if (!select) return;
+        select.innerHTML = '<option value="">(公共)</option>';
+        if (data.teams && data.teams.length > 0) {
+            for (const team of data.teams) {
+                const opt = document.createElement('option');
+                opt.value = team;
+                opt.textContent = typeof workspaceTeamLabel === 'function' ? workspaceTeamLabel(team) : team;
+                select.appendChild(opt);
+            }
+        }
+        // Restore previous selection
+        select.value = _currentAgentTeam;
+    } catch (e) {
+        console.warn('Failed to load teams:', e);
+    }
+}
+
+function onAgentTeamChange() {
+    const select = document.getElementById('agent-team-select');
+    _currentAgentTeam = select.value;
+    loadSessionList();
+}
+
+// A WeBot session is an agent: its number is the session id. In a team view the name
+// shown is the member's name in the team.
+async function _loadAgentMetaMap(team = '') {
+    try {
+        const [agents, teams] = await Promise.all([agentApi('GET', '/v1/agents'), agentApi('GET', '/v1/teams')]);
+        const webot = agents.data || [];
+        const scopeTeam = team && team !== '__default__' ? team : '';
+        const membership = new Map();
+        for (const card of teams.data || []) {
+            if (card.virtual || card.kind === 'user_space' || card.team === '__default__') continue;
+            for (const m of card.members || []) {
+                if (card.team === scopeTeam) membership.set(m.agent.agent_id, m);
+            }
+        }
+        const inScope = a => !scopeTeam || Boolean(membership.get(a.agent_id));
+        const map = {};
+        for (const a of webot.filter(inScope)) {
+            const member = membership.get(a.agent_id);
+            map[a.agent_id] = {
+                agent_id: a.agent_id, name: member?.role || a.name, title: a.settings?.title || '', persona: a.settings?.persona || '',
+                platform: a.platform, tools: a.settings?.tools, is_primary: Boolean(member?.is_lead), updated_at_ts: a.updated_at,
+            };
+        }
+        return { map, allKnown: new Set(webot.map(a => a.agent_id)) };
+    } catch (e) { return { map: {}, allKnown: new Set() }; }
+}
+
+async function _sessionAgent(sessionId) {
+    try {
+        return await agentApi('GET', `/v1/agents/${encodeURIComponent(sessionId)}`);
+    } catch (e) {
+        if (e.status === 404) return null;
+        throw e;
+    }
+}
+
+// The WeBot sessions (agents of the webot runtime), each with its status:
+// {session_id, title, last_message, message_count, created_at, updated_at, busy, source, …}.
+// One nobody has written to yet has no title.
+async function fetchWebotSessions() {
+    const {data} = await agentApi('GET', '/v1/agents?status=1');
+    return (data || []).map(agent => ({
+        ...agent.status, session_id: agent.agent_id, busy: agent.status?.state === 'running',
+        agent_name: agent.name, name: agent.name, platform: agent.platform,
+    }));
+}
+
+// A session's status ({state, source, mode, context, …}); idle for one not made yet.
+async function fetchSessionStatus(sessionId) {
+    const contextKey = chatRunContextKey();
+    const agent = await _sessionAgent(sessionId);
+    const status = agent ? agent.status : {state: 'idle'};
+    if (sessionId === currentSessionId && contextKey === chatRunContextKey()) updateBackendCompactionStatus(status.compaction);
+    return status;
+}
+
+function showSessionContextUsage(context) {
+    const c = context || {};
+    updateSessionContextUsageBadge(c.percent || 0, c.remaining || 0, c.tokens || 0, c.budget || 0,
+                                   c.source, c.breakdown, c.cache_read_tokens);
+}
+
+// Name (or rename) the agent of a session; in a team view it is also its name in the team.
+async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
+    const settings = {};
+    if (meta.persona !== undefined) settings.persona = meta.persona || '';
+    if (meta.tools !== undefined) settings.tools = meta.tools;
+    if (meta.title !== undefined) settings.title = meta.title;
+    let agent = await _sessionAgent(sessionId);
+    if (agent) {
+        agent = await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agent.agent_id)}`, {name: meta.name || undefined, settings});
+    } else {
+        agent = await agentApi('POST', '/v1/agents', {
+            agent_id: sessionId, platform: meta.platform || 'webot', name: meta.name || sessionId, persona: settings.persona || '',
+            tools: settings.tools ?? null,
+            ...(meta.creation_template ? {creation_template:meta.creation_template} : {}),
+        });
+    }
+    if (team) {
+        const card = await agentApi('GET', `/v1/teams/${encodeURIComponent(team)}`);
+        const isMember = (card.members || []).some(m => m.agent.agent_id === agent.agent_id);
+        if (isMember && meta.name) {
+            await agentApi('PATCH', `/v1/teams/${encodeURIComponent(team)}/members/${encodeURIComponent(agent.agent_id)}`, {role: meta.name});
+        } else if (!isMember) {
+            await agentApi('POST', `/v1/teams/${encodeURIComponent(team)}/members`, {agent: agent.agent_id, role: meta.name || agent.name});
+        }
+    }
+    return agent;
+}
+
+// Resolve display title: prefer agent meta name, fallback to original title
+// A conversation shows the work it is doing: the title the agent or the user set,
+// else its first user message; the agent's own name is shown beside it.
+function _resolveTitle(originalTitle, sessionId, agentMap) {
+    const meta = agentMap[sessionId] || {};
+    return meta.title || originalTitle || meta.name || '';
+}
+
+// "<agent name> · " when the session's row title is not already the name.
+function _sessionAgentLabel(session, agentMap) {
+    const name = session.agent_name || session.name || (agentMap[session.session_id] || {}).name;
+    return name && name !== _resolveTitle(session.title, session.session_id, agentMap) ? name + ' · ' : '';
+}
+
+function _timeValue(value) {
+    if (value === null || value === undefined || value === '') return 0;
+    if (typeof value === 'number') return value > 100000000000 ? value : value * 1000;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return 0;
+        if (/^\d+(\.\d+)?$/.test(trimmed)) {
+            const numeric = Number(trimmed);
+            return numeric > 100000000000 ? numeric : numeric * 1000;
+        }
+        const parsed = Date.parse(trimmed);
+        return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+}
+
+function _sessionIdTimeValue(sessionId) {
+    if (!sessionId || sessionId.length < 8) return 0;
+    const prefix = sessionId.slice(0, 8);
+    if (!/^[0-9a-z]+$/i.test(prefix)) return 0;
+    const millis = parseInt(prefix, 36);
+    const min = Date.UTC(2020, 0, 1);
+    const max = Date.UTC(2100, 0, 1);
+    return millis >= min && millis <= max ? millis : 0;
+}
+
+function _agentMetaTimeValue(meta = {}) {
+    return _timeValue(meta.updated_at_ts)
+        || _timeValue(meta.updated_at)
+        || _timeValue(meta.last_used_at)
+        || _timeValue(meta.last_message_at)
+        || _timeValue(meta.created_at_ts)
+        || _timeValue(meta.created_at);
+}
+
+function _sessionTimeValue(session = {}, agentMap = {}) {
+    const meta = agentMap[session.session_id] || {};
+    return _timeValue(session.updated_at_ts)
+        || _timeValue(session.updated_at)
+        || _timeValue(session.last_message_at)
+        || _agentMetaTimeValue(meta)
+        || _timeValue(session.created_at_ts)
+        || _timeValue(session.created_at)
+        || _sessionIdTimeValue(session.session_id);
+}
+
+function _sortSessionsByTime(sessions, agentMap = {}) {
+    return sessions.sort((a, b) => {
+        const diff = _sessionTimeValue(b, agentMap) - _sessionTimeValue(a, agentMap);
+        if (diff) return diff;
+        return String(b.session_id || '').localeCompare(String(a.session_id || ''));
+    });
+}
+
+function _agentEntryTimeValue(agent = {}) {
+    const meta = agent.meta || agent;
+    return _timeValue(agent.updated_at_ts)
+        || _timeValue(agent.updated_at)
+        || _agentMetaTimeValue(meta)
+        || _sessionIdTimeValue(agent.session || agent.session_id || agent.id || '');
+}
+
+function _sortAgentEntriesByTime(agents) {
+    return agents.sort((a, b) => {
+        const diff = _agentEntryTimeValue(b) - _agentEntryTimeValue(a);
+        if (diff) return diff;
+        const an = (a.name || a.meta?.name || a.session || '').toString();
+        const bn = (b.name || b.meta?.name || b.session || '').toString();
+        return bn.localeCompare(an);
+    });
+}
+
+async function editAgentMeta(sessionId) {
+    return AgentSettings.open(sessionId);
+}
+
+function handleNewSession() {
+    // Open the agent meta modal; after user submits, create session + write JSON
+    const newSid = generateSessionId();
+    openAgentMetaModal('create', newSid, {}).then(async (meta) => {
+        if (meta === null) return;  // User cancelled
+        try {
+            await saveSessionAgent(newSid, meta);
+        } catch (e) {
+            alert(e.message || '创建 Agent 失败');
+            return;
+        }
+        currentSessionId = newSid;
+        ConversationUiPanels.beginSession(newSid);
+        sessionStorage.setItem('sessionId', currentSessionId);
+        updateSessionDisplay();
+        // Clear chat box for new conversation
+        renderWeBotWelcomeMessage();
+        await loadSessionList();
+    });
+}
+
+// ===== 历史会话侧边栏 =====
+let sessionSidebarOpen = false;
+let _historyPollingTimer = null;
+let _subagentPanelItems = [];
+let _selectedSubagentRef = '';
+let _subagentHistoryVisible = false;
+let _subagentHistoryCache = {};
+let _subagentRuntimeCache = {};
+let _subagentRuntimeLoading = {};
+let _webotPolicyData = null;
+let _webotPolicyDirty = false;
+let _webotPolicyEditorOpen = false;
+let _webotPolicyLoaded = false;
+let _currentSessionRuntime = null;
+const SESSION_RUNTIME_PANEL_HEIGHT_KEY = 'clawcrossSessionRuntimePanelHeightV1';
+const SESSION_RUNTIME_PANEL_MIN_HEIGHT = 140;
+const SESSION_RUNTIME_LIST_MIN_HEIGHT = 120;
+let _sessionPanelResizeState = null;
+
+function _readSessionRuntimePanelHeightPreference() {
+    try {
+        const raw = localStorage.getItem(SESSION_RUNTIME_PANEL_HEIGHT_KEY);
+        if (!raw) return null;
+        const value = parseInt(raw, 10);
+        return Number.isFinite(value) && value > 0 ? value : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function _writeSessionRuntimePanelHeightPreference(height) {
+    try {
+        localStorage.setItem(SESSION_RUNTIME_PANEL_HEIGHT_KEY, String(Math.round(height)));
+    } catch (e) {
+        // ignore storage errors
+    }
+}
+
+function _getSessionRuntimePanelBounds() {
+    const sidebar = document.getElementById('session-sidebar');
+    const header = document.getElementById('session-sidebar-header');
+    const divider = document.getElementById('session-panel-divider');
+    if (!sidebar) return null;
+
+    const sidebarHeight = sidebar.clientHeight || sidebar.getBoundingClientRect().height || 0;
+    const headerHeight = header ? header.getBoundingClientRect().height : 0;
+    const dividerHeight = divider ? divider.getBoundingClientRect().height : 0;
+    const availableHeight = Math.max(0, sidebarHeight - headerHeight - dividerHeight);
+    const reservedListHeight = Math.min(
+        SESSION_RUNTIME_LIST_MIN_HEIGHT,
+        Math.max(96, Math.round(availableHeight * 0.35)),
+    );
+    const maxHeight = Math.max(96, availableHeight - reservedListHeight);
+    const minHeight = Math.min(SESSION_RUNTIME_PANEL_MIN_HEIGHT, maxHeight);
+    const defaultHeight = Math.min(
+        Math.max(Math.round(availableHeight * 0.38), minHeight),
+        maxHeight,
+    );
+
+    return { minHeight, maxHeight, defaultHeight };
+}
+
+function applySessionRuntimePanelHeight(height = null, persist = false) {
+    const panel = document.getElementById('webot-subagent-panel');
+    const bounds = _getSessionRuntimePanelBounds();
+    if (!panel || !bounds) return;
+
+    const preferredHeight = height ?? _readSessionRuntimePanelHeightPreference() ?? panel.getBoundingClientRect().height ?? bounds.defaultHeight;
+    const clampedHeight = Math.min(Math.max(Math.round(preferredHeight), bounds.minHeight), bounds.maxHeight);
+    panel.style.height = `${clampedHeight}px`;
+    panel.style.flex = `0 0 ${clampedHeight}px`;
+    panel.style.maxHeight = 'none';
+
+    if (persist) {
+        _writeSessionRuntimePanelHeightPreference(clampedHeight);
+    }
+}
+
+function _stopSessionRuntimePanelResize(pointerId = null) {
+    const divider = document.getElementById('session-panel-divider');
+    if (divider) {
+        divider.classList.remove('dragging');
+        if (pointerId !== null && typeof divider.releasePointerCapture === 'function') {
+            try { divider.releasePointerCapture(pointerId); } catch (e) {}
+        }
+    }
+    document.body.classList.remove('session-panel-resizing');
+    _sessionPanelResizeState = null;
+}
+
+function initSessionRuntimePanelResize() {
+    const divider = document.getElementById('session-panel-divider');
+    if (!divider || divider.dataset.initialized === '1') return;
+    divider.dataset.initialized = '1';
+
+    divider.addEventListener('pointerdown', (event) => {
+        if (event.button !== undefined && event.button !== 0) return;
+        const panel = document.getElementById('webot-subagent-panel');
+        if (!panel) return;
+        const bounds = _getSessionRuntimePanelBounds();
+        if (!bounds) return;
+
+        _sessionPanelResizeState = {
+            startY: event.clientY,
+            startHeight: panel.getBoundingClientRect().height,
+            pointerId: event.pointerId,
+        };
+        divider.classList.add('dragging');
+        document.body.classList.add('session-panel-resizing');
+        if (typeof divider.setPointerCapture === 'function') {
+            try { divider.setPointerCapture(event.pointerId); } catch (e) {}
+        }
+        event.preventDefault();
+    });
+
+    divider.addEventListener('pointermove', (event) => {
+        if (!_sessionPanelResizeState) return;
+        const deltaY = event.clientY - _sessionPanelResizeState.startY;
+        applySessionRuntimePanelHeight(_sessionPanelResizeState.startHeight - deltaY, false);
+        event.preventDefault();
+    });
+
+    const finishResize = (event) => {
+        if (!_sessionPanelResizeState) return;
+        const deltaY = event.clientY - _sessionPanelResizeState.startY;
+        applySessionRuntimePanelHeight(_sessionPanelResizeState.startHeight - deltaY, true);
+        _stopSessionRuntimePanelResize(event.pointerId);
+    };
+
+    divider.addEventListener('pointerup', finishResize);
+    divider.addEventListener('pointercancel', (event) => _stopSessionRuntimePanelResize(event.pointerId));
+    window.addEventListener('resize', () => {
+        if (sessionSidebarOpen) {
+            applySessionRuntimePanelHeight();
+        }
+    });
+}
+
+function _stripPolicyMeta(policy) {
+    const payload = JSON.parse(JSON.stringify(policy || {}));
+    delete payload.source;
+    delete payload.definition_path;
+    return payload;
+}
+
+function _countPolicyHooks(policy) {
+    let count = Array.isArray(policy && policy.hooks) ? policy.hooks.length : 0;
+    const tools = policy && typeof policy.tools === 'object' ? policy.tools : {};
+    Object.values(tools || {}).forEach(rule => {
+        if (rule && Array.isArray(rule.hooks)) count += rule.hooks.length;
+    });
+    return count;
+}
+
+function _setWeBotPolicyStatus(message, kind = '') {
+    const el = document.getElementById('webot-policy-status');
+    if (!el) return;
+    if (!message) {
+        el.textContent = '';
+        el.className = 'webot-policy-status';
+        return;
+    }
+    el.textContent = message;
+    el.className = `webot-policy-status is-visible${kind ? ` is-${kind}` : ''}`;
+}
+
+function _renderWeBotPolicySummary() {
+    const summaryEl = document.getElementById('webot-policy-summary');
+    const metaEl = document.getElementById('webot-policy-meta');
+    const toggleBtn = document.getElementById('webot-policy-toggle');
+    if (!summaryEl || !metaEl || !toggleBtn) return;
+
+    toggleBtn.textContent = t(_webotPolicyEditorOpen ? 'policy_panel_close' : 'policy_panel_edit');
+
+    if (!_webotPolicyData || !_webotPolicyData.policy) {
+        summaryEl.textContent = t('policy_panel_loading');
+        metaEl.textContent = '';
+        return;
+    }
+
+    const policy = _webotPolicyData.policy;
+    const toolCount = Object.keys(policy.tools || {}).length;
+    const hookCount = _countPolicyHooks(policy);
+    const defaultApproval = policy.default_approval || 'allow';
+    let summary = t('policy_panel_summary', {
+        defaultApproval,
+        toolCount,
+        hookCount,
+    });
+    if (_webotPolicyDirty) {
+        summary += `\n${t('policy_panel_dirty')}`;
+    }
+    summaryEl.textContent = summary || t('policy_panel_empty');
+
+    const metaLines = [];
+    if (policy.source) metaLines.push(t('policy_panel_source', { source: policy.source }));
+    if (policy.definition_path) metaLines.push(t('policy_panel_path', { path: policy.definition_path }));
+    metaEl.textContent = metaLines.join('\n');
+}
+
+function _syncWeBotPolicyEditor(force = false) {
+    const selectEl = document.getElementById('webot-policy-default-approval');
+    const editorEl = document.getElementById('webot-policy-editor');
+    const wrapEl = document.getElementById('webot-policy-editor-wrap');
+    if (!selectEl || !editorEl || !wrapEl) return;
+    wrapEl.style.display = _webotPolicyEditorOpen ? 'flex' : 'none';
+    if (!_webotPolicyData || !_webotPolicyData.policy) return;
+    if (_webotPolicyDirty && !force) {
+        _renderWeBotPolicySummary();
+        return;
+    }
+    const editablePolicy = _stripPolicyMeta(_webotPolicyData.policy);
+    selectEl.value = editablePolicy.default_approval || 'allow';
+    editorEl.value = JSON.stringify(editablePolicy, null, 2);
+    _renderWeBotPolicySummary();
+}
+
+function markWeBotPolicyDirty() {
+    _webotPolicyDirty = true;
+    _setWeBotPolicyStatus('');
+    _renderWeBotPolicySummary();
+}
+
+function _parseWeBotPolicyEditor() {
+    const editorEl = document.getElementById('webot-policy-editor');
+    const selectEl = document.getElementById('webot-policy-default-approval');
+    if (!editorEl || !selectEl) return { default_approval: 'allow', tools: {} };
+    let parsed = {};
+    const raw = String(editorEl.value || '').trim();
+    if (raw) {
+        parsed = JSON.parse(raw);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error(t('policy_panel_invalid_json'));
+    }
+    parsed.default_approval = selectEl.value || parsed.default_approval || 'allow';
+    return parsed;
+}
+
+function _escapeAndFormatText(value) {
+    return escapeHtml(String(value || ''));
+}
+
+function _modeActionButtons(sessionId, currentMode) {
+    const modes = ['chat', 'readonly', 'manual', 'auto', 'bypass'];
+    currentMode = {plan: 'readonly', review: 'readonly', yolo: 'bypass', execute: 'auto', agent: 'auto'}[currentMode] || currentMode;
+    return `<div class="webot-mode-actions">${modes
+        .map(mode => {
+            const active = currentMode === mode;
+            return `<button class="webot-mode-btn${active ? ' is-active' : ''}" type="button" onclick="updateWeBotSessionMode('${sessionId}', '${mode}')">${t(`run_mode_${mode}`)}</button>`;
+        })
+        .join('')}</div>`;
+}
+
+function _buildWorkflowPresetSection(runtime, item) {
+    const sessionId = runtime?.session_id || item?.session_id || currentSessionId || '';
+    const presets = Array.isArray(runtime?.workflow_presets) ? runtime.workflow_presets : [];
+    const active = runtime?.active_workflow || runtime?.plan?.metadata?.workflow || null;
+    const activeMeta = active && typeof active === 'object' ? active : null;
+    const activeHtml = activeMeta
+        ? `
+            <div class="webot-runtime-caption">${_escapeAndFormatText(`${activeMeta.name || activeMeta.preset_id || 'workflow'} · ${activeMeta.mode || ''}`)}</div>
+            <div class="webot-runtime-detail">${_escapeAndFormatText(activeMeta.description || '')}</div>
+        `
+        : `<div class="webot-runtime-empty">No active workflow preset</div>`;
+    const buttonHtml = presets.slice(0, 4).map((preset) => `
+        <button class="webot-subagent-btn${activeMeta && activeMeta.preset_id === preset.preset_id ? ' is-active' : ''}"
+                type="button"
+                title="${escapeHtml(preset.description || '')}"
+                onclick="applyWeBotWorkflowPreset('${encodeURIComponent(sessionId)}', '${encodeURIComponent(preset.preset_id || '')}')">${escapeHtml(preset.name || preset.preset_id || 'preset')}</button>
+    `).join('');
+    return `
+        <div class="webot-runtime-section">
+            <div class="webot-runtime-title">Workflow</div>
+            ${activeHtml}
+            ${buttonHtml ? `<div class="webot-runtime-actions">${buttonHtml}</div>` : ''}
+        </div>
+    `;
+}
+
+function _buildExtendedSections(runtime, item) {
+    const sessionId = runtime?.session_id || item?.session_id || currentSessionId || '';
+    const sections = [];
+    sections.push(_buildWorkflowPresetSection(runtime, item));
+    if (runtime?.claude_code) {
+        const claude = runtime.claude_code || {};
+        const status = claude.status || {};
+        const keepalive = claude.keepalive || {};
+        const available = status.available ? 'available' : (status.status || 'unavailable');
+        const version = status.claude_version || status.claude_path || '';
+        const lastLine = keepalive.last_status
+            ? `${keepalive.last_status}${keepalive.last_run_at ? ` · ${String(keepalive.last_run_at).slice(0, 16)}` : ''}`
+            : '';
+        sections.push(`
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_claude_code')}</div>
+                <div class="webot-runtime-detail">${_escapeAndFormatText(`${available} · keepalive=${keepalive.enabled ? 'on' : 'off'}`)}</div>
+                ${version ? `<div class="webot-runtime-caption">${_escapeAndFormatText(version)}</div>` : ''}
+                ${keepalive.prompt ? `<div class="webot-runtime-detail">${_escapeAndFormatText(`prompt: ${keepalive.prompt}`)}</div>` : ''}
+                ${lastLine ? `<div class="webot-runtime-detail">${_escapeAndFormatText(lastLine)}</div>` : ''}
+                ${keepalive.last_error ? `<div class="webot-runtime-detail">${_escapeAndFormatText(keepalive.last_error)}</div>` : ''}
+                <div class="webot-runtime-actions">
+                    <button class="webot-subagent-btn" type="button" onclick="probeWeBotClaudeCode('${encodeURIComponent(sessionId)}')">${t('subagent_runtime_probe')}</button>
+                    <button class="webot-subagent-btn" type="button" onclick="runWeBotClaudeKickoff('${encodeURIComponent(sessionId)}')">${t('subagent_runtime_kickoff')}</button>
+                    <button class="webot-subagent-btn${keepalive.enabled ? ' danger' : ''}" type="button" onclick="toggleWeBotClaudeKeepalive('${encodeURIComponent(sessionId)}', ${keepalive.enabled ? 'false' : 'true'})">${keepalive.enabled ? t('subagent_runtime_keepalive_off') : t('subagent_runtime_keepalive_on')}</button>
+                </div>
+            </div>
+        `);
+    }
+    if (runtime?.memory) {
+        const memory = runtime.memory || {};
+        const relevant = Array.isArray(memory.relevant_entries) ? memory.relevant_entries.slice(0, 2).map(entry => entry.name || entry.path || '').filter(Boolean).join(' · ') : '';
+        sections.push(`
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">Memory</div>
+                <div class="webot-runtime-detail">${_escapeAndFormatText(memory.summary || '')}</div>
+                <div class="webot-runtime-detail">${_escapeAndFormatText(`${memory.project_slug || ''} · entries=${memory.entry_count || 0} · can_dream=${memory.can_dream ? 'yes' : 'no'}`)}</div>
+                <div class="webot-runtime-detail">${_escapeAndFormatText(relevant)}</div>
+                <div class="webot-runtime-actions">
+                    <button class="webot-subagent-btn" type="button" onclick="toggleWeBotKairos('${encodeURIComponent(sessionId)}', ${memory.kairos_enabled ? 'false' : 'true'})">${memory.kairos_enabled ? 'Kairos Off' : 'Kairos On'}</button>
+                    <button class="webot-subagent-btn" type="button" onclick="runWeBotDream('${encodeURIComponent(sessionId)}')">Dream</button>
+                </div>
+            </div>
+        `);
+    }
+    return sections.join('');
+}
+
+function updateWeBotSessionMode(sessionId, mode, reason = '') {
+    if (!sessionId) return;
+    fetch('/proxy_webot_session_mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({session_id: sessionId, mode, reason}),
+    })
+        .then(resp => resp.json())
+        .then(async data => {
+            if (!data || data.status !== 'success') return;
+            _setWeBotPolicyStatus(t('subagent_runtime_mode_updated'), 'success');
+            await refreshSubagentPanel();
+        })
+        .catch(() => {
+            _setWeBotPolicyStatus(t('subagent_runtime_mode_update_failed'), 'error');
+        });
+}
+
+async function interruptWeBotRun(sessionId, runId, agentRef = '') {
+    if (!sessionId || !runId) return;
+    try {
+        const resp = await fetch('/proxy_webot_run_interrupt', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: sessionId, run_id: runId, agent_ref: agentRef}),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || 'Interrupt failed');
+        }
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(String(e.message || 'Interrupt failed'), 'error');
+    }
+}
+
+async function deliverWeBotInbox(sessionId) {
+    if (!sessionId) return;
+    try {
+        await agentApi('POST', `/v1/agents/${encodeURIComponent(sessionId)}/control`, {action: 'deliver_inbox'});
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(String(e.message || 'Inbox delivery failed'), 'error');
+    }
+}
+
+async function applyWeBotWorkflowPreset(sessionId, presetId) {
+    if (!sessionId || !presetId) return;
+    try {
+        const resp = await fetch('/proxy_webot_workflow_apply', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: sessionId, preset_id: presetId}),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || 'Workflow preset apply failed');
+        }
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(String(e.message || 'Workflow preset apply failed'), 'error');
+    }
+}
+
+async function toggleWeBotKairos(sessionId, enabled) {
+    if (!sessionId) return;
+    try {
+        const resp = await fetch('/proxy_webot_kairos', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: sessionId, enabled: !!enabled, reason: 'ui-toggle'}),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || 'Kairos update failed');
+        }
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(String(e.message || 'Kairos update failed'), 'error');
+    }
+}
+
+async function runWeBotDream(sessionId) {
+    if (!sessionId) return;
+    try {
+        const resp = await fetch('/proxy_webot_dream', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: sessionId, reason: 'ui-dream'}),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || 'Dream failed');
+        }
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(String(e.message || 'Dream failed'), 'error');
+    }
+}
+
+function _runtimeForWeBotSession(sessionId) {
+    const sid = decodeURIComponent(sessionId || '');
+    if (sid === currentSessionId) return _currentSessionRuntime || {};
+    return _subagentRuntimeCache[sid] || {};
+}
+
+async function probeWeBotClaudeCode(sessionId) {
+    const sid = decodeURIComponent(sessionId || '');
+    if (!sid) return;
+    try {
+        _setWeBotPolicyStatus(`${t('subagent_runtime_claude_code')}: ${t('subagent_runtime_probe')}...`, 'success');
+        const resp = await fetch('/proxy_webot_claude_probe', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                session_id: sid,
+                prompt: 'Reply only CLAUDE_ACP_OK',
+                timeout_seconds: 90,
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !['success', 'failed'].includes(data.status)) {
+            throw new Error(data.detail || data.error || t('subagent_runtime_claude_probe_failed'));
+        }
+        _setWeBotPolicyStatus(
+            data.status === 'success'
+                ? t('subagent_runtime_claude_probe_ok')
+                : `${t('subagent_runtime_claude_probe_failed')}: ${(data.probe && (data.probe.error || data.probe.stderr_tail)) || ''}`,
+            data.status === 'success' ? 'success' : 'error'
+        );
+        delete _subagentRuntimeCache[sid];
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(`${t('subagent_runtime_claude_probe_failed')}: ${e.message}`, 'error');
+    }
+}
+
+async function toggleWeBotClaudeKeepalive(sessionId, enabled) {
+    const sid = decodeURIComponent(sessionId || '');
+    if (!sid) return;
+    try {
+        const runtime = _runtimeForWeBotSession(sid);
+        const keepalive = runtime?.claude_code?.keepalive || {};
+        const resp = await fetch('/proxy_webot_claude_keepalive', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                session_id: sid,
+                enabled: !!enabled,
+                prompt: keepalive.prompt || 'ping',
+                model: keepalive.model || '',
+                timezone: keepalive.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+                start_time: keepalive.start_time || '06:00',
+                sleep_time: keepalive.sleep_time || '23:00',
+                weekdays: keepalive.weekdays || 'MTWRFSU',
+                use_caffeinate: !!keepalive.use_caffeinate,
+                force_sleep_at_quiet_hours: !!keepalive.force_sleep_at_quiet_hours,
+                monitor_command: keepalive.monitor_command || 'claude-monitor --clear',
+                timeout_seconds: keepalive.timeout_seconds || 90,
+                metadata: {source: 'ui'},
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || t('subagent_runtime_keepalive_updated'));
+        }
+        _setWeBotPolicyStatus(t('subagent_runtime_keepalive_updated'), 'success');
+        delete _subagentRuntimeCache[sid];
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(String(e.message || 'Claude keepalive update failed'), 'error');
+    }
+}
+
+async function runWeBotClaudeKickoff(sessionId) {
+    const sid = decodeURIComponent(sessionId || '');
+    if (!sid) return;
+    try {
+        const runtime = _runtimeForWeBotSession(sid);
+        const keepalive = runtime?.claude_code?.keepalive || {};
+        const resp = await fetch('/proxy_webot_claude_kickoff', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                session_id: sid,
+                prompt: keepalive.prompt || 'ping',
+                timeout_seconds: keepalive.timeout_seconds || 90,
+                model: keepalive.model || '',
+                use_acp: true,
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !['success', 'failed'].includes(data.status)) {
+            throw new Error(data.detail || data.error || 'Claude kickoff failed');
+        }
+        _setWeBotPolicyStatus(
+            data.status === 'success' ? t('subagent_runtime_claude_probe_ok') : t('subagent_runtime_claude_probe_failed'),
+            data.status === 'success' ? 'success' : 'error'
+        );
+        delete _subagentRuntimeCache[sid];
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(String(e.message || 'Claude kickoff failed'), 'error');
+    }
+}
+
+async function refreshCurrentSessionRuntime() {
+    if (!currentUserId || !currentSessionId) {
+        return;
+    }
+    try {
+        const resp = await fetch(`/proxy_webot_session_runtime?user_id=${encodeURIComponent(currentUserId)}&session_id=${encodeURIComponent(currentSessionId)}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        _currentSessionRuntime = data;
+        _renderCurrentSessionCard();
+    } catch (e) {
+        console.error('Failed to load WeBot session runtime', e);
+    }
+}
+
+function _escapeHtmlStrip(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let _studioPendingApproval = false;
+function syncStudioApprovalInput() {
+    if (_studioPendingApproval) {
+        inputField.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.style.display = 'inline-block';
+    } else if (cancelTargetSessionId === currentSessionId && cancelTargetSessionId) {
+        inputField.disabled = true;
+        sendBtn.disabled = true;
+        sendBtn.style.display = 'none';
+    }
+}
+
+function renderStudioApprovalStrip(approvals) {
+    const strip = document.getElementById('studio-approval-strip');
+    if (strip) { strip.style.display = 'none'; strip.innerHTML = ''; }
+    const scoped = approvals.filter(a => a.session_id === currentSessionId);
+    _studioPendingApproval = scoped.some(ClawcrossApproval.humanPending);
+    syncStudioApprovalInput();
+    ClawcrossApproval.sync(document.getElementById('chat-box'), scoped, {
+        appendRequest: raw => appendMessage(raw, false),
+        onReply: reply => {
+            const text = reply.action === 'deny' ? (currentLang === 'zh-CN' ? '拒绝这次操作' : 'Deny this action') :
+                reply.remember ? (currentLang === 'zh-CN' ? '同意并记住这次操作' : 'Allow and remember this action') :
+                (currentLang === 'zh-CN' ? '同意这次操作' : 'Allow this action');
+            const bubble = appendMessage(text, true);
+            bubble.dataset.approvalReply = reply.approval_id;
+        },
+        onResolved: (sid, data) => {
+            if (data.continuation !== 'resumed') watchApprovalContinuation(sid);
+            void refreshStudioApprovalStrip();
+        },
+        onError: error => _projectUpdateToast(error.message),
+    });
+}
+
+async function refreshStudioApprovalStrip() {
+    void ClawcrossChannelSetup.sync(document.getElementById('chat-box'), [currentSessionId]).catch(() => {});
+    try {
+        const resp = await fetch(`/proxy_webot_tool_approvals?status=&limit=50&session_id=${encodeURIComponent(currentSessionId)}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        renderStudioApprovalStrip(Array.isArray(data.approvals) ? data.approvals : []);
+    } catch (_) {}
+}
+
+async function resolveStudioApproval(approvalId, action, remember, sessionId, btn) {
+    const card = btn ? btn.closest('.studio-approval-card') : null;
+    const btns = card ? Array.from(card.querySelectorAll('.studio-approval-btn')) : [];
+    btns.forEach(b => { b.disabled = true; if (b === btn) b.textContent = t('approval_working'); });
+    try {
+        const data = await ClawcrossApproval.resolve(approvalId, action, remember, sessionId);
+        if (data.continuation !== 'resumed') watchApprovalContinuation(sessionId);
+        if (card) card.innerHTML = `<div class="studio-approval-card-title">${t('approval_done')} · ${_escapeHtmlStrip(data.approval?.tool_name || '')}</div>`;
+        setTimeout(() => refreshStudioApprovalStrip(), 800);
+    } catch (e) {
+        btns.forEach(b => { b.disabled = false; });
+        if (btn) btn.textContent = action === 'deny' ? t('approval_deny') : (remember ? t('approval_approve_remember') : t('approval_approve'));
+        _setWeBotPolicyStatus(String(e.message), 'error');
+        _projectUpdateToast(String(e.message));
+    }
+}
+
+let _approvalContinuationTimer = null;
+function watchApprovalContinuation(sessionId) {
+    if (sessionId !== currentSessionId) return;
+    if (_approvalContinuationTimer) clearInterval(_approvalContinuationTimer);
+    const contextKey = chatRunContextKey();
+    setSystemBusyUI(true);
+    let polling = false;
+    _approvalContinuationTimer = setInterval(async () => {
+        if (contextKey !== chatRunContextKey()) {
+            clearInterval(_approvalContinuationTimer);
+            _approvalContinuationTimer = null;
+            return;
+        }
+        if (polling) return;
+        polling = true;
+        try {
+            const status = await fetchSessionStatus(sessionId);
+            if (contextKey !== chatRunContextKey()) return;
+            if (!['running', 'queued'].includes(status.state)) {
+                clearInterval(_approvalContinuationTimer);
+                _approvalContinuationTimer = null;
+                if (_ocChatMode === 'acp' && _acpTool) {
+                    await acpLoadSessionHistory({showLoading: false, keepScroll: true});
+                    setSystemBusyUI(false);
+                } else {
+                    await switchToSession(sessionId, true, {quiet: true});
+                }
+            }
+        } catch (_) {} finally { polling = false; }
+    }, 1000);
+}
+
+function _renderSubagentStatus(status) {
+    return escapeHtml((status || 'idle').toUpperCase());
+}
+
+function _summarizeSubagentItem(item) {
+    const updated = item.updated_at ? item.updated_at.replace('T', ' ').slice(0, 16) : '';
+    const bits = [item.agent_type || 'general'];
+    if (item.session_mode && item.session_mode.mode) bits.push(item.session_mode.mode);
+    if (item.queued_inbox_count) bits.push(`${item.queued_inbox_count} inbox`);
+    bits.push(updated || (item.session_id || '').slice(-6));
+    return bits.join(' · ');
+}
+
+function _buildSubagentHistoryHtml(messages) {
+    if (!messages || messages.length === 0) {
+        return `<div class="webot-subagent-empty">${t('subagent_history_empty')}</div>`;
+    }
+    return messages.map(msg => `
+        <div class="webot-subagent-history-item">
+            <div class="webot-subagent-history-role">${escapeHtml(msg.role || 'assistant')}</div>
+            <div class="webot-subagent-history-content">${_escapeAndFormatText(msg.content || '')}</div>
+        </div>
+    `).join('');
+}
+
+function _buildRuntimeItemList(items, emptyKey) {
+    if (!items || items.length === 0) {
+        return `<div class="webot-runtime-empty">${t(emptyKey)}</div>`;
+    }
+    return items.map(item => `
+        <div class="webot-runtime-row">
+            <span class="webot-runtime-badge">${escapeHtml(item.status || 'pending')}</span>
+            <span class="webot-runtime-text">${escapeHtml(item.step || item.title || item.tool_name || '')}</span>
+        </div>
+    `).join('');
+}
+
+function _buildRuntimeVerificationList(items) {
+    if (!items || items.length === 0) {
+        return `<div class="webot-runtime-empty">${t('subagent_runtime_no_verifications')}</div>`;
+    }
+    return items.map(item => `
+        <div class="webot-runtime-block">
+            <div class="webot-runtime-row">
+                <span class="webot-runtime-badge">${escapeHtml(item.status || '')}</span>
+                <span class="webot-runtime-text">${escapeHtml(item.title || '')}</span>
+            </div>
+            <div class="webot-runtime-detail">${_escapeAndFormatText(item.details || '')}</div>
+        </div>
+    `).join('');
+}
+
+function _buildRuntimeApprovalList(item, runtimeOverride = null) {
+    const runtime = runtimeOverride || _subagentRuntimeCache[item.session_id];
+    const approvals = runtime && Array.isArray(runtime.approvals) ? runtime.approvals : [];
+    if (!approvals.length) {
+        return `<div class="webot-runtime-empty">${t('subagent_runtime_no_approvals')}</div>`;
+    }
+    return approvals.map(approval => {
+        const approvalId = encodeURIComponent(approval.approval_id || '');
+        const sessionId = encodeURIComponent(item.session_id || '');
+        const canResolve = approval.status === 'pending' && (approval.review?.reviewer === 'user' || (approval.review?.conversation_reply && approval.review?.reviewer !== 'auto_review'));
+        return `
+            <div class="webot-runtime-block${canResolve ? ' webot-approval-block-pending' : ''}">
+                <div class="webot-runtime-row">
+                    <span class="webot-runtime-badge${canResolve ? ' pending' : ''}">${escapeHtml(approval.status || '')}</span>
+                    <span class="webot-runtime-text">${escapeHtml(approval.tool_name || '')}</span>
+                </div>
+                <div class="webot-runtime-detail">${_escapeAndFormatText(approval.request_reason || '')}</div>
+                ${canResolve ? `
+                    <div class="webot-runtime-actions">
+                        <button class="webot-subagent-btn" type="button" onclick="resolveWeBotApproval(decodeURIComponent('${approvalId}'), 'approve', false, decodeURIComponent('${sessionId}'))">${t('subagent_runtime_approve')}</button>
+                        <button class="webot-subagent-btn" type="button" onclick="resolveWeBotApproval(decodeURIComponent('${approvalId}'), 'approve', true, decodeURIComponent('${sessionId}'))">${t('subagent_runtime_approve_remember')}</button>
+                        <button class="webot-subagent-btn danger" type="button" onclick="resolveWeBotApproval(decodeURIComponent('${approvalId}'), 'deny', false, decodeURIComponent('${sessionId}'))">${t('subagent_runtime_deny')}</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+function _buildRuntimeRunList(items, sessionId = '', agentRef = '') {
+    if (!items || items.length === 0) {
+        return `<div class="webot-runtime-empty">${t('subagent_runtime_no_runs')}</div>`;
+    }
+    return items.map(run => {
+        const events = Array.isArray(run.events) ? run.events : [];
+        const eventHtml = events.slice(0, 4).map(event => `
+            <div class="webot-runtime-detail">${escapeHtml(event.event_type || '')} · ${escapeHtml(event.status || '')} · ${escapeHtml(event.message || '')}</div>
+        `).join('');
+        const metaParts = [
+            run.run_kind || 'run',
+            run.mode || 'execute',
+            run.attempt_count != null ? `attempts=${run.attempt_count}` : '',
+        ].filter(Boolean);
+        const canInterrupt = !!sessionId && ['queued', 'running', 'cancelling'].includes(String(run.status || '').toLowerCase());
+        const recovery = run.recovery || {};
+        return `
+            <div class="webot-runtime-block">
+                <div class="webot-runtime-row">
+                    <span class="webot-runtime-badge">${escapeHtml(run.status || '')}</span>
+                    <span class="webot-runtime-text">${escapeHtml(run.title || run.run_id || '')}</span>
+                </div>
+                <div class="webot-runtime-caption">${escapeHtml(metaParts.join(' · '))}</div>
+                ${run.last_error ? `<div class="webot-runtime-detail">${_escapeAndFormatText(run.last_error)}</div>` : ''}
+                ${run.last_result ? `<div class="webot-runtime-detail">${_escapeAndFormatText(run.last_result)}</div>` : ''}
+                ${recovery.summary ? `<div class="webot-runtime-caption">Recovery · ${_escapeAndFormatText(recovery.summary)}</div>` : ''}
+                ${recovery.suggestion ? `<div class="webot-runtime-detail">${_escapeAndFormatText(recovery.suggestion)}</div>` : ''}
+                ${canInterrupt ? `<div class="webot-runtime-actions"><button class="webot-subagent-btn danger" type="button" onclick="interruptWeBotRun('${encodeURIComponent(sessionId)}', '${encodeURIComponent(run.run_id || '')}', '${encodeURIComponent(agentRef || '')}')">Interrupt</button></div>` : ''}
+                ${eventHtml}
+            </div>
+        `;
+    }).join('');
+}
+
+function _buildRuntimeInboxList(items, sessionId = '') {
+    if (!items || items.length === 0) {
+        return `<div class="webot-runtime-empty">${t('subagent_runtime_no_inbox')}</div>`;
+    }
+    const hasQueued = items.some(item => String(item.status || '').toLowerCase() === 'queued');
+    const actionHtml = sessionId && hasQueued
+        ? `<div class="webot-runtime-actions"><button class="webot-subagent-btn" type="button" onclick="deliverWeBotInbox(decodeURIComponent('${encodeURIComponent(sessionId)}'))">Deliver queued</button></div>`
+        : '';
+    return `${actionHtml}${items.map(item => `
+        <div class="webot-runtime-block">
+            <div class="webot-runtime-row">
+                <span class="webot-runtime-badge">${escapeHtml(item.status || '')}</span>
+                <span class="webot-runtime-text">${escapeHtml(item.source_label || item.source_session || 'unknown')}</span>
+                <span class="webot-runtime-badge">${t(item.read_at ? 'subagent_runtime_inbox_read' : 'subagent_runtime_inbox_unread')}</span>
+            </div>
+            <div class="webot-runtime-detail">${escapeHtml(item.summary || item.body || '')}</div>
+            <details class="webot-runtime-detail"><summary>${t('subagent_runtime_show_message')}</summary>
+                <div>${_escapeAndFormatText(item.body || '')}</div>
+            </details>
+        </div>
+    `).join('')}`;
+}
+
+function _buildRuntimeArtifactList(items) {
+    if (!items || items.length === 0) {
+        return `<div class="webot-runtime-empty">${t('subagent_runtime_no_artifacts')}</div>`;
+    }
+    return items.map(item => `
+        <div class="webot-runtime-block">
+            <div class="webot-runtime-row">
+                <span class="webot-runtime-badge">${escapeHtml(item.artifact_kind || '')}</span>
+                <span class="webot-runtime-text">${escapeHtml(item.title || item.path || '')}</span>
+            </div>
+            ${item.path ? `<div class="webot-runtime-detail">${_escapeAndFormatText(item.path)}</div>` : ''}
+            ${item.preview ? `<div class="webot-runtime-detail">${_escapeAndFormatText(item.preview)}</div>` : ''}
+        </div>
+    `).join('');
+}
+
+function _buildRuntimeRelationshipList(runtime, item) {
+    const relationships = runtime && runtime.relationships ? runtime.relationships : {};
+    const children = Array.isArray(relationships.children) ? relationships.children : [];
+    const hasParent = !!(relationships.parent_session || item.parent_session);
+    if (!hasParent && children.length === 0) {
+        return `<div class="webot-runtime-empty">${t('subagent_runtime_no_relationships')}</div>`;
+    }
+    return `
+        <div class="webot-runtime-block">
+            <div class="webot-runtime-row">
+                <span class="webot-runtime-badge">${t('subagent_runtime_parent')}</span>
+                <span class="webot-runtime-text">${escapeHtml(relationships.parent_session || item.parent_session || '(none)')}</span>
+            </div>
+        </div>
+        <div class="webot-runtime-block">
+            <div class="webot-runtime-row">
+                <span class="webot-runtime-badge">${t('subagent_runtime_children')}</span>
+                <span class="webot-runtime-text">${escapeHtml(String(children.length))}</span>
+            </div>
+            ${children.map(child => `
+                <div class="webot-runtime-detail">${escapeHtml(child.name || child.agent_id || child.session_id || 'subagent')} · ${escapeHtml(child.status || '')}</div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function _renderCurrentSessionCard() {
+    const containerId = 'webot-current-session';
+    let container = document.getElementById(containerId);
+    if (!container) {
+        container = document.createElement('div');
+        container.id = containerId;
+        container.className = 'webot-current-session-card';
+        const listEl = document.getElementById('webot-subagent-list');
+        if (listEl && listEl.parentNode) {
+            listEl.parentNode.insertBefore(container, listEl);
+        }
+    }
+    if (!_currentSessionRuntime) {
+        container.style.display = 'none';
+        return;
+    }
+    const runtime = _currentSessionRuntime;
+    const mode = runtime.mode?.mode || 'execute';
+    const planItems = runtime.plan?.items || [];
+    const todoItems = runtime.todos?.items || [];
+    const planCaption = runtime.plan?.title ? `${runtime.plan.title} · ${runtime.plan.status || 'active'}` : '';
+    const cssPendingApprovals = (runtime.approvals || []).filter(a => a.status === 'pending');
+    const csrHasPending = cssPendingApprovals.length > 0;
+    const csrApprovalClass = csrHasPending
+        ? 'webot-runtime-section webot-runtime-section-full webot-approval-pending-section'
+        : 'webot-runtime-section';
+    const csrApprovalTitle = csrHasPending
+        ? `⚠️ ${t('subagent_runtime_approvals')} (${cssPendingApprovals.length})`
+        : t('subagent_runtime_approvals');
+    container.style.display = 'block';
+    container.innerHTML = `
+        <div class="webot-current-card-header">
+            <div class="webot-current-card-title">${t('subagent_runtime_current')}</div>
+            <div class="webot-current-card-caption">${_escapeAndFormatText(runtime.session_id || currentSessionId || 'current')} · ${_escapeAndFormatText(mode)}</div>
+        </div>
+        <div class="webot-mode-row">${_modeActionButtons(runtime.session_id || currentSessionId || '', mode)}</div>
+        <div class="webot-runtime-shell">
+            <div class="webot-runtime-grid">
+                <div class="${csrApprovalClass}">
+                    <div class="webot-runtime-title${csrHasPending ? ' webot-approval-pending-title' : ''}">${csrApprovalTitle}</div>
+                    ${_buildRuntimeApprovalList({session_id: runtime.session_id || currentSessionId}, runtime)}
+                </div>
+                <div class="webot-runtime-section">
+                    <div class="webot-runtime-title">${t('subagent_runtime_plan')}</div>
+                    ${planCaption ? `<div class="webot-runtime-caption">${_escapeAndFormatText(planCaption)}</div>` : ''}
+                    ${_buildRuntimeItemList(planItems, 'subagent_runtime_no_plan')}
+                </div>
+                <div class="webot-runtime-section">
+                    <div class="webot-runtime-title">${t('subagent_runtime_todos')}</div>
+                    ${_buildRuntimeItemList(todoItems, 'subagent_runtime_no_todos')}
+                </div>
+                <div class="webot-runtime-section">
+                    <div class="webot-runtime-title">${t('subagent_runtime_verifications')}</div>
+                    ${_buildRuntimeVerificationList(runtime.verifications || [])}
+                </div>
+                <div class="webot-runtime-section">
+                    <div class="webot-runtime-title">${t('subagent_runtime_runs')}</div>
+                    ${_buildRuntimeRunList(runtime.runs || [], runtime.session_id || currentSessionId, '')}
+                </div>
+                <div class="webot-runtime-section">
+                    <div class="webot-runtime-title">${t('subagent_runtime_inbox')}</div>
+                    ${_buildRuntimeInboxList(runtime.inbox || [], runtime.session_id || currentSessionId)}
+                </div>
+                <div class="webot-runtime-section">
+                    <div class="webot-runtime-title">${t('subagent_runtime_workspace')}</div>
+                    <div class="webot-runtime-detail">${_escapeAndFormatText(runtime.workspace || '')}</div>
+                    ${runtime.mode?.reason ? `<div class="webot-runtime-caption">${_escapeAndFormatText(runtime.mode.reason)}</div>` : ''}
+                </div>
+                <div class="webot-runtime-section">
+                    <div class="webot-runtime-title">${t('subagent_runtime_artifacts')}</div>
+                    ${_buildRuntimeArtifactList(runtime.artifacts || [])}
+                </div>
+                <div class="webot-runtime-section">
+                    <div class="webot-runtime-title">${t('subagent_runtime_relationships')}</div>
+                    ${_buildRuntimeRelationshipList(runtime, runtime)}
+                </div>
+                ${_buildExtendedSections(runtime, runtime)}
+            </div>
+        </div>
+    `;
+}
+
+function _buildSubagentRuntimeHtml(item) {
+    const loading = !!_subagentRuntimeLoading[item.session_id];
+    const runtime = _subagentRuntimeCache[item.session_id];
+    if (loading && !runtime) {
+        return `<div class="webot-runtime-empty">${t('subagent_runtime_loading')}</div>`;
+    }
+    if (!runtime || runtime.status !== 'success') {
+        return `<div class="webot-runtime-empty">${t('subagent_runtime_unavailable')}</div>`;
+    }
+    const workspace = runtime.workspace || item.workspace || '';
+    const planItems = runtime.plan && Array.isArray(runtime.plan.items) ? runtime.plan.items : [];
+    const todoItems = runtime.todos && Array.isArray(runtime.todos.items) ? runtime.todos.items : [];
+    const runtimeMode = runtime.mode || item.session_mode || {};
+    const modeLabel = runtimeMode.mode || item.session_mode?.mode || 'execute';
+    const modeReason = runtimeMode.reason ? `<div class="webot-runtime-caption">${_escapeAndFormatText(runtimeMode.reason)}</div>` : '';
+    const remoteText = runtime.subagent && runtime.subagent.remote ? runtime.subagent.remote : (item.remote || '');
+    const modeActions = _modeActionButtons(item.session_id, modeLabel);
+    const extendedSections = _buildExtendedSections(runtime.subagent || {}, item);
+    const pendingApprovals = (runtime.approvals || []).filter(a => a.status === 'pending');
+    const hasPendingApprovals = pendingApprovals.length > 0;
+    const approvalSectionClass = hasPendingApprovals
+        ? 'webot-runtime-section webot-runtime-section-full webot-approval-pending-section'
+        : 'webot-runtime-section';
+    const approvalTitle = hasPendingApprovals
+        ? `⚠️ ${t('subagent_runtime_approvals')} (${pendingApprovals.length})`
+        : t('subagent_runtime_approvals');
+    return `
+        <div class="webot-runtime-grid">
+            <div class="${approvalSectionClass}">
+                <div class="webot-runtime-title${hasPendingApprovals ? ' webot-approval-pending-title' : ''}">${approvalTitle}</div>
+                ${_buildRuntimeApprovalList(item, runtime)}
+            </div>
+            <div class="webot-runtime-section webot-runtime-section-full">
+                <div class="webot-runtime-title">${t('subagent_runtime_workspace')}</div>
+                <div class="webot-runtime-caption">${t('subagent_runtime_mode')}: ${escapeHtml(modeLabel)}</div>
+                ${modeActions}
+                ${modeReason}
+                <div class="webot-runtime-detail">${_escapeAndFormatText(workspace || t('subagent_runtime_unavailable'))}</div>
+                ${remoteText ? `<div class="webot-runtime-detail">${t('subagent_runtime_remote')}: ${_escapeAndFormatText(remoteText)}</div>` : ''}
+            </div>
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_plan')}</div>
+                ${runtime.plan && runtime.plan.title ? `<div class="webot-runtime-caption">${escapeHtml(runtime.plan.title)} · ${escapeHtml(runtime.plan.status || 'active')}</div>` : ''}
+                ${_buildRuntimeItemList(planItems, 'subagent_runtime_no_plan')}
+            </div>
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_todos')}</div>
+                ${_buildRuntimeItemList(todoItems, 'subagent_runtime_no_todos')}
+            </div>
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_verifications')}</div>
+                ${_buildRuntimeVerificationList(runtime.verifications || [])}
+            </div>
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_runs')}</div>
+                ${_buildRuntimeRunList(runtime.runs || [], item.session_id, item.agent_id || item.session_id)}
+            </div>
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_inbox')}</div>
+                ${_buildRuntimeInboxList(runtime.inbox || [], item.session_id)}
+            </div>
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_artifacts')}</div>
+                ${_buildRuntimeArtifactList(runtime.artifacts || [])}
+            </div>
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_relationships')}</div>
+                ${_buildRuntimeRelationshipList(runtime, item)}
+            </div>
+            ${extendedSections}
+        </div>
+    `;
+}
+
+function _renderSubagentDetail() {
+    const detailEl = document.getElementById('webot-subagent-detail');
+    if (!detailEl) return;
+    const item = _subagentPanelItems.find(entry =>
+        entry.agent_id === _selectedSubagentRef || entry.session_id === _selectedSubagentRef
+    );
+    if (!item) {
+        detailEl.style.display = 'none';
+        detailEl.innerHTML = '';
+        return;
+    }
+
+    const cacheKey = item.agent_id || item.session_id;
+    const historyHtml = _subagentHistoryVisible
+        ? `<div class="webot-subagent-history">${_buildSubagentHistoryHtml(_subagentHistoryCache[cacheKey] || [])}</div>`
+        : '';
+    const runtimeHtml = _buildSubagentRuntimeHtml(item);
+    const stopDisabled = ['completed', 'failed', 'cancelled'].includes(item.status);
+
+    detailEl.style.display = 'block';
+    const encodedRef = encodeURIComponent(cacheKey);
+    const encodedParent = encodeURIComponent(item.parent_session || '');
+    detailEl.innerHTML = `
+        <div class="webot-subagent-detail-card">
+            <div class="webot-subagent-detail-header">
+                <div style="min-width:0;">
+                    <div class="webot-subagent-name">${escapeHtml(item.name || item.agent_id)}</div>
+                    <div class="webot-subagent-meta">${t('subagent_runtime_status')}: ${escapeHtml(item.status || 'idle')} · ${escapeHtml(item.session_id || '')}</div>
+                </div>
+                <div class="webot-subagent-detail-actions">
+                    <button class="webot-subagent-btn" type="button" onclick="toggleSubagentHistory(decodeURIComponent('${encodedRef}'))">${t(_subagentHistoryVisible ? 'subagent_hide_history' : 'subagent_history')}</button>
+                    <button class="webot-subagent-btn${stopDisabled ? '' : ' danger'}" type="button" onclick="cancelSubagentFromPanel(decodeURIComponent('${encodedRef}'))" ${stopDisabled ? 'disabled' : ''}>${t('subagent_stop')}</button>
+                    ${item.parent_session ? `<button class="webot-subagent-btn" type="button" onclick="openSubagentParentSession(decodeURIComponent('${encodedParent}'))">${t('subagent_open_parent')}</button>` : ''}
+                </div>
+            </div>
+            <div class="webot-subagent-detail-copy"><strong>${t('subagent_last_result')}:</strong>\n${_escapeAndFormatText(item.last_result || '(none)')}</div>
+            <div class="webot-runtime-shell">${runtimeHtml}</div>
+            ${historyHtml}
+        </div>
+    `;
+}
+
+function renderSubagentPanel(subagents) {
+    const listEl = document.getElementById('webot-subagent-list');
+    if (!listEl) return;
+    _subagentPanelItems = Array.isArray(subagents) ? subagents : [];
+
+    if (_subagentPanelItems.length === 0) {
+        listEl.innerHTML = `<div class="webot-subagent-empty">${t('subagents_empty')}</div>`;
+        _selectedSubagentRef = '';
+        _renderSubagentDetail();
+        return;
+    }
+
+    if (!_selectedSubagentRef || !_subagentPanelItems.some(item =>
+        item.agent_id === _selectedSubagentRef || item.session_id === _selectedSubagentRef
+    )) {
+        _selectedSubagentRef = _subagentPanelItems[0].agent_id || _subagentPanelItems[0].session_id;
+    }
+
+    listEl.innerHTML = _subagentPanelItems.map(item => {
+        const ref = item.agent_id || item.session_id;
+        const active = _selectedSubagentRef === ref || _selectedSubagentRef === item.session_id;
+        const encodedRef = encodeURIComponent(ref);
+        const cachedRuntime = _subagentRuntimeCache[item.session_id];
+        const pendingCount = cachedRuntime
+            ? (cachedRuntime.approvals || []).filter(a => a.status === 'pending').length
+            : 0;
+        const pendingDot = pendingCount > 0
+            ? `<span class="webot-approval-dot">${pendingCount}</span>`
+            : '';
+        return `
+            <div class="webot-subagent-item${active ? ' active' : ''}" onclick="selectSubagentPanelItem(decodeURIComponent('${encodedRef}'))">
+                <div class="webot-subagent-item-row">
+                    <div class="webot-subagent-name">${escapeHtml(item.name || item.agent_id || 'subagent')}</div>
+                    ${pendingDot}
+                    <span class="webot-subagent-status ${escapeHtml(item.status || 'idle')}">${_renderSubagentStatus(item.status)}</span>
+                </div>
+                <div class="webot-subagent-meta">${escapeHtml(_summarizeSubagentItem(item))}</div>
+            </div>
+        `;
+    }).join('');
+    _renderSubagentDetail();
+    _renderCurrentSessionCard();
+}
+
+function selectSubagentPanelItem(agentRef) {
+    _selectedSubagentRef = agentRef;
+    _subagentHistoryVisible = false;
+    _renderSubagentDetail();
+    ensureSubagentRuntimeLoaded(agentRef);
+}
+
+async function refreshSubagentPanel() {
+    const listEl = document.getElementById('webot-subagent-list');
+    if (!listEl) return;
+    if (_subagentPanelItems.length === 0) {
+        listEl.innerHTML = `<div class="webot-subagent-empty">${t('subagents_loading')}</div>`;
+    }
+    try {
+        const resp = await fetch('/proxy_webot_subagents');
+        const data = await resp.json();
+        renderSubagentPanel(data.subagents || []);
+        await refreshCurrentSessionRuntime();
+        const selected = _subagentPanelItems.find(item =>
+            item.agent_id === _selectedSubagentRef || item.session_id === _selectedSubagentRef
+        );
+        if (selected) {
+            ensureSubagentRuntimeLoaded(selected.agent_id || selected.session_id, true);
+        }
+    } catch (e) {
+        listEl.innerHTML = `<div class="webot-subagent-empty">${escapeHtml(e.message || 'Failed')}</div>`;
+        _selectedSubagentRef = '';
+        _renderSubagentDetail();
+    }
+}
+
+async function ensureSubagentRuntimeLoaded(agentRef, force = false) {
+    const item = _subagentPanelItems.find(entry =>
+        entry.agent_id === agentRef || entry.session_id === agentRef
+    );
+    if (!item || !item.session_id) return;
+    if (_subagentRuntimeLoading[item.session_id]) return;
+    if (!force && _subagentRuntimeCache[item.session_id]) return;
+    _subagentRuntimeLoading[item.session_id] = true;
+    _renderSubagentDetail();
+    try {
+        const resp = await fetch(`/proxy_webot_session_runtime?session_id=${encodeURIComponent(item.session_id)}`);
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || t('subagent_runtime_unavailable'));
+        }
+        _subagentRuntimeCache[item.session_id] = data;
+    } catch (e) {
+        _subagentRuntimeCache[item.session_id] = {
+            status: 'error',
+            error: e.message || t('subagent_runtime_unavailable'),
+        };
+    } finally {
+        _subagentRuntimeLoading[item.session_id] = false;
+        _renderSubagentDetail();
+    }
+}
+
+async function resolveWeBotApproval(approvalId, action, remember, sessionId) {
+    try {
+        await ClawcrossApproval.resolve(approvalId, action, remember, sessionId);
+        watchApprovalContinuation(sessionId);
+        _setWeBotPolicyStatus(t('subagent_runtime_approval_ok'), 'success');
+        if (sessionId) {
+            delete _subagentRuntimeCache[sessionId];
+        }
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(`${t('subagent_runtime_approval_failed')}: ${e.message}`, 'error');
+    }
+}
+
+async function reloadWeBotPolicy(force = false) {
+    if (_webotPolicyDirty && !force) {
+        _renderWeBotPolicySummary();
+        return;
+    }
+    _setWeBotPolicyStatus('');
+    const summaryEl = document.getElementById('webot-policy-summary');
+    if (summaryEl && !_webotPolicyLoaded) {
+        summaryEl.textContent = t('policy_panel_loading');
+    }
+    try {
+        const resp = await fetch('/proxy_webot_tool_policy');
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || t('policy_panel_load_failed'));
+        }
+        _webotPolicyData = data;
+        _webotPolicyDirty = false;
+        _webotPolicyLoaded = true;
+        _syncWeBotPolicyEditor(true);
+    } catch (e) {
+        _setWeBotPolicyStatus(`${t('policy_panel_load_failed')}: ${e.message}`, 'error');
+        if (summaryEl) summaryEl.textContent = t('policy_panel_load_failed');
+    }
+}
+
+function toggleWeBotPolicyEditor() {
+    _webotPolicyEditorOpen = !_webotPolicyEditorOpen;
+    _syncWeBotPolicyEditor();
+    if (_webotPolicyEditorOpen && !_webotPolicyLoaded) {
+        reloadWeBotPolicy();
+    }
+}
+
+function formatWeBotPolicyEditor() {
+    try {
+        const parsed = _parseWeBotPolicyEditor();
+        const editorEl = document.getElementById('webot-policy-editor');
+        if (!editorEl) return;
+        editorEl.value = JSON.stringify(parsed, null, 2);
+        _webotPolicyDirty = true;
+        _setWeBotPolicyStatus('');
+        _renderWeBotPolicySummary();
+    } catch (e) {
+        _setWeBotPolicyStatus(`${t('policy_panel_invalid_json')}: ${e.message}`, 'error');
+    }
+}
+
+async function saveWeBotPolicyEditor() {
+    try {
+        const parsed = _parseWeBotPolicyEditor();
+        const resp = await fetch('/proxy_webot_tool_policy', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ policy: parsed })
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || t('policy_panel_save_failed'));
+        }
+        _webotPolicyData = data;
+        _webotPolicyDirty = false;
+        _webotPolicyLoaded = true;
+        _syncWeBotPolicyEditor(true);
+        _setWeBotPolicyStatus(t('policy_panel_saved'), 'success');
+    } catch (e) {
+        _setWeBotPolicyStatus(`${t('policy_panel_save_failed')}: ${e.message}`, 'error');
+    }
+}
+
+async function toggleSubagentHistory(agentRef) {
+    _selectedSubagentRef = agentRef;
+    _subagentHistoryVisible = !_subagentHistoryVisible;
+    if (_subagentHistoryVisible) {
+        const cacheKey = agentRef;
+        if (!_subagentHistoryCache[cacheKey]) {
+            try {
+                const resp = await fetch('/proxy_webot_subagent_history', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ agent_ref: agentRef, limit: 12 })
+                });
+                const data = await resp.json();
+                _subagentHistoryCache[cacheKey] = data.messages || [];
+                const refreshed = (data.subagent && (data.subagent.agent_id || data.subagent.session_id))
+                    ? data.subagent
+                    : null;
+                if (refreshed) {
+                    _subagentPanelItems = _subagentPanelItems.map(item =>
+                        (item.agent_id === refreshed.agent_id || item.session_id === refreshed.session_id)
+                            ? { ...item, ...refreshed }
+                            : item
+                    );
+                }
+            } catch (e) {
+                _subagentHistoryCache[cacheKey] = [];
+            }
+        }
+    }
+    _renderSubagentDetail();
+}
+
+async function cancelSubagentFromPanel(agentRef) {
+    const item = _subagentPanelItems.find(entry =>
+        entry.agent_id === agentRef || entry.session_id === agentRef
+    );
+    if (!item) return;
+    if (['completed', 'failed', 'cancelled'].includes(item.status)) return;
+    if (!confirm(t('subagent_stop_confirm'))) return;
+    try {
+        const resp = await fetch('/proxy_webot_subagent_cancel', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ agent_ref: agentRef })
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || t('subagent_stop_failed'));
+        }
+        _subagentHistoryVisible = false;
+        await refreshSubagentPanel();
+    } catch (e) {
+        alert(`${t('subagent_stop_failed')}: ${e.message}`);
+    }
+}
+
+function openSubagentParentSession(sessionId) {
+    if (!sessionId) return;
+    switchToSession(sessionId, true);
+}
+
+function startHistoryPolling() {
+    stopHistoryPolling();
+    refreshStudioApprovalStrip();
+    _historyPollingTimer = setInterval(() => {
+        if (sessionSidebarOpen) {
+            refreshHistoryList();
+            refreshSubagentPanel();
+        } else {
+            // sidebar 未打开也刷新状态（发光效果），以便打开时立即可见
+            refreshSessionStatus();
+        }
+        refreshStudioApprovalStrip();
+    }, 3000);
+}
+function stopHistoryPolling() {
+    if (_historyPollingTimer) { clearInterval(_historyPollingTimer); _historyPollingTimer = null; }
+}
+
+function toggleSessionSidebar() {
+    if (sessionSidebarOpen) { closeSessionSidebar(); } else { openSessionSidebar(); }
+}
+
+async function openSessionSidebar() {
+    const sidebar = document.getElementById('session-sidebar');
+    sidebar.style.display = 'flex';
+    sessionSidebarOpen = true;
+    initSessionRuntimePanelResize();
+    requestAnimationFrame(() => applySessionRuntimePanelHeight());
+    refreshSubagentPanel();
+    if (!_webotPolicyLoaded) {
+        reloadWeBotPolicy();
+    } else {
+        _syncWeBotPolicyEditor();
+    }
+    // 移动端加遮罩
+    if (window.innerWidth <= 768) {
+        let overlay = document.getElementById('session-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'session-overlay';
+            overlay.className = 'session-overlay';
+            overlay.onclick = closeSessionSidebar;
+            sidebar.parentElement.appendChild(overlay);
+        }
+        overlay.style.display = 'block';
+    }
+    // Load team list
+    await loadAgentTeams();
+    // 已有列表内容则增量刷新，否则全量加载
+    const listEl = document.getElementById('session-list');
+    if (listEl.querySelector('.session-item')) {
+        refreshHistoryList();
+    } else {
+        await loadSessionList();
+    }
+}
+
+function closeSessionSidebar() {
+    document.getElementById('session-sidebar').style.display = 'none';
+    const overlay = document.getElementById('session-overlay');
+    if (overlay) overlay.style.display = 'none';
+    sessionSidebarOpen = false;
+}
+
+// Session filter mode: 'named' = show sessions with agent name, 'unnamed' = show sessions without
+let sessionFilterMode = 'named';
+// Cached agent meta map (session_id → {name, tag, ...}), refreshed on each loadSessionList/refreshHistoryList
+let _cachedAgentMap = {};
+// All known session IDs across all JSON files (public + all teams), for unnamed detection
+let _allKnownSessions = new Set();
+// Last merged session list (+ named-only from agent map), for chat-bar session picker
+let _mergedSessionsCache = [];
+// A deletion invalidates list requests started before it completed.
+let _agentListRevision = 0;
+
+function isNamedSession(sessionId) {
+    const meta = _cachedAgentMap[sessionId];
+    return !!(meta && meta.name);
+}
+
+function shouldShowSession(sessionId) {
+    if (sessionFilterMode === 'named') {
+        return isNamedSession(sessionId);
+    } else {
+        // Unnamed = not in ANY json across all sources
+        return !_allKnownSessions.has(sessionId);
+    }
+}
+
+function toggleNamedSessionsVisible() {
+    sessionFilterMode = sessionFilterMode === 'named' ? 'unnamed' : 'named';
+    const btn = document.getElementById('toggle-oasis-sessions-btn');
+    if (btn) {
+        btn.textContent = sessionFilterMode === 'named' ? '🏷️ 切换到无名会话' : '🏷️ 切换到已命名 Agents';
+    }
+    // Apply filter to all session items
+    document.querySelectorAll('.session-item[data-session-id]').forEach(el => {
+        el.style.display = shouldShowSession(el.dataset.sessionId) ? '' : 'none';
+    });
+}
+
+async function loadSessionList() {
+    const revision = _agentListRevision;
+    const listEl = document.getElementById('session-list');
+    if (!listEl.querySelector('.session-item')) {
+        listEl.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('loading')}</div>`;
+    }
+    try {
+        // Load sessions and agent meta in parallel
+        const [webotSessions, agentResult] = await Promise.all([fetchWebotSessions(), _loadAgentMetaMap(_currentAgentTeam)]);
+        if (revision !== _agentListRevision) return;
+        _cachedAgentMap = agentResult.map;
+        _allKnownSessions = agentResult.allKnown;
+        const agentMap = agentResult.map;
+        // Merge: add sessions from agent JSON that are not in the list
+        const allSessions = webotSessions.filter(s => s.title);
+        const seenIds = new Set(allSessions.map(s => s.session_id));
+        for (const [sid, meta] of Object.entries(agentMap)) {
+            if (!seenIds.has(sid) && meta && meta.name) {
+                allSessions.push({
+                    session_id: sid,
+                    title: meta.title || '',
+                    agent_name: meta.name,
+                    platform: meta.platform,
+                    message_count: 0,
+                    created_at: meta.created_at || '',
+                    updated_at: meta.updated_at || meta.created_at || ''
+                });
+                seenIds.add(sid);
+            }
+        }
+        if (allSessions.length === 0) {
+            listEl.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_empty')}</div>`;
+            _mergedSessionsCache = [];
+            ocInternalRepaintSessionPick();
+            return;
+        }
+        listEl.innerHTML = '';
+        _sortSessionsByTime(allSessions, agentMap);
+        _mergedSessionsCache = allSessions;
+        ocInternalRepaintSessionPick();
+        for (const s of allSessions) {
+            const isActive = s.session_id === currentSessionId;
+            const displayTitle = _resolveTitle(s.title, s.session_id, agentMap);
+            const div = document.createElement('div');
+            div.className = 'session-item' + (isActive ? ' active' : '');
+            div.dataset.sessionId = s.session_id;
+            div.innerHTML = `
+                <div class="session-title">${escapeHtml(displayTitle)}</div>
+                <div class="session-meta">${escapeHtml(_sessionAgentLabel(s, agentMap))}#${s.session_id.slice(-6)} · ${s.message_count}${t('messages_count')}</div>
+                <button class="session-edit" onclick="event.stopPropagation(); editAgentMeta('${s.session_id}')">✏️</button>
+                <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${s.session_id}')">${t('delete_session')}</button>
+            `;
+            div.onclick = () => openAgentSession(s.session_id);
+            if (!shouldShowSession(s.session_id)) {
+                div.style.display = 'none';
+            }
+            listEl.appendChild(div);
+        }
+        paintSessionBusy(webotSessions);
+    } catch (e) {
+        if (revision !== _agentListRevision) return;
+        listEl.innerHTML = `<div class="text-xs text-red-400 text-center py-4">${t('history_error')}</div>`;
+        _mergedSessionsCache = [];
+        ocInternalRepaintSessionPick();
+    }
+}
+
+// 增量刷新：不重建DOM，只更新标题/计数 + 状态发光
+async function refreshHistoryList() {
+    const revision = _agentListRevision;
+    try {
+        const [webotSessions, agentResult] = await Promise.all([
+            fetchWebotSessions(),
+            _loadAgentMetaMap(_currentAgentTeam)
+        ]);
+        if (revision !== _agentListRevision) return;
+        _cachedAgentMap = agentResult.map;
+        _allKnownSessions = agentResult.allKnown;
+        const agentMap = agentResult.map;
+        const sessions = webotSessions.filter(s => s.title);
+        // Merge: add named sessions from agent JSON that are not in the list
+        const seenIds = new Set(sessions.map(s => s.session_id));
+        for (const [sid, meta] of Object.entries(agentMap)) {
+            if (!seenIds.has(sid) && meta && meta.name) {
+                sessions.push({
+                    session_id: sid,
+                    title: meta.title || '',
+                    agent_name: meta.name,
+                    platform: meta.platform,
+                    message_count: 0,
+                    created_at: meta.created_at || '',
+                    updated_at: meta.updated_at || meta.created_at || ''
+                });
+                seenIds.add(sid);
+            }
+        }
+        const listEl = document.getElementById('session-list');
+        if (sessions.length === 0) {
+            listEl.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_empty')}</div>`;
+            _mergedSessionsCache = [];
+            ocInternalRepaintSessionPick();
+            return;
+        }
+        // 构建 session map
+        const sessMap = {};
+        for (const s of sessions) sessMap[s.session_id] = s;
+        const statusMap = {};
+        for (const s of webotSessions) statusMap[s.session_id] = s;
+        // 现有 DOM 的 session id 集合
+        const existingEls = listEl.querySelectorAll('.session-item[data-session-id]');
+        const existingIds = new Set();
+        existingEls.forEach(el => existingIds.add(el.dataset.sessionId));
+        const newIds = new Set(sessions.map(s => s.session_id));
+        // 删除不存在的
+        existingEls.forEach(el => {
+            if (!newIds.has(el.dataset.sessionId)) el.remove();
+        });
+        // 更新现有的 + 添加新的
+        _sortSessionsByTime(sessions, agentMap);
+        _mergedSessionsCache = sessions;
+        ocInternalRepaintSessionPick();
+        let prevEl = null;
+        for (const s of sessions) {
+            let div = listEl.querySelector(`.session-item[data-session-id="${s.session_id}"]`);
+            if (div) {
+                // 更新标题和计数
+                const titleEl = div.querySelector('.session-title');
+                const newTitle = escapeHtml(_resolveTitle(s.title, s.session_id, agentMap));
+                if (titleEl && titleEl.innerHTML !== newTitle) titleEl.innerHTML = newTitle;
+                const metaEl = div.querySelector('.session-meta');
+                if (metaEl) {
+                    const badge = metaEl.querySelector('.session-busy-badge');
+                    const newMeta = `${_sessionAgentLabel(s, agentMap)}#${s.session_id.slice(-6)} · ${s.message_count}${t('messages_count')}`;
+                    // 只更新文本部分，保留badge
+                    const textNode = metaEl.firstChild;
+                    if (textNode && textNode.nodeType === 3) {
+                        if (textNode.textContent.trim() !== newMeta.trim()) textNode.textContent = newMeta;
+                    } else {
+                        // 重建meta但保留badge
+                        const savedBadge = badge;
+                        metaEl.textContent = newMeta;
+                        if (savedBadge) metaEl.appendChild(savedBadge);
+                    }
+                }
+                // active 状态
+                div.classList.toggle('active', s.session_id === currentSessionId);
+                // session 可见性
+                div.style.display = shouldShowSession(s.session_id) ? '' : 'none';
+            } else {
+                // 新增的 session
+                div = document.createElement('div');
+                div.className = 'session-item' + (s.session_id === currentSessionId ? ' active' : '');
+                div.dataset.sessionId = s.session_id;
+                const displayTitle = _resolveTitle(s.title, s.session_id, agentMap);
+                div.innerHTML = `
+                    <div class="session-title">${escapeHtml(displayTitle)}</div>
+                    <div class="session-meta">${escapeHtml(_sessionAgentLabel(s, agentMap))}#${s.session_id.slice(-6)} · ${s.message_count}${t('messages_count')}</div>
+                    <button class="session-edit" onclick="event.stopPropagation(); editAgentMeta('${s.session_id}')">✏️</button>
+                    <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${s.session_id}')">${t('delete_session')}</button>
+                `;
+                div.onclick = () => openAgentSession(s.session_id);
+                if (!shouldShowSession(s.session_id)) {
+                    div.style.display = 'none';
+                }
+                if (prevEl && prevEl.nextSibling) {
+                    listEl.insertBefore(div, prevEl.nextSibling);
+                } else if (!prevEl) {
+                    listEl.prepend(div);
+                } else {
+                    listEl.appendChild(div);
+                }
+            }
+            if (!prevEl) {
+                if (listEl.firstChild !== div) listEl.insertBefore(div, listEl.firstChild);
+            } else if (prevEl.nextSibling !== div) {
+                listEl.insertBefore(div, prevEl.nextSibling);
+            }
+            // 更新发光状态（不移除再添加class，避免动画重启）
+            const info = statusMap[s.session_id];
+            const wantUser = info && info.busy && info.source !== 'system';
+            const wantSystem = info && info.busy && info.source === 'system';
+            const hasUser = div.classList.contains('busy-user');
+            const hasSystem = div.classList.contains('busy-system');
+            if (wantUser && !hasUser) { div.classList.remove('busy-system'); div.classList.add('busy-user'); }
+            else if (wantSystem && !hasSystem) { div.classList.remove('busy-user'); div.classList.add('busy-system'); }
+            else if (!wantUser && !wantSystem) { div.classList.remove('busy-user', 'busy-system'); }
+            // badge
+            const existingBadge = div.querySelector('.session-busy-badge');
+            if (info && info.busy) {
+                const badgeCls = info.source === 'system' ? 'system' : 'user';
+                const badgeText = info.source === 'system' ? '⚙️' : '💬';
+                if (existingBadge) {
+                    if (!existingBadge.classList.contains(badgeCls)) {
+                        existingBadge.className = 'session-busy-badge ' + badgeCls;
+                        existingBadge.textContent = badgeText;
+                    }
+                } else {
+                    const badge = document.createElement('span');
+                    badge.className = 'session-busy-badge ' + badgeCls;
+                    badge.textContent = badgeText;
+                    div.querySelector('.session-meta')?.appendChild(badge);
+                }
+            } else if (existingBadge) {
+                existingBadge.remove();
+            }
+            prevEl = div;
+        }
+    } catch (e) { /* silent */ }
+}
+
+async function refreshSessionStatus() {
+    try {
+        paintSessionBusy(await fetchWebotSessions());
+    } catch (e) { /* silent */ }
+}
+
+// The busy glow and badge of each listed session.
+function paintSessionBusy(sessions) {
+    const statusMap = {};
+    for (const s of sessions) statusMap[s.session_id] = s;
+    document.querySelectorAll('.session-item[data-session-id]').forEach(el => {
+        const info = statusMap[el.dataset.sessionId];
+        el.classList.remove('busy-user', 'busy-system');
+        el.querySelector('.session-busy-badge')?.remove();
+        if (info && info.busy) {
+            const cls = info.source === 'system' ? 'busy-system' : 'busy-user';
+            el.classList.add(cls);
+            const badge = document.createElement('span');
+            badge.className = 'session-busy-badge ' + (info.source === 'system' ? 'system' : 'user');
+            badge.textContent = info.source === 'system' ? '⚙️' : '💬';
+            el.querySelector('.session-meta')?.appendChild(badge);
+        }
+    });
+}
+
+// Delete a session's agent: its session and record go with it. One already gone is deleted.
+async function deleteSessionAgent(sessionId) {
+    try {
+        await agentApi('DELETE', `/v1/agents/${encodeURIComponent(sessionId)}`);
+    } catch (e) {
+        if (e.status !== 404) throw e;
+    }
+    forgetDeletedAgent(sessionId);
+}
+
+function forgetDeletedAgent(sessionId) {
+    const externalSelected = _ocChatMode === 'acp' && acpResolveSessionName() === sessionId;
+    _agentListRevision++;
+    _mergedSessionsCache = _mergedSessionsCache.filter(item => item.session_id !== sessionId);
+    delete _cachedAgentMap[sessionId];
+    _allKnownSessions.delete(sessionId);
+    for (const id of ['oc-internal-session-pick', 'oc-acp-session-pick']) {
+        const select = document.getElementById(id);
+        for (const option of [...(select?.options || [])]) {
+            if (option.value === sessionId) option.remove();
+        }
+    }
+    document.querySelectorAll('.session-item[data-session-id]').forEach(node => {
+        if (node.dataset.sessionId === sessionId) node.remove();
+    });
+    for (const [key, id] of Object.entries(_acpResolvedSessionNameByKey)) {
+        if (id === sessionId) delete _acpResolvedSessionNameByKey[key];
+    }
+    if (_acpFollower?.agentId === sessionId) acpUnfollow();
+    for (let index = localStorage.length - 1; index >= 0; index--) {
+        const key = localStorage.key(index);
+        if (/^clawcross_acp_(session_pick_|session_name_|resolved_session_)/.test(key)
+            && localStorage.getItem(key) === sessionId) localStorage.removeItem(key);
+    }
+    if (currentSessionId === sessionId) {
+        currentSessionId = generateSessionId();
+        sessionStorage.setItem('sessionId', currentSessionId);
+        updateSessionDisplay();
+        if (_ocChatMode === 'internal') renderWeBotWelcomeMessage();
+    }
+    if (externalSelected) {
+        // A replacement stays a draft; deletion must not create another Agent.
+        const draftId = _acpTool + '-' + generateSessionId();
+        document.getElementById('oc-acp-session-pick').value = '';
+        document.getElementById('oc-acp-session-name').value = draftId;
+        localStorage.setItem('clawcross_acp_session_name_' + _acpTool, draftId);
+        _acpLastTranscriptKey = '';
+        acpUpdateSessionInputsDisabledState();
+        acpNotifySessionContextChanged();
+    }
+    ocInternalRepaintSessionPick();
+    renderStudioConversations();
+}
+
+async function deleteSession(sessionId) {
+    if (!confirm(t('delete_session_confirm'))) return;
+    try {
+        await deleteSessionAgent(sessionId);
+        // 如果删除的是当前会话，自动开一个新的
+        if (sessionId === currentSessionId) {
+            currentSessionId = generateSessionId();
+            sessionStorage.setItem('sessionId', currentSessionId);
+            updateSessionDisplay();
+            renderWeBotWelcomeMessage();
+        }
+        await loadSessionList();
+    } catch (e) {
+        alert(t('delete_fail') + ': ' + e.message);
+    }
+}
+
+async function deleteAllSessions() {
+    // Collect visible session ids based on current filter mode
+    const visibleIds = [];
+    document.querySelectorAll('.session-item[data-session-id]').forEach(el => {
+        if (el.style.display !== 'none') {
+            visibleIds.push(el.dataset.sessionId);
+        }
+    });
+    if (visibleIds.length === 0) return;
+    const modeLabel = sessionFilterMode === 'named' ? '已命名' : '无名';
+    if (!confirm(`确认删除当前显示的 ${visibleIds.length} 个${modeLabel}会话？`)) return;
+    try {
+        let failCount = 0;
+        await Promise.all(visibleIds.map(async sid => {
+            try {
+                await deleteSessionAgent(sid);
+            } catch { failCount++; }
+        }));
+        // If current session was among deleted, reset it
+        if (visibleIds.includes(currentSessionId)) {
+            currentSessionId = generateSessionId();
+            sessionStorage.setItem('sessionId', currentSessionId);
+            updateSessionDisplay();
+            renderWeBotWelcomeMessage();
+        }
+        await loadSessionList();
+        if (failCount > 0) alert(`${failCount} 个会话删除失败`);
+    } catch (e) {
+        alert(t('delete_fail') + ': ' + e.message);
+    }
+}
+
+async function openAgentSession(sessionId, options = {}) {
+    const targetSessionId = String(sessionId || '').trim();
+    if (!targetSessionId) return;
+
+    const force = options.force === true;
+    const quiet = options.quiet === true;
+    const closeSidebar = options.closeSidebar === true;
+    const sameSession = targetSessionId === currentSessionId;
+
+    if (currentPage !== 'chat') {
+        await switchPage('chat');
+    }
+
+    if (_ocChatMode !== 'internal') {
+        await ocSwitchTo('internal');
+    }
+
+    if (!force && sameSession && _ocChatMode === 'internal' && currentPage === 'chat') {
+        if (closeSidebar) closeSessionSidebar();
+        return;
+    }
+
+    await switchToSession(targetSessionId, force || sameSession, { quiet, closeSidebar });
+}
+
+async function switchToSession(sessionId, force = false, options = {}) {
+    const quiet = options.quiet === true;
+    const closeSidebar = options.closeSidebar === true;
+    if (!force && sessionId === currentSessionId) { if (closeSidebar) closeSessionSidebar(); return; }
+    // 切换前先重置按钮到 idle 状态（避免旧 session 的 streaming/busy 状态残留）
+    setStreamingUI(false);
+    setSystemBusyUI(false);
+    currentSessionId = sessionId;
+    document.dispatchEvent(new CustomEvent('clawcross:agent-selected',{detail:{agentId:sessionId}}));
+    if (window.ExternalAgentSettings) ExternalAgentSettings.syncMenu();
+    updateBackendCompactionStatus(null);
+    ConversationUiPanels.beginSession(sessionId);
+    cancelTargetSessionId = null;  // 重置终止目标
+    personaInjectedSession = null;  // Reset persona injection flag for new session
+    sessionStorage.setItem('sessionId', sessionId);
+    updateSessionDisplay();
+    if (closeSidebar) closeSessionSidebar();
+    // The page stays usable while loading; a later switch makes this one's results stale.
+    const contextKey = chatRunContextKey();
+    const stale = () => chatRunContextKey() !== contextKey;
+
+    // ACP 模式：左侧会话只影响未命名时的 acpx 会话键与本地转写，不加载 WeBot 历史
+    if (_ocChatMode === 'acp' && _acpTool) {
+        const chatBoxAcp = document.getElementById('chat-box');
+        if (chatBoxAcp) {
+            _acpLastTranscriptKey = acpComputeTranscriptKey();
+            await acpPaintTranscript();
+            if (stale()) return;
+        }
+        restoreActiveChatRunForCurrentContext();
+        await syncCurrentChatRunUI();
+        return;
+    }
+
+    // 加载该会话的历史消息
+    const chatBox = document.getElementById('chat-box');
+    if (!quiet) {
+        chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
+    }
+    try {
+        // Show a bounded page before loading optional status indicators.
+        const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(sessionId)}/history?limit=40`)
+            .catch(e => { if (e.status === 404) return {messages: []}; throw e; });
+        if (stale()) return;
+        // History is useful immediately; context/mode indicators can arrive
+        // afterwards without keeping the whole conversation behind a loader.
+        void fetchSessionStatus(sessionId).then(status=>{
+            if(stale())return;
+            if(RUN_MODE_VALID.includes(status.mode))setRunMode(status.mode);
+            showSessionContextUsage(status.context);
+        }).catch(()=>{});
+        chatBox.innerHTML = '';
+
+        if (!data.messages || data.messages.length === 0) {
+            renderWeBotWelcomeMessage();
+            restoreActiveChatRunForCurrentContext();
+            void syncCurrentChatRunUI();
+            return;
+        }
+
+        const renderPage = messages => {
+            const parts = [];
+            const uiPanels = [];
+            for (const msg of messages) {
+                if (msg.role === 'user') {
+                    // 支持多模态历史消息（content 可能是 string 或 array）
+                    let textContent = '';
+                    let imagesHtml = '';
+                    if (typeof msg.content === 'string') {
+                        textContent = msg.content;
+                    } else if (Array.isArray(msg.content)) {
+                        for (const part of msg.content) {
+                            if (part.type === 'text') textContent = part.text || '';
+                            else if (part.type === 'image_url') {
+                                imagesHtml += `<img src="${part.image_url.url}" class="chat-inline-image">`;
+                            }
+                        }
+                    }
+                    parts.push(`
+                        <div class="flex justify-end">
+                            <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
+                                ${imagesHtml}${imagesHtml ? '<div style="margin-top:6px">' : ''}${RuntimePresentation.user(textContent || '('+t('image_placeholder')+')', msg)}${imagesHtml ? '</div>' : ''}
+                            </div>
+                        </div>`);
+                } else if (msg.role === 'tool') {
+                    const panel = parseConversationUiPanel(msg.content);
+                    if (panel) {
+                        const index = uiPanels.push(panel) - 1;
+                        parts.push(`<div data-ui-panel-index="${index}"></div>`);
+                        continue;
+                    }
+                    parts.push(`
+                        <div class="flex justify-start">
+                            <div class="bg-gray-100 border border-dashed border-gray-300 p-3 max-w-[85%] shadow-sm text-xs text-gray-500 rounded-lg">
+                                <div class="font-semibold text-gray-600 mb-1">🔧 ${t('tool_return')}: ${escapeHtml(msg.tool_name || '')}</div>
+                                ${RuntimePresentation.tool(renderToolPager(msg.content, { title: t('tool_full_output') }), msg.tool_name || '工具轨迹')}
+                            </div>
+                        </div>`);
+                } else {
+                    const toolCallsHtml = renderToolCallDetails(msg.tool_calls);
+                    parts.push(`
+                        <div class="flex justify-start">
+                            <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown" data-tts-ready="1">
+                                ${toolCallsHtml}${msg.content ? renderMarkdown(msg.content) : ''}
+                            </div>
+                        </div>`);
+                }
+            }
+            const template = document.createElement('template');
+            template.innerHTML = parts.join('');
+            const fragment = template.content;
+            fragment.querySelectorAll('[data-ui-panel-index]').forEach(node => {
+                node.replaceWith(createConversationUiPanel(uiPanels[Number(node.dataset.uiPanelIndex)]));
+            });
+            // 为历史 AI 消息添加朗读按钮
+            fragment.querySelectorAll('[data-tts-ready="1"]').forEach(div => {
+                div.removeAttribute('data-tts-ready');
+                const ttsBtn = createTtsButton(() => extractTtsTextFromElement(div));
+                div.appendChild(ttsBtn);
+            });
+            // 高亮代码块
+            highlightMarkdownIn(fragment);
+            return fragment;
+        };
+        chatBox.replaceChildren(renderPage(data.messages));
+        ClawcrossNativeSessions.attachHistoryPager({agentId:sessionId,container:chatBox,nextBefore:data.next_before,render:renderPage});
+        scrollChatToBottom(chatBox, { force: true });
+    } catch (e) {
+        if (stale()) return;
+        chatBox.innerHTML = `
+            <div class="text-xs text-red-400 text-center py-4">${t('history_error')}: ${e.message}</div>`;
+    }
+
+    if (_ocChatMode === 'internal') {
+        restoreActiveChatRunForCurrentContext();
+        void syncCurrentChatRunUI();
+        if (stale()) return;
+        ocInternalRepaintSessionPick();
+        scrollChatToBottom(chatBox, { force: true });
+    }
+}
+
+function ocSyncSessionSubrowsVisibility() {
+    // Legacy selects are state holders; the conversation rail is the visible picker.
+    renderStudioConversations();
+}
+
+async function refreshStudioConversations() {
+    if (!currentUserId) return;
+    if (_ocChatMode === 'acp') await acpLoadSessionsList();
+    else await loadSessionList();
+}
+
+function renderStudioConversations() {
+    const host = document.getElementById('studio-conversation-list');
+    if (!host) return;
+    window.StudioSidebar?.updatePlatform();
+    const mode = _ocChatMode;
+    const select = document.getElementById(mode === 'acp' ? 'oc-acp-session-pick' : 'oc-internal-session-pick');
+    const selected = mode === 'acp' ? acpResolveSessionName() : currentSessionId;
+    const options = [...(select?.options || [])].filter(option => option.value);
+    const agentMap = _cachedAgentMap || {};
+    const items = options.slice(0,5).map(option => ({
+        id: option.value,
+        title: option.dataset.conversationTitle ?? option.textContent,
+        agent: option.dataset.agentName || agentMap[option.value]?.name || '',
+    }));
+    host.replaceChildren();
+    for (const item of items) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'studio-conversation-item' + (item.id === selected ? ' is-active' : '');
+        button.dataset.sessionId = item.id;
+        button.title = [item.title, item.agent, item.id].filter(Boolean).join(' · ');
+        button.setAttribute('aria-current', item.id === selected ? 'true' : 'false');
+        const title = document.createElement('span');
+        title.className = 'studio-conversation-title';
+        title.textContent = item.agent || agentMap[item.id]?.name || (currentLang === 'zh-CN' ? '我的伙伴' : 'My companion');
+        const detail = document.createElement('small');
+        detail.className = 'studio-conversation-agent';
+        detail.textContent = item.title && item.title !== item.agent ? item.title : ('#' + item.id.slice(-6));
+        button.append(title, detail);
+        button.onclick = async () => {
+            if (mode !== _ocChatMode) return;
+            if (mode === 'internal') await openAgentSession(item.id);
+            else {
+                select.value = item.id;
+                acpOnSessionPickChange();
+            }
+            renderStudioConversations();
+            if (window.matchMedia('(max-width: 768px)').matches) document.querySelector('.studio-conversation-switcher').open = false;
+        };
+        const row=document.createElement('div');row.className='studio-conversation-row';row.append(button);
+        if(window.StudioSidebar)row.append(StudioSidebar.actions(item.id,item.agent || item.title));
+        host.appendChild(row);
+    }
+    if (!items.length) {
+        const empty = document.createElement('p');
+        empty.className = 'studio-conversation-empty';
+        empty.textContent = t('studio_history_empty');
+        host.appendChild(empty);
+    }
+    const create = document.getElementById('studio-new-conversation');
+    if (create) create.title = t('studio_new_conversation');
+    if(new URLSearchParams(location.search).get('embedded')!=='1'||document.documentElement.classList.contains('studio-agents-visible'))renderStudioTeamTree();
+}
+
+async function renderStudioTeamTree(force = false) {
+    const host = document.getElementById('studio-team-agent-tree-list');
+    if (!host || host.dataset.loading === '1' || (host.dataset.loaded === '1' && Date.now()-Number(host.dataset.loadedAt||0)<30000 && !force)) return;
+    host.dataset.loading = '1';
+    try {
+        const [response, agentResponse] = await Promise.all([agentApi('GET', '/v1/teams'), agentApi('GET', '/v1/agents')]);
+        const teams = response.data || [];
+        const allAgents = (agentResponse.data || []).filter(agent=>!agent.archived && !agent.settings?.archived);
+        const expanded = new Map([...host.querySelectorAll('.studio-team-node')].map(node=>[node.dataset.team,node.open]));
+        host.replaceChildren();
+        const addTeam = (teamName, memberRows, fixed = false) => {
+            const details = document.createElement('details');
+            details.className = 'studio-team-node' + (fixed ? ' is-default-team' : '');
+            details.dataset.team = fixed ? '__default__' : teamName;
+            details.open = expanded.get(details.dataset.team) || false;
+            const summary = document.createElement('summary');
+            const label = document.createElement('span'); label.textContent = teamName; summary.appendChild(label);
+            const badge = document.createElement('small'); badge.className = 'studio-team-kind';
+            badge.textContent = fixed ? (currentLang === 'en' ? 'Personal' : '个人总览') : String(memberRows.length);
+            summary.appendChild(badge);
+            if (fixed) summary.title = currentLang === 'en' ? 'A fixed overview of your Agents, not a project team' : '用户 Agent 的固定总览，不是项目团队';
+            details.appendChild(summary);
+            const members = document.createElement('div'); members.className = 'studio-team-members';
+            if (!fixed) {
+                const info = document.createElement('button');info.type='button';info.className='studio-team-info';
+                info.textContent=currentLang === 'en' ? 'Team introduction' : 'Team 介绍';
+                info.onclick=()=>GroupNetworkUI.teamInfo(teamName);members.appendChild(info);
+            }
+            for (const member of memberRows) {
+                const agent = member.agent || {};
+                if(agent.archived || agent.settings?.archived) continue;
+                const button = document.createElement('button');
+                button.type = 'button'; button.className = 'studio-team-agent';
+                const mark=document.createElement('span');mark.className='studio-member-dot';mark.textContent='·';button.append(mark,document.createTextNode(' '+(agent.name || agent.agent_id || member.role || 'Agent')));
+                button.title = `${agent.name || ''} · ${agent.platform || 'webot'}`;
+                button.onclick = async () => {
+                    if (agent.platform && agent.platform !== 'webot') {
+                        const platform = String(agent.platform).toLowerCase();
+                        if (agent.location?.kind==='ssh' && !_acpToolsCache.includes(platform)) _acpToolsCache.push(platform);
+                        if (!_acpToolsCache.includes(platform)) {
+                            acpSetSessionStatus(currentLang === 'zh-CN' ? `当前未安装或未启用 ${platform} ACP` : `${platform} ACP is unavailable`, 'error');
+                            return;
+                        }
+                        await ocSwitchTo('acp', platform);
+                        document.getElementById('oc-acp-session-pick').value = '';
+                        document.getElementById('oc-acp-session-name').value = agent.agent_id;
+                        acpNotifySessionContextChanged();
+                    } else await openAgentSession(agent.agent_id);
+                };
+                members.appendChild(button);
+            }
+            details.appendChild(members); host.appendChild(details);
+        };
+        const virtualDefault = teams.find(team => team.is_default || team.kind === 'user_space' || team.team === '__default__');
+        const assigned = new Set();
+        for (const team of teams) {
+            if (team === virtualDefault) continue;
+            for (const member of team.members || []) assigned.add(member.agent?.agent_id);
+        }
+        const defaultMembers = virtualDefault?.members || allAgents.filter(agent => !assigned.has(agent.agent_id)).map(agent => ({agent}));
+        addTeam(currentLang === 'zh-CN' ? '用户空间' : 'User space', defaultMembers, true);
+        for (const team of teams) if (team !== virtualDefault) addTeam(team.team, team.members || []);
+        host.dataset.loaded = '1';
+        host.dataset.loadedAt = String(Date.now());
+    } catch (error) {
+        host.textContent = error.message || String(error);
+        host.dataset.loaded = '0';
+    } finally { host.dataset.loading = '0'; }
+}
+
+async function studioNewConversation() {
+    const button = document.getElementById('studio-new-conversation');
+    if (button) button.disabled = true;
+    try {
+        if (_ocChatMode === 'internal') await ocInternalQuickNewSession();
+        else if (_ocChatMode === 'acp') {
+            // A fresh explicit identity cannot accidentally resume the previously selected session.
+            const id = _acpTool + '-' + generateSessionId();
+            const pick = document.getElementById('oc-acp-session-pick');
+            pick.value = '';
+            localStorage.removeItem('clawcross_acp_session_pick_' + _acpTool);
+            document.getElementById('oc-acp-session-name').value = id;
+            localStorage.setItem('clawcross_acp_session_name_' + _acpTool, id);
+            acpNotifySessionContextChanged();
+        }
+    } finally {
+        renderStudioConversations();
+        if (button) button.disabled = false;
+    }
+}
+
+function ocInternalRepaintSessionPick() {
+    const sel = document.getElementById('oc-internal-session-pick');
+    if (!sel || _ocChatMode !== 'internal') return;
+    const agentMap = _cachedAgentMap || {};
+    let list = Array.isArray(_mergedSessionsCache) ? _mergedSessionsCache.filter(item => !(item.platform || agentMap[item.session_id]?.platform) || (item.platform || agentMap[item.session_id]?.platform) === 'webot') : [];
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const o0 = document.createElement('option');
+    o0.value = '';
+    o0.textContent = t('oc_acp_session_pick_none');
+    sel.appendChild(o0);
+    for (const s of list) {
+        if (!s.session_id) continue;
+        const opt = document.createElement('option');
+        opt.value = s.session_id;
+        opt.textContent = _resolveTitle(s.title, s.session_id, agentMap);
+        opt.dataset.conversationTitle = agentMap[s.session_id]?.title || s.title || '';
+        opt.dataset.agentName = s.agent_name || s.name || agentMap[s.session_id]?.name || '';
+        sel.appendChild(opt);
+    }
+    if (currentSessionId && Array.from(sel.options).some((o) => o.value === currentSessionId)) {
+        sel.value = currentSessionId;
+    } else if (prev && Array.from(sel.options).some((o) => o.value === prev)) {
+        sel.value = prev;
+    } else {
+        sel.value = '';
+    }
+    renderStudioConversations();
+}
+
+async function ocInternalQuickNewSession() {
+    if (_ocChatMode !== 'internal') return;
+    const newSid = generateSessionId();
+    await switchToSession(newSid, true, { quiet: true });
+    await loadSessionList();
+}
+
+// ===== 本机免密登录 =====
+function resolveLoginErrorMessage(payload) {
+    const errorCode = payload && typeof payload === 'object' ? payload.error_code : '';
+    if (errorCode === 'user_id_required') return t('login_username_required');
+    if (errorCode === 'password_required') return t('login_password_required');
+    if (errorCode === 'password_login_not_available') {
+        return t('login_error_password_login_unavailable', {
+            user_id: payload && payload.user_id ? payload.user_id : '',
+        });
+    }
+
+    const rawMessage = typeof payload === 'string'
+        ? payload
+        : (payload && (payload.detail || payload.error)) || '';
+    const normalized = String(rawMessage || '').trim();
+    if (!normalized) return t('login_error_failed');
+    if (/invalid server response/i.test(normalized)) return t('login_error_invalid_response');
+    if (/required/i.test(normalized) && /\bpassword\b/i.test(normalized)) return t('login_password_required');
+    if (/required/i.test(normalized) && /\b(user(?:name|_?id)?)\b/i.test(normalized)) return t('login_username_required');
+    return normalized;
+}
+
+function showLoginError(errorDiv, message) {
+    errorDiv.textContent = message;
+    errorDiv.classList.remove('hidden');
+}
+
+function _localLoginBannerDismissKey(userId = currentUserId) {
+    return userId ? `clawcross-local-login-banner-dismissed:${userId}` : '';
+}
+
+function _syncLocalLoginBannerDismissedState() {
+    const key = _localLoginBannerDismissKey();
+    localLoginBannerDismissed = key ? sessionStorage.getItem(key) === '1' : false;
+}
+
+function _projectUpdateBannerDismissKey(update = projectUpdateBannerState, userId = currentUserId) {
+    const latestCommit = update && (update.latest_commit || update.latest_short_commit || '');
+    return userId && latestCommit ? `clawcross-project-update-banner-dismissed:${userId}:${latestCommit}` : '';
+}
+
+function _syncProjectUpdateBannerDismissedState(update = projectUpdateBannerState) {
+    const key = _projectUpdateBannerDismissKey(update);
+    projectUpdateBannerDismissed = key ? sessionStorage.getItem(key) === '1' : false;
+}
+
+function _visibleBannerHeight(id) {
+    const el = document.getElementById(id);
+    if (!el || el.style.display === 'none') return 0;
+    return el.offsetHeight || 0;
+}
+
+function _topBannerOffset() {
+    const spacing = 12;
+    let total = 0;
+    for (const id of ['llm-warning-banner', 'project-update-banner']) {
+        const height = _visibleBannerHeight(id);
+        if (!height) continue;
+        total += height;
+    }
+    return total ? total + spacing : spacing;
+}
+
+function updateProjectUpdateBanner(update = projectUpdateBannerState) {
+    projectUpdateBannerState = update || null;
+    const banner = document.getElementById('project-update-banner');
+    const textEl = document.getElementById('project-update-banner-text');
+    if (!banner || !textEl) return;
+
+    _syncProjectUpdateBannerDismissedState(projectUpdateBannerState);
+    const shouldShow = Boolean(
+        currentUserId &&
+        projectUpdateBannerState &&
+        projectUpdateBannerState.has_update &&
+        !projectUpdateBannerDismissed
+    );
+    banner.style.display = shouldShow ? 'block' : 'none';
+    if (shouldShow) {
+        const latest = projectUpdateBannerState.latest_short_commit || projectUpdateBannerState.latest_commit || '?';
+        textEl.textContent = projectUpdateBannerState.dirty
+            ? t('project_update_banner_dirty', { latest })
+            : t('project_update_banner', { latest });
+    }
+    updateLocalLoginBanner();
+}
+
+function dismissProjectUpdateBanner() {
+    projectUpdateBannerDismissed = true;
+    const key = _projectUpdateBannerDismissKey();
+    if (key) sessionStorage.setItem(key, '1');
+    updateProjectUpdateBanner(projectUpdateBannerState);
+}
+
+async function autoCheckProjectUpdate(refreshRemote = true) {
+    if (!currentUserId) {
+        updateProjectUpdateBanner(null);
+        return null;
+    }
+    try {
+        const update = await _fetchProjectUpdate('/proxy_update_check', {
+            refresh_remote: !!refreshRemote,
+        });
+        _renderProjectUpdateSummary(update);
+        return update;
+    } catch (err) {
+        console.warn('Auto update check failed:', err);
+        return null;
+    }
+}
+
+function updateLocalLoginBanner() {
+    const banner = document.getElementById('local-login-banner');
+    const titleEl = document.getElementById('local-login-banner-title');
+    const textEl = document.getElementById('local-login-banner-text');
+    const actionEl = document.getElementById('local-login-banner-action');
+    if (!banner || !titleEl || !textEl || !actionEl) return;
+
+    const shouldShow = Boolean(
+        currentUserId &&
+        currentLoginMode === 'local_no_password' &&
+        !currentUserHasPassword &&
+        !localLoginBannerDismissed
+    );
+    banner.style.display = shouldShow ? 'flex' : 'none';
+    if (!shouldShow) return;
+
+    titleEl.textContent = t('local_login_banner_title');
+    textEl.textContent = t('local_login_banner_body', { user_id: currentUserId });
+    actionEl.textContent = t('local_login_banner_action');
+
+    const llmBanner = document.getElementById('llm-warning-banner');
+    const llmVisible = llmBanner && llmBanner.style.display !== 'none';
+    const topOffset = llmVisible || _visibleBannerHeight('project-update-banner') ? _topBannerOffset() : 12;
+    banner.style.top = `${topOffset}px`;
+}
+
+function dismissLocalLoginBanner(remember = true) {
+    localLoginBannerDismissed = true;
+    if (remember) {
+        const key = _localLoginBannerDismissKey();
+        if (key) sessionStorage.setItem(key, '1');
+    }
+    updateLocalLoginBanner();
+}
+
+function _setLlmWarningBannerVisible(visible) {
+    const banner = document.getElementById('llm-warning-banner');
+    if (banner) {
+        banner.style.display = visible ? 'block' : 'none';
+    }
+    updateLocalLoginBanner();
+}
+
+async function refreshLlmBannerFromSetupStatus() {
+    try {
+        const response = await fetch('/api/setup_status');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const status = await response.json();
+        window._setupStatus = status;
+        _setLlmWarningBannerVisible(!status.llm_configured);
+        return status;
+    } catch (error) {
+        try {
+            const fallbackResponse = await fetch('/api/llm_config_status');
+            if (!fallbackResponse.ok) throw new Error(`HTTP ${fallbackResponse.status}`);
+            const fallback = await fallbackResponse.json();
+            _setLlmWarningBannerVisible(!fallback.configured);
+            return null;
+        } catch (_fallbackError) {
+            return null;
+        }
+    }
+}
+
+async function openSettingsToPassword() {
+    await openSettings({ focus: 'user-password' });
+    const statusEl = document.getElementById('settings-user-password-inline-status');
+    if (statusEl) {
+        statusEl.textContent = t('settings_user_password_opened');
+        statusEl.className = 'settings-inline-status';
+    }
+}
+
+async function handleLocalLogin() {
+    const nameInput = document.getElementById('username-input');
+    const errorDiv = document.getElementById('login-error');
+    const localLoginBtn = document.getElementById('local-login-btn');
+    const name = nameInput.value.trim();
+
+    errorDiv.classList.add('hidden');
+
+    if (!name) {
+        showLoginError(errorDiv, t('login_username_required'));
+        nameInput.focus();
+        return;
+    }
+
+    if (!/^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$/.test(name)) {
+        showLoginError(errorDiv, t('login_error_invalid'));
+        return;
+    }
+
+    localLoginBtn.disabled = true;
+    localLoginBtn.textContent = t('login_verifying');
+    showPageLoading();
+
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        const resp = await fetch("/proxy_login", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: name, password: "" }),
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+        let data;
+        try { data = await resp.json(); } catch (_) { data = { error: 'Invalid server response' }; }
+        if (!resp.ok) {
+            showLoginError(errorDiv, resolveLoginErrorMessage(data));
+            return;
+        }
+
+        currentUserId = name;
+        currentUserHasPassword = Boolean(data && data.has_password);
+        currentLoginMode = data && data.mode ? data.mode : 'local_no_password';
+        _syncLocalLoginBannerDismissedState();
+
+        // Check if we should redirect to another page (e.g. group_chat)
+        if (checkRedirectAfterLogin()) return;
+
+        document.getElementById('uid-display').textContent = 'UID: ' + name;
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('chat-screen').style.display = 'flex';
+        await initSession();
+        document.getElementById('user-input').focus();
+        loadTools();
+        refreshOasisTopics();
+        startHistoryPolling();
+        await applyStudioInitialTabAfterAuth();
+        updateLocalLoginBanner();
+        // Show setup wizard if LLM not configured
+        _checkAndShowSetupWizard();
+        void autoCheckProjectUpdate(true);
+    } catch (e) {
+        if (e.name === 'AbortError') {
+            showLoginError(errorDiv, t('login_error_timeout'));
+        } else {
+            showLoginError(errorDiv, t('login_error_network') + ': ' + e.message);
+        }
+    } finally {
+        localLoginBtn.disabled = false;
+        localLoginBtn.textContent = t('local_login_btn') || '本机免密登录';
+        hidePageLoading();
+    }
+}
+
+// ===== 登录逻辑 =====
+async function handleLogin() {
+    const nameInput = document.getElementById('username-input');
+    const pwInput = document.getElementById('password-input');
+    const errorDiv = document.getElementById('login-error');
+    const loginBtn = document.getElementById('login-btn');
+    const name = nameInput.value.trim();
+    const password = pwInput.value;
+
+    errorDiv.classList.add('hidden');
+
+    if (!name) {
+        showLoginError(errorDiv, t('login_username_required'));
+        nameInput.focus();
+        return;
+    }
+    if (!password) {
+        showLoginError(errorDiv, t('login_password_required'));
+        pwInput.focus();
+        return;
+    }
+
+    if (!/^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$/.test(name)) {
+        showLoginError(errorDiv, t('login_error_invalid'));
+        return;
+    }
+
+    loginBtn.disabled = true;
+    loginBtn.textContent = t('login_verifying');
+    showPageLoading();
+
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        const resp = await fetch("/proxy_login", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: name, password: password }),
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+        let data;
+        try { data = await resp.json(); } catch (_) { data = { error: 'Invalid server response' }; }
+        if (!resp.ok) {
+            showLoginError(errorDiv, resolveLoginErrorMessage(data));
+            return;
+        }
+
+        currentUserId = name;
+        currentUserHasPassword = Boolean(data && data.has_password);
+        currentLoginMode = data && data.mode ? data.mode : 'password';
+        _syncLocalLoginBannerDismissedState();
+        // Auth is managed by server-side session + cookie, no sessionStorage needed
+
+        // Check if we should redirect to another page (e.g. group_chat)
+        if (checkRedirectAfterLogin()) return;
+
+        document.getElementById('uid-display').textContent = 'UID: ' + name;
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('chat-screen').style.display = 'flex';
+        await initSession();
+        document.getElementById('user-input').focus();
+        loadTools();
+        refreshOasisTopics(); // Load OASIS topics after login
+        startHistoryPolling();
+        await applyStudioInitialTabAfterAuth();
+        updateLocalLoginBanner();
+        // Show setup wizard if LLM not configured
+        _checkAndShowSetupWizard();
+        void autoCheckProjectUpdate(true);
+    } catch (e) {
+        if (e.name === 'AbortError') {
+            showLoginError(errorDiv, t('login_error_timeout'));
+        } else {
+            showLoginError(errorDiv, t('login_error_network') + ': ' + e.message);
+        }
+    } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = t('login_btn');
+        hidePageLoading();
+    }
+}
+
+// ===================== Settings Modal =====================
+// 预定义分组：已知 key 归入对应分组，其余自动归入"其他"
+const SETTINGS_GROUPS_ORDERED = [
+    { id: 'llm', label: 'settings_group_llm', keys: ['LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL', 'LLM_PROVIDER', 'LLM_VISION_SUPPORT'] },
+    { id: 'tts', label: 'settings_group_tts', keys: ['TTS_MODEL', 'TTS_VOICE', 'STT_MODEL'] },
+    { id: 'oasis', label: 'settings_group_oasis', keys: ['OASIS_BASE_URL'] },
+    { id: 'ports', label: 'settings_group_ports', keys: ['PORT_AGENT', 'PORT_SCHEDULER', 'PORT_OASIS', 'PORT_FRONTEND', 'PORT_BARK'] },
+    { id: 'network', label: 'settings_group_network', keys: ['PUBLIC_DOMAIN', 'BARK_PUBLIC_URL'] },
+    { id: 'bots', label: 'settings_group_bots', keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT'] },
+    { id: 'comm', label: 'settings_group_comm', keys: ['OPENAI_STANDARD_MODE'] },
+    { id: 'exec', label: 'settings_group_exec', keys: ['ALLOWED_COMMANDS', 'EXEC_TIMEOUT', 'MAX_OUTPUT_LENGTH'] },
+
+    { id: 'security', label: 'settings_group_security', keys: ['INTERNAL_TOKEN'] },
+];
+
+const SETTINGS_GROUP_HELP_KEYS = {
+    tts: 'settings_help_audio_group',
+    tinyfish: 'settings_help_tinyfish_group',
+    bots: 'settings_help_bots_group',
+};
+
+const SETTINGS_FIELD_HELP_KEYS = {
+    TTS_MODEL: 'settings_help_tts_model',
+    TTS_VOICE: 'settings_help_tts_voice',
+    STT_MODEL: 'settings_help_stt_model',
+    TINYFISH_API_KEY: 'settings_help_tinyfish_api_key',
+    TINYFISH_BASE_URL: 'settings_help_tinyfish_base_url',
+    TINYFISH_MONITOR_DB_PATH: 'settings_help_tinyfish_db_path',
+    TINYFISH_MONITOR_TARGETS_PATH: 'settings_help_tinyfish_targets_path',
+    TINYFISH_MONITOR_ENABLED: 'settings_help_tinyfish_enabled',
+    TINYFISH_MONITOR_CRON: 'settings_help_tinyfish_cron',
+    TELEGRAM_BOTS: 'settings_help_telegram_bots',
+    QQ_BOTS: 'settings_help_qq_bots',
+    WHITELIST_FILE: 'settings_help_whitelist_file',
+};
+
+const RESTART_REQUIRED_SETTING_KEYS = new Set([
+    'LLM_API_KEY',
+    'LLM_BASE_URL',
+    'LLM_MODEL',
+    'LLM_PROVIDER',
+    'LLM_VISION_SUPPORT',
+    'NONEBOT_ADAPTERS',
+    'NONEBOT_HOST',
+    'NONEBOT_PORT',
+    'WHITELIST_FILE',
+    'TELEGRAM_BOTS',
+    'QQ_BOTS',
+    'QQ_IS_SANDBOX',
+    'WECLAW_ENABLED',
+    'WECLAW_BIN',
+    'WECLAW_USERNAME',
+    'WECLAW_CONFIG',
+    'WECLAW_PROXY_HOST',
+    'WECLAW_PROXY_PORT',
+]);
+const RESTART_NOTICE_STORAGE_KEY = 'clawcross_restart_notice';
+const RESTART_POLL_INTERVAL_MS = 2000;
+const RESTART_POLL_MAX_MS = 45000;
+
+let _settingsCache = {};
+let _settingsFocusTarget = '';
+let _restartPollTimer = null;
+
+function _isMaskedSettingsSecretValue(value) {
+    return typeof value === 'string' && value.includes('****');
+}
+
+function _getSettingsInputValueAndPlaceholder(value, fallbackPlaceholder, isPassword) {
+    if (isPassword && _isMaskedSettingsSecretValue(value)) {
+        return {
+            value: '',
+            placeholder: t('settings_secret_saved_placeholder', { mask: value }),
+        };
+    }
+    return {
+        value: value || '',
+        placeholder: fallbackPlaceholder,
+    };
+}
+
+function _formatRestartRequiredHint(updatedKeys) {
+    const keys = Array.isArray(updatedKeys)
+        ? updatedKeys.filter((key) => RESTART_REQUIRED_SETTING_KEYS.has(key))
+        : [];
+    if (!keys.length) return '';
+    return `\n⚠️ 这些配置需要重启后生效：${keys.join(', ')}`;
+}
+
+function _storeRestartPending() {
+    try {
+        sessionStorage.setItem(RESTART_NOTICE_STORAGE_KEY, JSON.stringify({ startedAt: Date.now() }));
+    } catch (_) {}
+}
+
+function _clearRestartPending() {
+    try {
+        sessionStorage.removeItem(RESTART_NOTICE_STORAGE_KEY);
+    } catch (_) {}
+}
+
+function _showRestartCompletedNotice() {
+    appendMessage('✅ 重启完成', false);
+}
+
+function _startRestartRecoveryPolling() {
+    if (_restartPollTimer) {
+        clearInterval(_restartPollTimer);
+        _restartPollTimer = null;
+    }
+    const startedAt = Date.now();
+    _restartPollTimer = setInterval(async () => {
+        if (Date.now() - startedAt > RESTART_POLL_MAX_MS) {
+            clearInterval(_restartPollTimer);
+            _restartPollTimer = null;
+            return;
+        }
+        try {
+            const resp = await fetch('/proxy_tunnel/status', { cache: 'no-store' });
+            if (!resp.ok) return;
+            await resp.json();
+            clearInterval(_restartPollTimer);
+            _restartPollTimer = null;
+            _clearRestartPending();
+            _showRestartCompletedNotice();
+        } catch (_) {
+            // Still restarting.
+        }
+    }, RESTART_POLL_INTERVAL_MS);
+}
+
+function _resumePendingRestartNotice() {
+    let pending = null;
+    try {
+        pending = JSON.parse(sessionStorage.getItem(RESTART_NOTICE_STORAGE_KEY) || 'null');
+    } catch (_) {
+        pending = null;
+    }
+    if (!pending) return;
+    _startRestartRecoveryPolling();
+}
+
+async function openSettings(options = {}) {
+    const modal = document.getElementById('settings-modal');
+    const body = document.getElementById('settings-body');
+    _settingsFocusTarget = options && options.focus ? String(options.focus) : '';
+    modal.style.display = 'flex';
+    ClawcrossSettings.loading(body,currentLang);
+    try {
+        const r = await fetch('/proxy_settings_full');
+        const data = await r.json();
+        if (data.error || !data.settings) throw new Error(data.error || 'unknown');
+        _settingsCache = data.settings;
+        renderSettings(data.settings);
+    } catch (e) {
+        body.innerHTML = `<div class="settings-error" role="alert"><p>${t('settings_load_fail')}: ${escapeHtml(e.message)}</p><button type="button" onclick="openSettings()">${currentLang==='zh-CN'?'重试':'Retry'}</button></div>`;
+    }
+}
+
+function renderSettings(settings) {
+    const body = document.getElementById('settings-body');
+    let html = `<div class="settings-hint">${t('settings_restart_hint')}</div>`;
+    html += _renderCurrentUserPasswordCard();
+    html += '<div id="configuration-assistant" data-settings-category="advanced"></div>';
+
+    html += `<div class="settings-group" id="settings-external-agents" data-settings-category="integrations"><div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">外部 Agent <span class="settings-chevron">▼</span></div><div class="settings-group-body">${componentSettingsMarkup('agents')}</div></div>`;
+
+    html += ClawcrossSettings.publicAccessMarkup(currentLang, componentControlMarkup('cloudflared'));
+
+    // Collect all keys from settings
+    const allKeys = Object.keys(settings).filter(key=>!key.startsWith('TINYFISH_'));
+    const usedKeys = new Set();
+
+    // Render predefined groups
+    for (const group of SETTINGS_GROUPS_ORDERED) {
+        const groupKeys = group.keys.filter(k => {
+            usedKeys.add(k); return true;
+        });
+        if (group.id === 'llm') {
+            html += _renderLlmGroup(settings);
+        } else if (group.id === 'bots') {
+            html += `<div data-settings-category="channels"><div id="channel-setup-settings"></div>${componentSettingsMarkup('channels')}<details class="settings-group"><summary style="padding:16px;cursor:pointer;">${currentLang === 'zh-CN' ? '高级连接参数与原始配置' : 'Advanced connection settings'}</summary>${_renderGroup({title:t(group.label),id:group.id}, groupKeys, settings)}</details></div>`;
+        } else if (group.id === 'tinyfish') {
+            html += _renderTinyfishGroup(settings);
+        } else {
+            html += _renderGroup({
+                title: t(group.label),
+                id: group.id,
+                help: SETTINGS_GROUP_HELP_KEYS[group.id] ? t(SETTINGS_GROUP_HELP_KEYS[group.id]) : '',
+            }, groupKeys, settings);
+        }
+    }
+
+    // Collect remaining keys not in any group → "其他"
+    const otherKeys = allKeys.filter(k => !usedKeys.has(k));
+    if (otherKeys.length > 0) {
+        html += _renderGroup({ title: t('settings_group_other') }, otherKeys, settings);
+    }
+
+    body.innerHTML = html;
+    ClawcrossSettings.mount(body, currentLang);
+    void ClawcrossChannelSetup.mount(document.getElementById('configuration-assistant'), {general: true, sessionId: currentSessionId || 'settings'});
+    void ClawcrossChannelSetup.mount(document.getElementById('channel-setup-settings'));
+    initComponentControls(body);
+    _refreshTunnelStatus();
+    _initSettingsLlmGroup(settings);
+    refreshTinyfishMonitorPanel(true);
+    _applySettingsFocusTarget();
+}
+
+function _renderCurrentUserPasswordCard() {
+    if (!currentUserId) return '';
+    const statusText = currentUserHasPassword
+        ? t('settings_user_password_status_set')
+        : t('settings_user_password_status_missing');
+    const hintText = t(
+        currentLoginMode === 'local_no_password'
+            ? 'settings_user_password_hint_local'
+            : 'settings_user_password_hint_general',
+        { user_id: currentUserId }
+    );
+    return `
+        <div class="settings-group" id="settings-user-password-section" data-settings-category="account" data-settings-focus="user-password">
+            <div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('settings_user_password_title')} <span class="settings-chevron">▼</span></div>
+            <div class="settings-group-body">
+                <div class="settings-user-password-card">
+                    <div class="settings-user-password-topline">
+                        <div class="settings-label">${escapeHtml(currentUserId)}</div>
+                        <span id="settings-user-password-badge" class="settings-user-password-badge">${escapeHtml(statusText)}</span>
+                    </div>
+                    <div class="settings-user-password-help">${escapeHtml(hintText)}</div>
+                    <div class="settings-field">
+                        <label class="settings-label">${t('settings_user_password_field')}</label>
+                        <input id="settings-user-password" class="settings-input" type="password" placeholder="${escapeHtml(t('settings_user_password_placeholder'))}" autocomplete="new-password" />
+                    </div>
+                    <div class="settings-field">
+                        <label class="settings-label">${t('settings_user_password_confirm_field')}</label>
+                        <input id="settings-user-password-confirm" class="settings-input" type="password" placeholder="${escapeHtml(t('settings_user_password_confirm_placeholder'))}" autocomplete="new-password" />
+                    </div>
+                    <div class="settings-user-password-actions">
+                        <button id="settings-user-password-save-btn" class="settings-btn settings-btn-save" type="button" onclick="saveCurrentUserPassword()">${t('settings_user_password_save')}</button>
+                        <div id="settings-user-password-inline-status" class="settings-inline-status"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function _applySettingsFocusTarget() {
+    if (!_settingsFocusTarget) return;
+    const target = document.querySelector(`[data-settings-focus="${_settingsFocusTarget}"]`);
+    _settingsFocusTarget = '';
+    if (!target) return;
+    requestAnimationFrame(() => {
+        ClawcrossSettings.reveal(target);
+        target.classList.remove('collapsed');
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const input = target.querySelector('input, textarea, select, button');
+        if (input) input.focus();
+    });
+}
+
+/** 渲染 LLM 配置组（Provider 下拉 + API Key + Base URL + Model 检测下拉） */
+function _renderLlmGroup(settings) {
+    const curProvider = settings['LLM_PROVIDER'] || '';
+    const curKey = settings['LLM_API_KEY'] || '';
+    const curUrl = settings['LLM_BASE_URL'] || '';
+    const curModel = settings['LLM_MODEL'] || '';
+    const curVision = settings['LLM_VISION_SUPPORT'] || '';
+    const apiKeyInputState = _getSettingsInputValueAndPlaceholder(curKey, 'API Key', true);
+    const renderActionButton = (id, labelKey, subtitleId, onclick) => `
+        <button id="${id}" onclick="${onclick}" style="width:100%;padding:11px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;color:#111827;font-size:14px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s;" onmouseover="if(!this.disabled)this.style.background='#f9fafb'" onmouseout="if(!this.disabled)this.style.background='#fff'">
+            ${t(labelKey)}
+            <span id="${subtitleId}" style="display:block;font-size:11px;font-weight:400;color:#6b7280;margin-top:2px;">${t('loading')}</span>
+        </button>
+    `;
+
+    let html = `<div class="settings-group" data-settings-category="models">`;
+    html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('settings_group_llm')} <span class="settings-chevron">▼</span></div>`;
+    html += `<div class="settings-group-body">`;
+
+    html += `<div style="margin-bottom:12px;padding:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;">`;
+    html += `<div style="font-size:12px;font-weight:700;color:#6b7280;margin-bottom:8px;">${t('settings_llm_sync_title')}</div>`;
+    html += `<div style="display:flex;flex-direction:column;gap:8px;">`;
+    html += renderActionButton('settings-import-openclaw-btn', 'settings_openclaw_import', 'settings-openclaw-import-subtitle', 'settingsImportOpenClaw()');
+    html += renderActionButton('settings-use-antigravity-btn', 'settings_antigravity_apply', 'settings-antigravity-subtitle', 'settingsUseAntigravity()');
+    html += `</div>`;
+    html += `<div id="settings-llm-sync-status" style="margin-top:6px;font-size:11px;color:#6b7280;"></div>`;
+    html += `</div>`;
+
+    // Provider dropdown
+    html += `<div class="settings-field">`;
+    html += `<label class="settings-label">LLM_PROVIDER</label>`;
+    html += `<select class="settings-input" data-key="LLM_PROVIDER" id="settings-llm-provider" onchange="settingsLlmProviderChanged()">`;
+    const providers = [
+        { val: '', label: '-- 自动推断 --' },
+        { val: 'deepseek', label: 'DeepSeek' },
+        { val: 'openai', label: 'OpenAI' },
+        { val: 'google', label: 'Gemini (Google)' },
+        { val: 'anthropic', label: 'Claude (Anthropic)' },
+        { val: 'antigravity', label: 'Antigravity (免费·Google One Pro)' },
+        { val: 'minimax', label: 'MiniMax' },
+        { val: 'openrouter', label: 'OpenRouter' },
+        { val: 'groq', label: 'Groq' },
+        { val: 'xai', label: 'xAI Grok' },
+        { val: 'mistral', label: 'Mistral' },
+        { val: 'perplexity', label: 'Perplexity' },
+        { val: 'together', label: 'Together AI' },
+        { val: 'fireworks', label: 'Fireworks' },
+        { val: 'deepinfra', label: 'DeepInfra' },
+        { val: 'cerebras', label: 'Cerebras' },
+        { val: 'cohere', label: 'Cohere' },
+        { val: 'nvidia-nim', label: 'NVIDIA NIM' },
+        { val: 'novita', label: 'Novita' },
+        { val: 'vercel-gateway', label: 'Vercel AI Gateway' },
+        { val: 'ollama', label: 'Ollama (本地)' },
+    ];
+    for (const p of providers) {
+        html += `<option value="${p.val}"${curProvider === p.val ? ' selected' : ''}>${p.label}</option>`;
+    }
+    // If current provider isn't in the list, add it
+    if (curProvider && !providers.some(p => p.val === curProvider)) {
+        html += `<option value="${escapeHtml(curProvider)}" selected>${escapeHtml(curProvider)}</option>`;
+    }
+    html += `</select>`;
+    html += `</div>`;
+
+    // API Key
+    html += `<div class="settings-field">`;
+    html += `<label class="settings-label">LLM_API_KEY</label>`;
+    html += `<input class="settings-input" data-key="LLM_API_KEY" id="settings-llm-key" type="password" value="${escapeHtml(apiKeyInputState.value)}" placeholder="${escapeHtml(apiKeyInputState.placeholder)}" autocomplete="off" />`;
+    html += `</div>`;
+
+    // Base URL
+    html += `<div class="settings-field">`;
+    html += `<label class="settings-label">LLM_BASE_URL</label>`;
+    html += `<input class="settings-input" data-key="LLM_BASE_URL" id="settings-llm-url" type="text" value="${escapeHtml(curUrl)}" placeholder="https://api.deepseek.com" autocomplete="off" />`;
+    html += `</div>`;
+
+    // Model — datalist (manual input) + detect button
+    html += `<div class="settings-field">`;
+    html += `<label class="settings-label">LLM_MODEL</label>`;
+    html += `<div style="display:flex;gap:8px;align-items:center;">`;
+    html += `<input class="settings-input" data-key="LLM_MODEL" id="settings-llm-model" type="text" list="settings-llm-model-list" style="flex:1;" value="${escapeHtml(curModel)}" placeholder="（点击&quot;检测模型&quot;获取列表，或手动输入）" autocomplete="off" />`;
+    html += `<datalist id="settings-llm-model-list">`;
+    if (curModel) {
+        html += `<option value="${escapeHtml(curModel)}"></option>`;
+    }
+    html += `</datalist>`;
+    html += `<button id="settings-detect-models-btn" onclick="settingsDetectModels()" style="padding:7px 14px;border-radius:7px;border:none;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${currentLang === 'zh-CN' ? '检测模型' : 'Find models'}</button>`;
+    html += `</div>`;
+    html += `<div id="settings-detect-status" style="margin-top:4px;font-size:11px;color:#6b7280;"></div>`;
+    html += `</div>`;
+
+    // Vision support
+    html += `<div class="settings-field">`;
+    html += `<label class="settings-label" title="LLM_VISION_SUPPORT">LLM_VISION_SUPPORT</label>`;
+    html += `<input class="settings-input" data-key="LLM_VISION_SUPPORT" type="text" value="${escapeHtml(curVision)}" placeholder="留空自动推断" autocomplete="off" />`;
+    html += `</div>`;
+
+    html += `</div></div>`;
+    return html;
+}
+
+function _renderTinyfishGroup(settings) {
+    const keys = ['TINYFISH_API_KEY', 'TINYFISH_BASE_URL', 'TINYFISH_MONITOR_DB_PATH', 'TINYFISH_MONITOR_TARGETS_PATH', 'TINYFISH_MONITOR_ENABLED', 'TINYFISH_MONITOR_CRON'];
+    let html = `<div class="settings-group" id="settings-tinyfish-group" data-settings-category="integrations">`;
+    html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('settings_group_tinyfish')} <span class="settings-chevron">▼</span></div>`;
+    html += `<div class="settings-group-body">`;
+    html += `<div style="margin-bottom:12px;padding:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;">`;
+    html += `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">`;
+    html += `<button id="tinyfish-run-btn" onclick="tinyfishRunNow()" style="padding:7px 14px;border-radius:7px;border:none;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${t('settings_tinyfish_run_now')}</button>`;
+    html += `<button id="tinyfish-refresh-btn" onclick="refreshTinyfishMonitorPanel(true)" style="padding:7px 14px;border-radius:7px;border:1px solid #d1d5db;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${t('settings_tinyfish_refresh')}</button>`;
+    html += `</div>`;
+    html += `<div id="tinyfish-monitor-status" style="margin-top:8px;font-size:12px;color:#6b7280;">${t('settings_tinyfish_loading')}</div>`;
+    html += `<div id="tinyfish-monitor-summary" style="margin-top:8px;font-size:11px;line-height:1.5;color:#374151;"></div>`;
+    html += `<div id="tinyfish-monitor-runs"></div>`;
+    html += `<div id="tinyfish-monitor-sites"></div>`;
+    html += `<div id="tinyfish-monitor-changes"></div>`;
+    html += `</div>`;
+    for (const key of keys) {
+        const val = settings[key] || '';
+        const isPassword = /KEY|TOKEN|SECRET|PASSWORD/i.test(key);
+        const inputState = _getSettingsInputValueAndPlaceholder(val, key, isPassword);
+        const helpKey = SETTINGS_FIELD_HELP_KEYS[key];
+        const helpText = helpKey ? t(helpKey) : '';
+        html += `<div class="settings-field">`;
+        html += `<label class="settings-label" title="${key}">${key}</label>`;
+        html += `<input class="settings-input" data-key="${key}" type="${isPassword ? 'password' : 'text'}" value="${escapeHtml(inputState.value)}" placeholder="${escapeHtml(inputState.placeholder)}" autocomplete="off" />`;
+        if (helpText) {
+            html += `<div style="margin-top:5px;font-size:11px;line-height:1.5;color:#9ca3af;">${escapeHtml(helpText)}</div>`;
+        }
+        html += `</div>`;
+    }
+    html += `</div></div>`;
+    return html;
+}
+
+function _renderTinyfishList(title, itemsHtml) {
+    return `
+        <div style="margin-top:10px;">
+            <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">${escapeHtml(title)}</div>
+            <div style="display:flex;flex-direction:column;gap:6px;">${itemsHtml}</div>
+        </div>
+    `;
+}
+
+function _tinyfishCompactPath(pathValue) {
+    const raw = String(pathValue || '').trim();
+    if (!raw) return '-';
+    const normalized = raw.replace(/\\/g, '/');
+    const segments = normalized.split('/');
+    return segments[segments.length - 1] || raw;
+}
+
+function _tinyfishMetaChip(label, displayValue, titleValue = '') {
+    const display = displayValue || '-';
+    const title = titleValue || display;
+    return `
+        <span title="${escapeHtml(title)}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;background:#fff;border:1px solid #e5e7eb;color:#4b5563;max-width:100%;">
+            <strong style="font-size:10px;letter-spacing:0.02em;text-transform:uppercase;color:#6b7280;">${escapeHtml(label)}</strong>
+            <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(display)}</span>
+        </span>
+    `;
+}
+
+async function refreshTinyfishMonitorPanel(sync = true) {
+    const statusEl = document.getElementById('tinyfish-monitor-status');
+    const summaryEl = document.getElementById('tinyfish-monitor-summary');
+    const runsEl = document.getElementById('tinyfish-monitor-runs');
+    const sitesEl = document.getElementById('tinyfish-monitor-sites');
+    const changesEl = document.getElementById('tinyfish-monitor-changes');
+    if (!statusEl || !summaryEl || !runsEl || !sitesEl || !changesEl) return;
+
+    statusEl.textContent = t('settings_tinyfish_loading');
+    try {
+        const resp = await fetch(`/api/tinyfish/status${sync ? '?sync=1' : ''}`);
+        const data = await resp.json();
+        if (!resp.ok || data.ok === false) throw new Error(data.error || 'unknown');
+
+        const cfg = data.config || {};
+        const configured = cfg.api_key_configured && cfg.targets_path_exists;
+        statusEl.textContent = configured
+            ? `✅ TinyFish ready · pending ${data.pending_runs || 0}`
+            : `⚠️ ${t('settings_tinyfish_not_configured')}`;
+
+        const summaryChips = [
+            _tinyfishMetaChip('Base URL', cfg.base_url || '-', cfg.base_url || ''),
+            _tinyfishMetaChip(
+                'Targets',
+                `${_tinyfishCompactPath(cfg.targets_path || '-')} ${cfg.targets_path_exists ? '✅' : '⚠️'}`.trim(),
+                cfg.targets_path || ''
+            ),
+            _tinyfishMetaChip('DB', _tinyfishCompactPath(cfg.db_path || '-'), cfg.db_path || ''),
+        ];
+        if (cfg.cron && cfg.cron !== '-') {
+            summaryChips.push(_tinyfishMetaChip('Cron', cfg.cron, cfg.cron));
+        }
+        summaryEl.innerHTML = `
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">${summaryChips.join('')}</div>
+            ${data.targets_error ? `<div style="margin-top:8px;color:#b45309;">Targets Error: ${escapeHtml(data.targets_error)}</div>` : ''}
+        `;
+
+        const recentRuns = (data.recent_runs || []).slice(0, 5);
+        runsEl.innerHTML = recentRuns.length
+            ? _renderTinyfishList(
+                t('settings_tinyfish_recent_runs'),
+                recentRuns.map((run) => `
+                    <div style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
+                        <div style="font-size:12px;font-weight:600;color:#111827;">${escapeHtml(run.site_name || run.site_key || run.run_id)}</div>
+                        <div style="font-size:11px;color:#6b7280;margin-top:2px;">${escapeHtml(run.status || '-')} · ${escapeHtml(run.finished_at || run.started_at || run.submitted_at || '-')}</div>
+                    </div>
+                `).join('')
+            )
+            : '';
+
+        const siteCards = (data.sites || []).slice(0, 5);
+        sitesEl.innerHTML = siteCards.length
+            ? _renderTinyfishList(
+                t('settings_tinyfish_sites'),
+                siteCards.map((site) => `
+                    <div style="padding:10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;">
+                        <div style="font-size:12px;font-weight:700;color:#111827;">${escapeHtml(site.site_name || site.site_key)}</div>
+                        <div style="font-size:11px;color:#6b7280;margin-top:2px;">${escapeHtml(site.captured_at || '-')} · ${site.snapshot_count || 0} items</div>
+                        <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;">
+                            ${(site.snapshots || []).slice(0, 4).map((snap) => `
+                                <div style="font-size:12px;color:#374151;">
+                                    <strong>${escapeHtml(snap.item_name || snap.plan_name || snap.item_key)}</strong>
+                                    <span style="color:#6b7280;"> · ${escapeHtml(snap.amount_text || '-')} ${snap.billing_period ? `(${escapeHtml(snap.billing_period)})` : ''}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('')
+            )
+            : '';
+
+        const recentChanges = (data.recent_changes || []).slice(0, 8);
+        changesEl.innerHTML = recentChanges.length
+            ? _renderTinyfishList(
+                t('settings_tinyfish_changes'),
+                recentChanges.map((change) => `
+                    <div style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
+                        <div style="font-size:12px;font-weight:600;color:#111827;">${escapeHtml(change.site_key)} · ${escapeHtml(change.item_key)}</div>
+                        <div style="font-size:11px;color:#6b7280;margin-top:2px;">${escapeHtml(change.change_type)} · ${escapeHtml(change.previous_amount_text || '-')} → ${escapeHtml(change.current_amount_text || '-')}</div>
+                    </div>
+                `).join('')
+            )
+            : '';
+    } catch (e) {
+        statusEl.textContent = `❌ ${e.message}`;
+        summaryEl.innerHTML = '';
+        runsEl.innerHTML = '';
+        sitesEl.innerHTML = '';
+        changesEl.innerHTML = '';
+    }
+}
+
+async function tinyfishRunNow() {
+    const btn = document.getElementById('tinyfish-run-btn');
+    if (btn) btn.disabled = true;
+    try {
+        const resp = await fetch('/api/tinyfish/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wait: false }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.ok === false) throw new Error(data.error || 'unknown');
+        appendMessage(`${t('settings_tinyfish_run_submitted')}\n${(data.run_ids || []).join(', ')}`, false);
+        await refreshTinyfishMonitorPanel(false);
+    } catch (e) {
+        alert(`${t('settings_tinyfish_run_failed')}: ${e.message}`);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+const _SETTINGS_OPENCLAW_PROVIDER_MAP = {
+    openai: 'openai',
+    deepseek: 'deepseek',
+    google: 'google',
+    anthropic: 'anthropic',
+    antigravity: 'antigravity',
+    minimax: 'minimax',
+    ollama: 'ollama',
+};
+
+function _isLocalKeylessProvider(provider, baseUrl) {
+    const normalizedProvider = String(provider || '').trim().toLowerCase();
+    const normalizedBaseUrl = String(baseUrl || '').trim().toLowerCase();
+    if (normalizedProvider === 'ollama') return true;
+    return normalizedBaseUrl.includes('127.0.0.1:11434') || normalizedBaseUrl.includes('localhost:11434');
+}
+
+function _setSettingsActionButtonState(button, available) {
+    if (!button) return;
+    button.disabled = !available;
+    button.style.opacity = available ? '1' : '0.45';
+    button.style.cursor = available ? 'pointer' : 'not-allowed';
+}
+
+function _applySettingsImportedLlmConfig(data) {
+    const providerSel = document.getElementById('settings-llm-provider');
+    const keyInput = document.getElementById('settings-llm-key');
+    const urlInput = document.getElementById('settings-llm-url');
+    const modelInput = document.getElementById('settings-llm-model');
+    const modelDatalist = document.getElementById('settings-llm-model-list');
+
+    const providerValue = data.provider ? (_SETTINGS_OPENCLAW_PROVIDER_MAP[data.provider] || data.provider) : '';
+    if (providerSel && providerValue) {
+        const exists = Array.from(providerSel.options).some((option) => option.value === providerValue);
+        if (!exists) {
+            const opt = document.createElement('option');
+            opt.value = providerValue;
+            opt.textContent = providerValue;
+            providerSel.appendChild(opt);
+        }
+        providerSel.value = providerValue;
+    }
+    if (keyInput && data.api_key) {
+        keyInput.value = data.api_key;
+        keyInput.type = 'text';
+    }
+    if (urlInput && data.base_url) {
+        urlInput.value = data.base_url;
+    }
+    if (modelInput && data.model) {
+        modelInput.value = data.model;
+        if (modelDatalist) {
+            modelDatalist.innerHTML = '';
+            const opt = document.createElement('option');
+            opt.value = data.model;
+            opt.textContent = data.model;
+            modelDatalist.appendChild(opt);
+        }
+    }
+}
+
+function _collectSettingsLlmConfig() {
+    const providerEl = document.getElementById('settings-llm-provider');
+    const keyEl = document.getElementById('settings-llm-key');
+    const urlEl = document.getElementById('settings-llm-url');
+    const modelEl = document.getElementById('settings-llm-model');
+    return {
+        provider: providerEl ? providerEl.value.trim() : '',
+        api_key: keyEl ? keyEl.value.trim() : '',
+        base_url: urlEl ? urlEl.value.trim() : '',
+        model: modelEl ? modelEl.value.trim() : '',
+    };
+}
+
+function _collectSettingsLlmConfigForActions() {
+    const payload = _collectSettingsLlmConfig();
+    const cached = _settingsCache || {};
+    const readCached = (key) => (typeof cached[key] === 'string' ? cached[key].trim() : '');
+    return {
+        provider: payload.provider || readCached('LLM_PROVIDER'),
+        api_key: payload.api_key,
+        base_url: payload.base_url || readCached('LLM_BASE_URL'),
+        model: payload.model || readCached('LLM_MODEL'),
+        has_saved_api_key: Boolean(readCached('LLM_API_KEY')),
+    };
+}
+
+async function settingsImportOpenClaw() {
+    const btn = document.getElementById('settings-import-openclaw-btn');
+    const statusEl = document.getElementById('settings-llm-sync-status');
+    if (!btn || !statusEl) return;
+
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    statusEl.textContent = t('settings_openclaw_importing');
+
+    try {
+        const resp = await fetch('/api/import_openclaw_config');
+        const data = await resp.json();
+        if (!resp.ok || data.error) {
+            statusEl.textContent = '⚠️ ' + (data.error || 'Import failed');
+            return;
+        }
+
+        _applySettingsImportedLlmConfig(data);
+        statusEl.textContent = t('settings_openclaw_imported') + (data.model ? ` (${data.model})` : '') + t('settings_openclaw_detect_hint');
+        setTimeout(() => settingsDetectModels(), 300);
+    } catch (e) {
+        statusEl.textContent = '⚠️ ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+    }
+}
+
+async function settingsUseAntigravity() {
+    const btn = document.getElementById('settings-use-antigravity-btn');
+    const statusEl = document.getElementById('settings-llm-sync-status');
+    if (btn) {
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+    }
+    if (statusEl) {
+        statusEl.textContent = t('settings_antigravity_apply');
+    }
+
+    const providerSel = document.getElementById('settings-llm-provider');
+    if (providerSel) {
+        providerSel.value = 'antigravity';
+        settingsLlmProviderChanged();
+    }
+    if (statusEl) {
+        statusEl.textContent = t('settings_antigravity_applied');
+    }
+    setTimeout(() => {
+        settingsDetectModels();
+        if (btn) {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        }
+    }, 300);
+}
+
+/** Provider 切换时自动填充 Base URL */
+function settingsLlmProviderChanged() {
+    const provider = document.getElementById('settings-llm-provider').value;
+    const defaults = _WIZARD_PROVIDER_DEFAULTS[provider];
+    if (!defaults) return;
+
+    const urlInput = document.getElementById('settings-llm-url');
+    const keyInput = document.getElementById('settings-llm-key');
+
+    // Only auto-fill if field looks like a default/empty
+    const curUrl = urlInput.value.trim();
+    const isDefaultUrl = !curUrl || Object.values(_WIZARD_PROVIDER_DEFAULTS).some(d => d.base_url === curUrl);
+    if (isDefaultUrl && defaults.base_url) {
+        urlInput.value = defaults.base_url;
+    }
+
+    if (defaults.auto_key) {
+        keyInput.value = defaults.auto_key;
+        keyInput.type = 'text';
+    } else if (keyInput.value === 'sk-antigravity' || keyInput.value === 'ollama') {
+        keyInput.value = '';
+        keyInput.type = 'password';
+    }
+
+    // Reset model input/datalist
+    const modelInput = document.getElementById('settings-llm-model');
+    const modelDatalist = document.getElementById('settings-llm-model-list');
+    if (modelInput) modelInput.value = '';
+    if (modelDatalist) modelDatalist.innerHTML = '';
+    document.getElementById('settings-detect-status').textContent = '';
+}
+
+/** 检测模型按钮（复用 wizard 的 discover_models API） */
+async function settingsDetectModels() {
+    const llmConfig = _collectSettingsLlmConfigForActions();
+    const apiKey = llmConfig.api_key;
+    const baseUrl = llmConfig.base_url;
+    const statusEl = document.getElementById('settings-detect-status');
+    const modelInput = document.getElementById('settings-llm-model');
+    const modelDatalist = document.getElementById('settings-llm-model-list');
+    const detectBtn = document.getElementById('settings-detect-models-btn');
+    const provider = llmConfig.provider;
+    const isLocalKeyless = _isLocalKeylessProvider(provider, baseUrl);
+
+    if (!apiKey && !llmConfig.has_saved_api_key && !isLocalKeyless) { statusEl.textContent = '⚠️ 请先输入 API Key'; return; }
+    if (!baseUrl) { statusEl.textContent = '⚠️ 请先输入 Base URL'; return; }
+
+    const curModel = modelInput ? modelInput.value : '';
+    detectBtn.disabled = true;
+    detectBtn.textContent = '⏳ 检测中...';
+    statusEl.textContent = '正在连接 API...';
+
+    try {
+        const resp = await fetch('/api/discover_models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider, api_key: apiKey, base_url: baseUrl }),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+            statusEl.textContent = '❌ ' + (data.error || '检测失败') + (data.detail ? ': ' + data.detail : '');
+            return;
+        }
+
+        const models = data.models || [];
+        if (models.length === 0) {
+            statusEl.textContent = '⚠️ API 返回了空的模型列表';
+            return;
+        }
+
+        if (modelDatalist) {
+            modelDatalist.innerHTML = '';
+            for (const mid of models) {
+                const opt = document.createElement('option');
+                opt.value = mid;
+                opt.textContent = mid;
+                modelDatalist.appendChild(opt);
+            }
+        }
+        statusEl.textContent = `✅ 检测到 ${models.length} 个可用模型`;
+
+        // Auto-select: prefer current model, then smart defaults
+        if (modelInput && curModel && models.includes(curModel)) {
+            modelInput.value = curModel;
+        } else {
+            const preferredModels = {
+                deepseek: ['deepseek-chat', 'deepseek-coder'],
+                openai: ['gpt-4o', 'gpt-4.1', 'gpt-4-turbo'],
+                google: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+                anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'],
+                antigravity: ['gemini-2.5-pro', 'claude-sonnet-4-20250514', 'gpt-4o'],
+                minimax: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed'],
+            };
+            const preferred = preferredModels[provider] || [];
+            for (const pm of preferred) {
+                if (modelInput && models.includes(pm)) { modelInput.value = pm; break; }
+            }
+        }
+    } catch (e) {
+        statusEl.textContent = '❌ 网络错误: ' + e.message;
+    } finally {
+        detectBtn.disabled = false;
+        detectBtn.textContent = currentLang === 'zh-CN' ? '检测模型' : 'Find models';
+    }
+}
+
+/** Settings LLM 组初始化：根据当前 provider 设定 key 输入类型等 */
+function _initSettingsLlmGroup(settings) {
+    const provider = (settings || {})['LLM_PROVIDER'] || '';
+    const keyInput = document.getElementById('settings-llm-key');
+    if (keyInput && (provider === 'antigravity' || provider === 'ollama')) {
+        keyInput.type = 'text';
+    }
+    fetch('/api/setup_status').then((r) => r.json()).then((status) => {
+        const openclawImportBtn = document.getElementById('settings-import-openclaw-btn');
+        const antigravityBtn = document.getElementById('settings-use-antigravity-btn');
+        const openclawImportSub = document.getElementById('settings-openclaw-import-subtitle');
+        const antigravitySub = document.getElementById('settings-antigravity-subtitle');
+
+        const openclawAvailable = Boolean(status && status.openclaw_installed);
+        _setSettingsActionButtonState(openclawImportBtn, openclawAvailable);
+        if (openclawImportSub) {
+            openclawImportSub.textContent = t(openclawAvailable ? 'settings_openclaw_import_hint_ready' : 'settings_openclaw_import_hint_missing');
+        }
+
+        const antigravityAvailable = Boolean(status && status.antigravity_running);
+        _setSettingsActionButtonState(antigravityBtn, antigravityAvailable);
+        if (antigravitySub) {
+            antigravitySub.textContent = t(antigravityAvailable ? 'settings_antigravity_ready_subtitle' : 'settings_antigravity_missing_subtitle');
+        }
+    }).catch(() => {});
+}
+
+function _renderGroup(groupMeta, keys, settings) {
+    const title = typeof groupMeta === 'string' ? groupMeta : groupMeta.title;
+    const groupHelp = typeof groupMeta === 'string' ? '' : (groupMeta.help || '');
+    let html = `<div class="settings-group" data-settings-category="${ClawcrossSettings.categoryForGroup(groupMeta.id)}">`;
+    html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${title} <span class="settings-chevron">▼</span></div>`;
+    html += `<div class="settings-group-body">`;
+    if (groupHelp) {
+        html += `<div style="margin-bottom:10px;font-size:12px;line-height:1.5;color:#9ca3af;">${escapeHtml(groupHelp)}</div>`;
+    }
+    if (groupMeta.components) html += componentSettingsMarkup(groupMeta.components);
+    for (const key of keys) {
+        const val = settings[key] || '';
+        const isPassword = /KEY|TOKEN|SECRET|PASSWORD/i.test(key);
+        const inputState = _getSettingsInputValueAndPlaceholder(val, key, isPassword);
+        const helpKey = SETTINGS_FIELD_HELP_KEYS[key];
+        const helpText = helpKey ? t(helpKey) : '';
+        html += `<div class="settings-field">`;
+        html += `<label class="settings-label" title="${key}">${key}</label>`;
+        if (key.endsWith('_BOTS')) {
+            html += `<textarea class="settings-input" data-key="${key}" spellcheck="false" style="min-height:78px;font-family:monospace;resize:vertical;" placeholder="${escapeHtml(inputState.placeholder)}">${escapeHtml(inputState.value)}</textarea>`;
+        } else {
+            html += `<input class="settings-input" data-key="${key}" type="${isPassword ? 'password' : 'text'}" value="${escapeHtml(inputState.value)}" placeholder="${escapeHtml(inputState.placeholder)}" autocomplete="off" />`;
+        }
+        if (helpText) {
+            html += `<div style="margin-top:5px;font-size:11px;line-height:1.5;color:#9ca3af;">${escapeHtml(helpText)}</div>`;
+        }
+        html += `</div>`;
+    }
+    html += `</div></div>`;
+    return html;
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML.replace(/"/g, '&quot;');
+}
+
+const TOOL_PAGER_CHARS = 2000;
+let _toolPagerSeq = 0;
+const _toolPagerStore = {};
+
+function _toolPagerNormalizeContent(value) {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch (e) {
+        return String(value);
+    }
+}
+
+function _toolPagerSplitPages(value, pageChars = TOOL_PAGER_CHARS) {
+    const text = _toolPagerNormalizeContent(value);
+    if (!text) return [''];
+    const pages = [];
+    for (let i = 0; i < text.length; i += pageChars) {
+        pages.push(text.slice(i, i + pageChars));
+    }
+    return pages.length ? pages : [''];
+}
+
+function _toolPagerRegister(value) {
+    const key = `toolpager-${++_toolPagerSeq}`;
+    _toolPagerStore[key] = {
+        pages: _toolPagerSplitPages(value),
+        current: 0,
+    };
+    return key;
+}
+
+function _toolPagerLabel(current, total) {
+    return escapeHtml(t('tool_page_label', { current: current + 1, total }));
+}
+
+function renderToolPager(value, options = {}) {
+    const text = _toolPagerNormalizeContent(value);
+    const emptyText = options.emptyText || '';
+    if (!text && !emptyText) return '';
+    const key = _toolPagerRegister(text || emptyText);
+    const store = _toolPagerStore[key];
+    const total = store.pages.length;
+    const page = escapeHtml(store.pages[0] || '');
+    const title = options.title ? `<div style="font-weight:600;color:#4b5563;margin-bottom:6px;">${escapeHtml(options.title)}</div>` : '';
+    const pager = total > 1
+        ? `<div class="tool-pager-controls" style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                <button type="button" onclick="toolPagerPrev('${key}')" style="padding:2px 8px;border:1px solid #d1d5db;border-radius:6px;background:white;font-size:11px;color:#374151;">${escapeHtml(t('tool_page_prev'))}</button>
+                <span id="${key}-label" style="font-size:11px;color:#6b7280;">${_toolPagerLabel(0, total)}</span>
+                <button type="button" onclick="toolPagerNext('${key}')" style="padding:2px 8px;border:1px solid #d1d5db;border-radius:6px;background:white;font-size:11px;color:#374151;">${escapeHtml(t('tool_page_next'))}</button>
+           </div>`
+        : '';
+    return `<div class="tool-pager-block" style="margin-top:8px;">
+        ${title}
+        <pre id="${key}-content" class="whitespace-pre-wrap break-words" style="margin:0;max-height:360px;overflow:auto;">${page}</pre>
+        ${pager}
+    </div>`;
+}
+
+function toolPagerSetPage(key, nextIndex) {
+    const store = _toolPagerStore[key];
+    if (!store || !store.pages.length) return;
+    const total = store.pages.length;
+    const current = ((Number(nextIndex) % total) + total) % total;
+    store.current = current;
+    const contentEl = document.getElementById(`${key}-content`);
+    const labelEl = document.getElementById(`${key}-label`);
+    if (contentEl) contentEl.textContent = store.pages[current] || '';
+    if (labelEl) labelEl.innerHTML = _toolPagerLabel(current, total);
+}
+
+function toolPagerPrev(key) {
+    const store = _toolPagerStore[key];
+    if (!store) return;
+    toolPagerSetPage(key, store.current - 1);
+}
+
+function toolPagerNext(key) {
+    const store = _toolPagerStore[key];
+    if (!store) return;
+    toolPagerSetPage(key, store.current + 1);
+}
+
+function renderToolCallBadges(toolCalls) {
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) return '';
+    return toolCalls.map((tc) => {
+        const name = escapeHtml(tc && tc.name ? tc.name : '');
+        return `<span class="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded mr-1 mb-1">🔧 ${name}</span>`;
+    }).join('');
+}
+
+function renderToolCallDetails(toolCalls) {
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) return '';
+    const items = toolCalls.map((tc, idx) => {
+        const name = escapeHtml(tc && tc.name ? tc.name : '');
+        const args = tc && Object.prototype.hasOwnProperty.call(tc, 'args') ? tc.args : {};
+        return `<details style="margin-top:8px;border:1px solid #dbeafe;border-radius:10px;background:#f8fbff;">
+            <summary style="cursor:pointer;list-style:none;padding:10px 12px;font-size:12px;font-weight:600;color:#1d4ed8;">${escapeHtml(typeof toolDisplayName==='function'?toolDisplayName(tc?.name || ''):(tc?.name || 'Tool'))}</summary>
+            <div style="padding:0 12px 12px 12px;">${renderToolPager(args, { title: t('tool_call_args') })}</div>
+        </details>`;
+    }).join('');
+    return `<div class="tool-call-details">${items}</div>`;
+}
+
+function triggerBlobDownload(blob, filename) {
+    const safeName = String(filename || 'download.bin')
+        .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_')
+        .trim() || 'download.bin';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = safeName;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    try {
+        a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    } catch (e) {
+        try {
+            a.click();
+        } catch (_) {
+            window.open(url, '_blank', 'noopener');
+        }
+    }
+    setTimeout(() => {
+        try { a.remove(); } catch (_) {}
+        try { URL.revokeObjectURL(url); } catch (_) {}
+    }, 5000);
+}
+
+function getAttachmentFilename(resp, fallbackName) {
+    const fallback = String(fallbackName || 'download.bin').trim() || 'download.bin';
+    const disposition = resp && typeof resp.headers?.get === 'function'
+        ? (resp.headers.get('Content-Disposition') || '')
+        : '';
+    if (!disposition) return fallback;
+
+    const starMatch = disposition.match(/filename\*\s*=\s*([^;]+)/i);
+    if (starMatch) {
+        let value = starMatch[1].trim();
+        value = value.replace(/^UTF-8''/i, '').replace(/^"(.*)"$/, '$1');
+        try {
+            return decodeURIComponent(value);
+        } catch (_) {
+            return value;
+        }
+    }
+
+    const plainMatch = disposition.match(/filename\s*=\s*"([^"]+)"/i) || disposition.match(/filename\s*=\s*([^;]+)/i);
+    if (plainMatch) {
+        return plainMatch[1].trim();
+    }
+    return fallback;
+}
+
+function closeSettings() {
+    document.getElementById('settings-modal').style.display = 'none';
+}
+
+async function saveCurrentUserPassword() {
+    const passwordEl = document.getElementById('settings-user-password');
+    const confirmEl = document.getElementById('settings-user-password-confirm');
+    const statusEl = document.getElementById('settings-user-password-inline-status');
+    const saveBtn = document.getElementById('settings-user-password-save-btn');
+    const badgeEl = document.getElementById('settings-user-password-badge');
+    if (!passwordEl || !confirmEl || !statusEl || !saveBtn) return;
+
+    const password = passwordEl.value;
+    const confirmPassword = confirmEl.value;
+    if (!password) {
+        statusEl.textContent = t('settings_user_password_empty');
+        statusEl.className = 'settings-inline-status is-error';
+        passwordEl.focus();
+        return;
+    }
+    if (password !== confirmPassword) {
+        statusEl.textContent = t('settings_user_password_mismatch');
+        statusEl.className = 'settings-inline-status is-error';
+        confirmEl.focus();
+        return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = t('settings_user_password_saving');
+    statusEl.textContent = '';
+    statusEl.className = 'settings-inline-status';
+
+    try {
+        const resp = await fetch('/api/current_user/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+            throw new Error(data.error || `HTTP ${resp.status}`);
+        }
+
+        currentUserHasPassword = true;
+        if (badgeEl) {
+            badgeEl.textContent = t('settings_user_password_status_set');
+        }
+        passwordEl.value = '';
+        confirmEl.value = '';
+        statusEl.textContent = t('settings_user_password_saved');
+        statusEl.className = 'settings-inline-status is-success';
+        dismissLocalLoginBanner(false);
+        updateLocalLoginBanner();
+    } catch (e) {
+        statusEl.textContent = `${t('settings_user_password_save_fail')}: ${e.message}`;
+        statusEl.className = 'settings-inline-status is-error';
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = t('settings_user_password_save');
+    }
+}
+
+async function saveSettings() {
+    const inputs = document.querySelectorAll('#settings-body .settings-input[data-key]');
+    const updates = {};
+    inputs.forEach(inp => {
+        const key = inp.dataset.key;
+        if (!key) return;
+        const val = (inp.tagName === 'SELECT' ? inp.value : inp.value.trim());
+        const orig = _settingsCache[key] || '';
+        if (inp.tagName !== 'SELECT' && _isMaskedSettingsSecretValue(orig) && val === '') {
+            return;
+        }
+        if (val !== orig) {
+            updates[key] = val;
+        }
+    });
+    if (Object.keys(updates).length === 0) {
+        closeSettings();
+        return;
+    }
+    try {
+        const r = await fetch('/proxy_settings_full', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings: updates }),
+        });
+        const data = await r.json();
+        if (data.status === 'success') {
+            let msg = t('settings_saved');
+            if (data.updated?.length) {
+                msg += '\n' + data.updated.join(', ');
+            }
+            const restartHint = _formatRestartRequiredHint(data.updated || []);
+            if (restartHint) {
+                msg += restartHint;
+            }
+            appendMessage(msg, false);
+            // 更新缓存
+            for (const k of (data.updated || [])) {
+                const inp = document.querySelector(`#settings-body .settings-input[data-key="${k}"]`);
+                if (inp) _settingsCache[k] = (inp.tagName === 'SELECT' ? inp.value : inp.value.trim());
+            }
+            ClawcrossSettings.saved();
+            await refreshLlmBannerFromSetupStatus();
+        } else {
+            alert(t('settings_save_fail'));
+        }
+    } catch (e) {
+        alert(t('settings_save_fail') + ': ' + e.message);
+    }
+}
+
+async function restartServices() {
+    if (!confirm(t('settings_restart_confirm'))) return;
+    const btn = document.getElementById('restart-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = t('settings_restarting');
+    }
+    _storeRestartPending();
+    try {
+        const r = await fetch('/proxy_restart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await r.json();
+        if (data.status === 'success') {
+            appendMessage('✅ 重启信号已发送，正在等待服务恢复...', false);
+            closeSettings();
+            _startRestartRecoveryPolling();
+            setTimeout(() => location.reload(), 20000);
+        } else {
+            alert(t('settings_restart_fail') + ': ' + (data.detail || data.error || ''));
+            if (btn) { btn.disabled = false; btn.textContent = t('settings_restart_btn'); }
+        }
+    } catch (e) {
+        // 网络断开说明服务已在重启中，属于正常现象
+        appendMessage('✅ 重启信号已发送，正在等待服务恢复...', false);
+        closeSettings();
+        _startRestartRecoveryPolling();
+        setTimeout(() => location.reload(), 20000);
+    }
+}
+
+// ===== Public Toggle (header shortcut for tunnel) =====
+let _tunnelRunning = false;
+let _tunnelPublicDomain = '';
+let _tunnelPendingRefreshTimer = null;
+let _tunnelPendingRefreshAttempts = 0;
+const _TUNNEL_PENDING_REFRESH_MAX = 40;
+
+function _resetTunnelPendingRefreshState() {
+    if (_tunnelPendingRefreshTimer) {
+        clearTimeout(_tunnelPendingRefreshTimer);
+        _tunnelPendingRefreshTimer = null;
+    }
+    _tunnelPendingRefreshAttempts = 0;
+}
+
+function _hideTunnelUrlState(urlRow, urlInput) {
+    if (!urlRow) return;
+    urlRow.style.display = 'none';
+    if (urlInput) {
+        urlInput.value = '';
+        urlInput.placeholder = '';
+        urlInput.title = '';
+        urlInput.dataset.pending = '0';
+    }
+}
+
+function _showTunnelUrlState(urlRow, urlInput, publicDomain, hintKey = 'tunnel_url_hint') {
+    if (!urlRow || !urlInput) return;
+    urlRow.style.display = '';
+    if (publicDomain) {
+        urlInput.value = publicDomain;
+        urlInput.placeholder = publicDomain;
+        urlInput.title = t(hintKey);
+        urlInput.dataset.pending = '0';
+        return;
+    }
+    urlInput.value = '';
+    urlInput.placeholder = t('tunnel_url_pending');
+    urlInput.title = t('tunnel_url_pending');
+    urlInput.dataset.pending = '1';
+}
+
+function _scheduleTunnelPendingRefresh() {
+    if (_tunnelPendingRefreshTimer || _tunnelPendingRefreshAttempts >= _TUNNEL_PENDING_REFRESH_MAX) return;
+    _tunnelPendingRefreshAttempts += 1;
+    _tunnelPendingRefreshTimer = setTimeout(async () => {
+        _tunnelPendingRefreshTimer = null;
+        await _syncPublicToggle();
+        await _refreshTunnelStatus();
+    }, 1500);
+}
+
+async function _syncPublicToggle() {
+    const toggle = document.getElementById('public-toggle');
+    const urlRow = document.getElementById('public-url-row');
+    const urlInput = document.getElementById('public-url-input');
+    if (!toggle) return;
+    try {
+        const r = await fetch('/proxy_tunnel/status');
+        const data = await r.json();
+        const provider=document.getElementById('tunnel-provider');
+        if(provider){if(!provider.dataset.loaded || data.running)provider.value=data.provider || 'hub';provider.dataset.loaded='1';provider.disabled=!!data.running;document.getElementById('tunnel-cloudflare-download').hidden=provider.value!=='cloudflare';}
+        const publicDomain = (data.public_domain || '').trim();
+        _tunnelRunning = !!data.running;
+        _tunnelPublicDomain = publicDomain;
+        toggle.checked = _tunnelRunning;
+        toggle.disabled = false;
+        if (_tunnelRunning) {
+            _showTunnelUrlState(urlRow, urlInput, publicDomain);
+            if (publicDomain) {
+                _resetTunnelPendingRefreshState();
+            } else {
+                _scheduleTunnelPendingRefresh();
+            }
+        } else {
+            _resetTunnelPendingRefreshState();
+            _hideTunnelUrlState(urlRow, urlInput);
+        }
+    } catch (e) {
+        toggle.disabled = true;
+    }
+}
+
+async function handlePublicToggle(checked) {
+    const toggle = document.getElementById('public-toggle');
+    const urlRow = document.getElementById('public-url-row');
+    const urlInput = document.getElementById('public-url-input');
+    toggle.disabled = true;
+    _resetTunnelPendingRefreshState();
+    if (checked) {
+        _showTunnelUrlState(urlRow, urlInput, '');
+    } else {
+        _hideTunnelUrlState(urlRow, urlInput);
+        _tunnelPublicDomain = '';
+    }
+    try {
+        const endpoint = checked ? '/proxy_tunnel/start' : '/proxy_tunnel/stop';
+        const response=await fetch(endpoint, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:document.getElementById('tunnel-provider')?.value})});
+        const started=await response.json();if(!response.ok)throw new Error(started.error || response.statusText);
+        // Poll for status update
+        const maxPolls = checked ? 30 : 10;
+        const interval = checked ? 2000 : 1000;
+        for (let i = 0; i < maxPolls; i++) {
+            await new Promise(r => setTimeout(r, interval));
+            const sr = await fetch('/proxy_tunnel/status');
+            const sd = await sr.json();
+            if (checked && sd.running && sd.public_domain) break;
+            if (!checked && !sd.running) break;
+        }
+    } catch (e) { alert(e.message); }
+    await _syncPublicToggle();
+    // Also refresh the tunnel section inside settings body if present
+    if (typeof _refreshTunnelStatus === 'function') _refreshTunnelStatus();
+}
+
+// ===== Tunnel Control =====
+async function _refreshTunnelStatus() {
+    try {
+        const r = await fetch('/proxy_tunnel/status');
+        const data = await r.json();
+        const provider=document.getElementById('tunnel-provider');
+        if(provider){if(!provider.dataset.loaded || data.running)provider.value=data.provider || 'hub';provider.dataset.loaded='1';provider.disabled=!!data.running;document.getElementById('tunnel-cloudflare-download').hidden=provider.value!=='cloudflare';}
+        const publicDomain = (data.public_domain || '').trim();
+        document.querySelector('.settings-public-card')?.setAttribute('data-connected', String(!!data.running && !!publicDomain));
+        _tunnelRunning = !!data.running;
+        _tunnelPublicDomain = publicDomain;
+        const statusEl = document.getElementById('tunnel-status-text');
+        const btn = document.getElementById('tunnel-toggle-btn');
+        const urlRow = document.getElementById('tunnel-url-row');
+        const urlInput = document.getElementById('tunnel-url-input');
+        if (!statusEl) return;
+
+        if (data.running) {
+            statusEl.textContent = publicDomain
+                ? t('tunnel_running')
+                : `${t('tunnel_running')} · ${t('tunnel_url_pending')}`;
+            statusEl.style.color = publicDomain ? '#6cf' : '#f6c453';
+            if (btn) {
+                btn.textContent = t('tunnel_stop');
+                btn.style.background = '#622';
+                btn.style.borderColor = '#a44';
+                btn.disabled = false;
+            }
+            _showTunnelUrlState(urlRow, urlInput, publicDomain);
+            if (publicDomain) {
+                _resetTunnelPendingRefreshState();
+            } else {
+                _scheduleTunnelPendingRefresh();
+            }
+        } else {
+            _resetTunnelPendingRefreshState();
+            statusEl.textContent = t('tunnel_stopped');
+            statusEl.style.color = '#888';
+            if (btn) {
+                btn.textContent = t('tunnel_start');
+                btn.style.background = '#222';
+                btn.style.borderColor = '#444';
+                btn.disabled = false;
+            }
+            _hideTunnelUrlState(urlRow, urlInput);
+        }
+    } catch (e) {
+        const statusEl = document.getElementById('tunnel-status-text');
+        if (statusEl) {
+            statusEl.textContent = '⚠️ ' + e.message;
+            statusEl.style.color = '#f88';
+        }
+    }
+}
+
+async function toggleTunnel() {
+    const btn = document.getElementById('tunnel-toggle-btn');
+    btn.disabled = true;
+    _resetTunnelPendingRefreshState();
+
+    if (_tunnelRunning) {
+        btn.textContent = t('tunnel_stopping');
+        try {
+            await fetch('/proxy_tunnel/stop', { method: 'POST' });
+        } catch (e) { /* ignore */ }
+        // Poll until stopped
+        for (let i = 0; i < 10; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            await _refreshTunnelStatus();
+            if (!_tunnelRunning) break;
+        }
+    } else {
+        btn.textContent = t('tunnel_starting');
+        _showTunnelUrlState(document.getElementById('tunnel-url-row'), document.getElementById('tunnel-url-input'), '');
+        try {
+            const response=await fetch('/proxy_tunnel/start', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:document.getElementById('tunnel-provider')?.value})});
+            const started=await response.json();if(!response.ok)throw new Error(started.error || response.statusText);
+        } catch (e) { alert(e.message);await _refreshTunnelStatus();return; }
+        // Poll until running with URL
+        for (let i = 0; i < 30; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            await _refreshTunnelStatus();
+            if (_tunnelRunning && _tunnelPublicDomain) break;
+        }
+    }
+    btn.disabled = false;
+}
+
+// Reset UI to login screen without clearing backend session
+function showLoginScreen() {
+    currentUserId = null;
+    currentUserHasPassword = false;
+    currentLoginMode = '';
+    localLoginBannerDismissed = false;
+    projectUpdateBannerDismissed = false;
+    projectUpdateBannerState = null;
+    currentSessionId = null;
+    stopHistoryPolling();
+    updateBackendCompactionStatus(null);
+    ConversationUiPanels.reset();
+    sessionStorage.removeItem('sessionId');
+    document.getElementById('chat-screen').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('username-input').value = '';
+    document.getElementById('password-input').value = '';
+    document.getElementById('login-error').classList.add('hidden');
+    document.getElementById('username-input').focus();
+    const chatBox = document.getElementById('chat-box');
+    chatBox.innerHTML = ConversationStart.welcome();
+    // Stop OASIS polling
+    stopOasisPolling();
+    updateLocalLoginBanner();
+    updateProjectUpdateBanner(null);
+}
+
+// User-initiated logout: clear backend session + reset UI
+function handleLogout() {
+    fetch("/proxy_logout", { method: 'POST' });
+    showLoginScreen();
+}
+
+// ===== Tool Panel 逻辑 =====
+let toolPanelOpen = false;
+let allTools = [];
+let enabledToolSet = new Set();
+
+function toggleToolPanel() {
+    const panel = document.getElementById('tool-panel');
+    const icon = document.getElementById('tool-toggle-icon');
+    toolPanelOpen = !toolPanelOpen;
+    if (toolPanelOpen) {
+        panel.classList.remove('collapsed');
+        panel.classList.add('expanded');
+        icon.classList.add('open');
+    } else {
+        panel.classList.remove('expanded');
+        panel.classList.add('collapsed');
+        icon.classList.remove('open');
+    }
+}
+
+function updateToolCount() {
+    const toolCount = document.getElementById('tool-count');
+    toolCount.textContent = '(' + enabledToolSet.size + '/' + allTools.length + ')';
+}
+
+function toggleTool(name, tagEl) {
+    if (enabledToolSet.has(name)) {
+        enabledToolSet.delete(name);
+        tagEl.classList.remove('enabled');
+        tagEl.classList.add('disabled');
+    } else {
+        enabledToolSet.add(name);
+        tagEl.classList.remove('disabled');
+        tagEl.classList.add('enabled');
+    }
+    updateToolCount();
+}
+
+function getEnabledTools() {
+    if (enabledToolSet.size === allTools.length) return null;
+    return Array.from(enabledToolSet);
+}
+
+// ── Run mode (permission mode) ──────────────────────────────────────────────
+// Per-Agent server settings are authoritative; localStorage is a display cache.
+const RUN_MODE_VALID = ['chat', 'readonly', 'manual', 'auto', 'bypass'];
+const RUN_MODE_DEFAULT = 'auto';
+const RUN_MODE_STORAGE_KEY = 'clawRunMode';
+
+function agentRunModeKey() {
+    const target = window.ExternalAgentSettings?.currentTarget() || currentSessionId || '';
+    return RUN_MODE_STORAGE_KEY + ':' + (currentUserId || '') + ':' + target;
+}
+
+function getRunMode() {
+    const raw = (localStorage.getItem(agentRunModeKey()) || '').trim().toLowerCase();
+    const mode = {plan: 'readonly', yolo: 'bypass'}[raw] || raw;
+    return RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
+}
+
+function setRunMode(mode) {
+    const normalized = RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
+    localStorage.setItem(agentRunModeKey(), normalized);
+    const sel = document.getElementById('oc-run-mode');
+    if (sel) {
+        sel.value = normalized;
+        sel.dataset.activeMode = normalized;
+    }
+}
+
+async function onRunModeChange() {
+    const sel = document.getElementById('oc-run-mode');
+    setRunMode(sel ? sel.value : RUN_MODE_DEFAULT);
+    const target = window.ExternalAgentSettings?.currentTarget() || currentSessionId;
+    if (target) {
+        try {
+            const response = await fetch('/proxy_webot_runtime_settings', {method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({session_id:target, settings:{approval:{mode:getRunMode()}}})});
+            if (!response.ok) throw new Error('Failed to save Agent mode');
+        } catch (error) {
+            if (typeof showToast === 'function') showToast(error.message);
+            syncAgentRunMode(target);
+        }
+    }
+}
+
+function initRunModeUI() {
+    const sel = document.getElementById('oc-run-mode');
+    if (!sel) return;
+    setRunMode(getRunMode());
+    syncAgentRunMode();
+}
+
+let agentModeLoadSequence = 0;
+async function syncAgentRunMode(target = window.ExternalAgentSettings?.currentTarget() || currentSessionId) {
+    if (!target) return;
+    const sequence = ++agentModeLoadSequence;
+    try {
+        const response = await fetch('/proxy_webot_runtime_settings?session_id=' + encodeURIComponent(target));
+        if (!response.ok) return;
+        const data = await response.json();
+        if (sequence !== agentModeLoadSequence || target !== (window.ExternalAgentSettings?.currentTarget() || currentSessionId)) return;
+        setRunMode(data.effective_mode || data.settings.approval.mode);
+    } catch (_) { /* Keep the cached label; the backend still applies its saved mode. */ }
+}
+
+// Persisted Agent mode is resolved by the backend for all chat transports.
+function applyRunModeToPayload(payload) {
+    // The backend reads this Agent's persisted mode; browser caches never
+    // override another Agent or a setting changed in another browser.
+    delete payload.session_mode;
+}
+
+async function loadTools() {
+    try {
+        const resp = await fetch('/proxy_tools');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const tools = data.tools || [];
+        const toolList = document.getElementById('tool-list');
+        const toggleBtn = document.getElementById('tool-toggle-btn');
+        const toolPanel = document.getElementById('tool-panel');
+
+        if (tools.length === 0) {
+            // Keep the wrapper visible so the mode selector stays in view;
+            // only hide the tool-toggle button and the (collapsed) panel.
+            if (toggleBtn) toggleBtn.style.display = 'none';
+            if (toolPanel) toolPanel.style.display = 'none';
+            return;
+        }
+
+        allTools = tools;
+        enabledToolSet = new Set(tools.map(t => t.name));
+        renderGroupedToolPicker(toolList, tools, enabledToolSet, toggleTool);
+        updateToolCount();
+        if (toggleBtn) toggleBtn.style.display = '';
+        if (toolPanel) toolPanel.style.display = '';
+    } catch (e) {
+        console.warn('Failed to load tools:', e);
+    }
+}
+
+// ── Redirect helper: after login, check if we should redirect to another page ──
+function checkRedirectAfterLogin() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const redirect = urlParams.get('redirect');
+    if (redirect === 'group_chat') {
+        window.location.href = '/mobile/group_chat';
+        return true;
+    }
+    return false;
+}
+
+/** Normalize FastAPI/OpenAPI error fields (detail may be string | object | array) for UI strings. */
+function formatApiErrorField(value) {
+    if (value == null || value === '') return '';
+    if (typeof value === 'string') return value.trim();
+    if (Array.isArray(value)) {
+        const parts = value.map(function (item) {
+            if (typeof item === 'string') return item;
+            if (item && typeof item === 'object') {
+                if (typeof item.msg === 'string') return item.msg;
+                if (typeof item.message === 'string') return item.message;
+                if (Array.isArray(item.loc) && typeof item.msg === 'string') {
+                    return item.loc.join('.') + ': ' + item.msg;
+                }
+            }
+            try {
+                return JSON.stringify(item);
+            } catch (e) {
+                return String(item);
+            }
+        }).filter(Boolean);
+        return parts.join('; ');
+    }
+    if (typeof value === 'object') {
+        if (typeof value.msg === 'string') return value.msg;
+        if (typeof value.message === 'string') return value.message;
+        try {
+            return JSON.stringify(value);
+        } catch (e) {
+            return String(value);
+        }
+    }
+    return String(value);
+}
+
+async function extractErrorMessageFromResponse(response, fallback = 'Agent error') {
+    try {
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const data = await response.json();
+            if (data && typeof data === 'object') {
+                const fromErr = formatApiErrorField(data.error);
+                const fromDetail = formatApiErrorField(data.detail);
+                const fromMsg = formatApiErrorField(data.message);
+                const msg = fromErr || fromDetail || fromMsg;
+                if (msg) {
+                    return msg.length > 500 ? msg.slice(0, 500) + '…' : msg;
+                }
+                return `${fallback} (${response.status})`;
+            }
+        }
+        const text = (await response.text()).trim();
+        if (text) {
+            return text.length > 240 ? text.slice(0, 240) + '…' : text;
+        }
+    } catch (err) {
+        console.warn('Failed to parse error response:', err);
+    }
+    return `${fallback} (${response.status})`;
+}
+
+async function _applyTabParam() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tab = urlParams.get('tab');
+    if (tab === 'group' || tab === 'chat' || tab === 'orchestrate') {
+        const teamName = urlParams.get('team');
+        await switchPage(tab);
+        if (teamName) openGroup(teamName);
+        if (window.history.replaceState) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }
+}
+
+/** After auth on /studio, honor ?tab= for Team / Chat / Workflow; else default Chat. */
+async function applyStudioInitialTabAfterAuth() {
+    if(new URLSearchParams(location.search).get('embedded') !== '1') {
+        const next=new URL('/mobile/group_chat',location.origin);
+        for(const name of ['compose','group','tab']) {const value=new URLSearchParams(location.search).get(name);if(value)next.searchParams.set(name,value);}
+        location.replace(next.pathname+next.search);return;
+    }
+    const _tabParam = new URLSearchParams(window.location.search).get('tab');
+    await _applyTabParam();
+    if (!(_tabParam === 'group' || _tabParam === 'chat' || _tabParam === 'orchestrate')) {
+        await switchPage('chat');
+    }
+    ConversationStart.consumeIntent();
+    window.__workspaceStudioReady = true;
+    window.dispatchEvent(new Event('clawcross:studio-ready'));
+}
+
+// Session check
+(async function checkSession() {
+    // 初始化语言
+    document.documentElement.lang = currentLang;
+    applyTranslations();
+
+    // 首先检查 URL 中是否有登录 Token (magic link)
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    const userFromUrl = urlParams.get('user');
+    
+    if (token && userFromUrl) {
+        // 尝试自动登录 - 使用 proxy_login_with_token API
+        try {
+            const resp = await fetch('/proxy_login_with_token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userFromUrl, token: token })
+            });
+            const data = await resp.json();
+            if (resp.ok && data.ok) {
+                // Token 登录成功
+                currentUserId = data.user_id || userFromUrl;
+                currentUserHasPassword = Boolean(data && data.has_password);
+                currentLoginMode = data && data.mode ? data.mode : 'token_login';
+                _syncLocalLoginBannerDismissedState();
+                document.getElementById('uid-display').textContent = 'UID: ' + currentUserId;
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('chat-screen').style.display = 'flex';
+                await initSession();
+                // Check if we should redirect to another page after login
+                updateLocalLoginBanner();
+                if (checkRedirectAfterLogin()) return;
+                loadTools();
+                refreshOasisTopics();
+                startHistoryPolling();
+                _syncPublicToggle();
+                await applyStudioInitialTabAfterAuth();
+                _checkAndShowSetupWizard();
+                void autoCheckProjectUpdate(true);
+                // 移除 URL 中的 token 参数（安全原因）
+                if (window.history.replaceState) {
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
+                return;
+            } else {
+                console.warn('Token login failed:', data.error || 'Unknown error');
+            }
+        } catch (e) {
+            console.warn('Token auto-login failed:', e);
+        }
+        // Token 登录失败，清除参数继续检查其他登录方式
+        if (window.history.replaceState) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }
+
+    // Always check backend session (cookie-based), no sessionStorage gate
+    try {
+        const resp = await fetch('/proxy_check_session');
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data.valid && data.user_id) {
+                currentUserId = data.user_id;
+                currentUserHasPassword = Boolean(data.has_password);
+                currentLoginMode = data.mode || '';
+                _syncLocalLoginBannerDismissedState();
+                // Check if we should redirect to another page after login
+                updateLocalLoginBanner();
+                if (checkRedirectAfterLogin()) return;
+                document.getElementById('uid-display').textContent = 'UID: ' + data.user_id;
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('chat-screen').style.display = 'flex';
+                await initSession();
+                loadTools();
+                refreshOasisTopics();
+                startHistoryPolling();
+                _syncPublicToggle();
+                await applyStudioInitialTabAfterAuth();
+                _checkAndShowSetupWizard();
+                void autoCheckProjectUpdate(true);
+                return;
+            }
+        }
+    } catch (e) {
+        // Network error (e.g. server restarting), fall through to login page
+    }
+})();
+
+// Login input handlers
+document.getElementById('username-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('password-input').focus(); }
+});
+document.getElementById('password-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
+});
+
+// ===================== First-Run Setup Wizard =====================
+
+const _WIZARD_PROVIDER_DEFAULTS = {
+    deepseek:    { base_url: 'https://api.deepseek.com',           key_hint: 'sk-...' },
+    openai:      { base_url: 'https://api.openai.com',             key_hint: 'sk-...' },
+    google:      { base_url: 'https://generativelanguage.googleapis.com/v1beta', key_hint: 'AIza...' },
+    anthropic:   { base_url: 'https://api.anthropic.com',          key_hint: 'sk-ant-...' },
+    antigravity: { base_url: 'http://127.0.0.1:8045',              key_hint: 'sk-antigravity', auto_key: 'sk-antigravity' },
+    minimax:     { base_url: 'https://api.minimaxi.com',           key_hint: 'sk-api-...' },
+    openrouter:  { base_url: 'https://openrouter.ai/api/v1',       key_hint: 'sk-or-...' },
+    groq:        { base_url: 'https://api.groq.com/openai/v1',     key_hint: 'gsk_...' },
+    xai:         { base_url: 'https://api.x.ai/v1',                key_hint: 'xai-...' },
+    mistral:     { base_url: 'https://api.mistral.ai/v1',          key_hint: '...' },
+    perplexity:  { base_url: 'https://api.perplexity.ai',          key_hint: 'pplx-...' },
+    together:    { base_url: 'https://api.together.xyz/v1',        key_hint: '...' },
+    fireworks:   { base_url: 'https://api.fireworks.ai/inference/v1', key_hint: 'fw_...' },
+    deepinfra:   { base_url: 'https://api.deepinfra.com/v1/openai', key_hint: '...' },
+    cerebras:    { base_url: 'https://api.cerebras.ai/v1',         key_hint: 'csk-...' },
+    cohere:      { base_url: 'https://api.cohere.ai/compatibility/v1', key_hint: '...' },
+    'nvidia-nim': { base_url: 'https://integrate.api.nvidia.com/v1', key_hint: 'nvapi-...' },
+    novita:      { base_url: 'https://api.novita.ai/v3/openai',    key_hint: '...' },
+    'vercel-gateway': { base_url: 'https://ai-gateway.vercel.sh/v1', key_hint: '...' },
+    ollama:      { base_url: 'http://127.0.0.1:11434',             key_hint: 'ollama', auto_key: 'ollama' },
+    custom:      { base_url: '',                                    key_hint: 'your-api-key' },
+};
+
+function _checkAndShowSetupWizard() {
+    // Check if LLM is configured — if not, show the wizard
+    const status = window._setupStatus;
+    if (status && !status.llm_configured) {
+        _showSetupWizard(status);
+    } else if (!status) {
+        // Fallback: fetch setup status now
+        fetch('/api/setup_status').then(r => r.json()).then(d => {
+            window._setupStatus = d;
+            if (!d.llm_configured) _showSetupWizard(d);
+        }).catch(() => {});
+    }
+}
+
+/**
+ * Public function called by the LLM warning banner.
+ * Always opens the Setup Wizard (banner is only visible when LLM is not configured).
+ * Fetches fresh setup status to update button availability.
+ */
+function openSetupWizard() {
+    fetch('/api/setup_status').then(r => r.json()).then(d => {
+        window._setupStatus = d;
+        _showSetupWizard(d);
+    }).catch(() => {
+        // Even on error, show the wizard with whatever status we have
+        _showSetupWizard(window._setupStatus || {});
+    });
+}
+
+function _showSetupWizard(status) {
+    const modal = document.getElementById('setup-wizard-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    // Show auto-detect buttons — always visible, grayed out when unavailable
+    const openclawBtn = document.getElementById('wizard-import-openclaw-btn');
+    const antigravityBtn = document.getElementById('wizard-use-antigravity-btn');
+    const openclawSub = document.getElementById('wizard-openclaw-subtitle');
+    const antigravitySub = document.getElementById('wizard-antigravity-subtitle');
+
+    if (openclawBtn) {
+        const available = status && status.openclaw_installed;
+        openclawBtn.disabled = !available;
+        openclawBtn.style.opacity = available ? '1' : '0.45';
+        openclawBtn.style.cursor = available ? 'pointer' : 'not-allowed';
+        if (openclawSub) openclawSub.textContent = available
+            ? '自动读取已配置的 API Key、模型和 Provider'
+            : '⚠️ 未检测到 OpenClaw（未安装）';
+    }
+    if (antigravityBtn) {
+        const available = status && status.antigravity_running;
+        antigravityBtn.disabled = !available;
+        antigravityBtn.style.opacity = available ? '1' : '0.45';
+        antigravityBtn.style.cursor = available ? 'pointer' : 'not-allowed';
+        if (antigravitySub) antigravitySub.textContent = available
+            ? '通过 Google One Pro 会员免费访问 Claude / Gemini / GPT'
+            : '⚠️ Antigravity 未运行（未启动或无法连接）';
+    }
+
+    // Pre-fill if already partially configured (e.g. user already set some values before)
+    if (status && status.current_base_url) {
+        const urlInput = document.getElementById('wizard-base-url');
+        if (urlInput && !urlInput.value) urlInput.value = status.current_base_url;
+    }
+    if (status && status.current_provider) {
+        const providerSel = document.getElementById('wizard-provider');
+        if (providerSel && !providerSel.value) {
+            for (const opt of providerSel.options) {
+                if (opt.value === status.current_provider) {
+                    providerSel.value = status.current_provider;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async function wizardImportOpenClaw() {
+    const btn = document.getElementById('wizard-import-openclaw-btn');
+    const statusEl = document.getElementById('wizard-auto-detect-status');
+    const errorEl = document.getElementById('wizard-error');
+
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    statusEl.textContent = '正在从 OpenClaw 读取配置...';
+    errorEl.style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/import_openclaw_config');
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+            statusEl.textContent = '⚠️ ' + (data.error || '导入失败');
+            return;
+        }
+
+        // Fill in wizard fields
+        const providerSel = document.getElementById('wizard-provider');
+        const keyInput = document.getElementById('wizard-api-key');
+        const urlInput = document.getElementById('wizard-base-url');
+
+        // Map OpenClaw provider to wizard provider value
+        if (data.provider && providerSel) {
+            const providerMap = { openai: 'openai', deepseek: 'deepseek', google: 'google', anthropic: 'anthropic', antigravity: 'antigravity', minimax: 'minimax', ollama: 'ollama' };
+            providerSel.value = providerMap[data.provider] || '';
+        }
+        if (data.api_key && keyInput) {
+            keyInput.value = data.api_key;
+            keyInput.type = 'text';
+        }
+        if (data.base_url && urlInput) urlInput.value = data.base_url;
+
+        statusEl.textContent = '✅ 已从 OpenClaw 导入配置' + (data.model ? `（模型: ${data.model}）` : '') + '，点击"检测模型"确认';
+
+        // Auto-trigger model detection
+        setTimeout(() => wizardDetectModels(), 300);
+
+    } catch (e) {
+        statusEl.textContent = '⚠️ 网络错误: ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+    }
+}
+
+async function wizardUseAntigravity() {
+    const btn = document.getElementById('wizard-use-antigravity-btn');
+    const statusEl = document.getElementById('wizard-auto-detect-status');
+
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    statusEl.textContent = '正在配置 Antigravity...';
+
+    // Set provider to antigravity, which auto-fills key and URL
+    const providerSel = document.getElementById('wizard-provider');
+    if (providerSel) {
+        providerSel.value = 'antigravity';
+        wizardProviderChanged();
+    }
+
+    statusEl.textContent = '✅ 已选择 Antigravity，正在检测可用模型...';
+
+    // Auto-trigger model detection
+    setTimeout(() => {
+        wizardDetectModels();
+        btn.disabled = false;
+        btn.style.opacity = '1';
+    }, 300);
+}
+
+function wizardProviderChanged() {
+    const provider = document.getElementById('wizard-provider').value;
+    const defaults = _WIZARD_PROVIDER_DEFAULTS[provider];
+    if (!defaults) return;
+
+    const urlInput = document.getElementById('wizard-base-url');
+    const keyInput = document.getElementById('wizard-api-key');
+
+    if (defaults.base_url) urlInput.value = defaults.base_url;
+    keyInput.placeholder = defaults.key_hint || 'API Key';
+
+    if (defaults.auto_key) {
+        keyInput.value = defaults.auto_key;
+        keyInput.type = 'text';
+    } else {
+        if (keyInput.value === 'sk-antigravity' || keyInput.value === 'ollama') keyInput.value = '';
+        keyInput.type = 'password';
+    }
+
+    // Reset model input/datalist
+    const modelInput = document.getElementById('wizard-model');
+    const modelDatalist = document.getElementById('wizard-model-list');
+    if (modelInput) modelInput.value = '';
+    if (modelDatalist) modelDatalist.innerHTML = '';
+    document.getElementById('wizard-detect-status').textContent = '';
+    document.getElementById('wizard-error').style.display = 'none';
+}
+
+async function wizardDetectModels() {
+    const provider = document.getElementById('wizard-provider').value;
+    const apiKey = document.getElementById('wizard-api-key').value.trim();
+    const baseUrl = document.getElementById('wizard-base-url').value.trim();
+    const statusEl = document.getElementById('wizard-detect-status');
+    const errorEl = document.getElementById('wizard-error');
+    const modelInput = document.getElementById('wizard-model');
+    const modelDatalist = document.getElementById('wizard-model-list');
+    const detectBtn = document.getElementById('wizard-detect-btn');
+    const isLocalKeyless = _isLocalKeylessProvider(provider, baseUrl);
+
+    errorEl.style.display = 'none';
+
+    if (!apiKey && !isLocalKeyless) {
+        errorEl.textContent = '请先输入 API Key';
+        errorEl.style.display = 'block';
+        return;
+    }
+    if (!baseUrl) {
+        errorEl.textContent = '请先输入 Base URL';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    detectBtn.disabled = true;
+    detectBtn.textContent = '⏳ 检测中...';
+    statusEl.textContent = '正在连接 API 并获取模型列表...';
+    const curModel = modelInput ? modelInput.value : '';
+
+    try {
+        const resp = await fetch('/api/discover_models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider, api_key: apiKey, base_url: baseUrl }),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+            errorEl.textContent = data.error || '检测失败';
+            if (data.detail) errorEl.textContent += ': ' + data.detail;
+            errorEl.style.display = 'block';
+            statusEl.textContent = '';
+            return;
+        }
+
+        const models = data.models || [];
+        if (models.length === 0) {
+            statusEl.textContent = '⚠️ API 返回了空的模型列表';
+            return;
+        }
+
+        if (modelDatalist) {
+            modelDatalist.innerHTML = '';
+            for (const mid of models) {
+                const opt = document.createElement('option');
+                opt.value = mid;
+                opt.textContent = mid;
+                modelDatalist.appendChild(opt);
+            }
+        }
+        statusEl.textContent = `✅ 检测到 ${models.length} 个可用模型`;
+
+        // Auto-select smart defaults
+        if (modelInput && curModel && models.includes(curModel)) {
+            modelInput.value = curModel;
+        } else {
+            const preferredModels = {
+                deepseek: ['deepseek-chat', 'deepseek-coder'],
+                openai: ['gpt-4o', 'gpt-4.1', 'gpt-4-turbo'],
+                google: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-pro'],
+                anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'],
+                antigravity: ['gemini-2.5-pro', 'claude-sonnet-4-20250514', 'gpt-4o'],
+                minimax: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed'],
+            };
+            const preferred = preferredModels[provider] || [];
+            for (const pm of preferred) {
+                if (modelInput && models.includes(pm)) {
+                    modelInput.value = pm;
+                    break;
+                }
+            }
+        }
+    } catch (e) {
+        errorEl.textContent = '网络错误: ' + e.message;
+        errorEl.style.display = 'block';
+    } finally {
+        detectBtn.disabled = false;
+        detectBtn.textContent = currentLang === 'zh-CN' ? '检测模型' : 'Find models';
+    }
+}
+
+async function wizardSave() {
+    const provider = document.getElementById('wizard-provider').value;
+    const apiKey = document.getElementById('wizard-api-key').value.trim();
+    const baseUrl = document.getElementById('wizard-base-url').value.trim();
+    const model = document.getElementById('wizard-model').value;
+    const errorEl = document.getElementById('wizard-error');
+    const saveBtn = document.getElementById('wizard-save-btn');
+
+    errorEl.style.display = 'none';
+
+    if (!apiKey) {
+        errorEl.textContent = '请输入 API Key';
+        errorEl.style.display = 'block';
+        return;
+    }
+    if (!baseUrl) {
+        errorEl.textContent = '请输入 Base URL';
+        errorEl.style.display = 'block';
+        return;
+    }
+    if (!model) {
+        errorEl.textContent = '请选择一个模型（先点击"检测模型"）';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = '⏳ 保存中...';
+
+    try {
+        const settings = {
+            LLM_API_KEY: apiKey,
+            LLM_BASE_URL: baseUrl,
+            LLM_MODEL: model,
+        };
+        if (provider && provider !== 'custom') {
+            settings.LLM_PROVIDER = provider;
+        }
+
+        const resp = await fetch('/proxy_settings_full', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings }),
+        });
+        const data = await resp.json();
+
+        if (data.status === 'success') {
+            // Hide wizard
+            document.getElementById('setup-wizard-modal').style.display = 'none';
+            // Hide warning banner
+            document.getElementById('llm-warning-banner').style.display = 'none';
+            // Show success message
+            appendMessage('✅ LLM 配置已保存！正在重启服务...', false);
+            // Restart services
+            fetch('/proxy_restart', { method: 'POST', headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+            // Update cached status
+            if (window._setupStatus) window._setupStatus.llm_configured = true;
+        } else {
+            errorEl.textContent = '保存失败: ' + (data.error || '未知错误');
+            errorEl.style.display = 'block';
+        }
+    } catch (e) {
+        errorEl.textContent = '网络错误: ' + e.message;
+        errorEl.style.display = 'block';
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存并开始';
+    }
+}
+
+function wizardSkip() {
+    document.getElementById('setup-wizard-modal').style.display = 'none';
+}
+
+function copyMagicPrompt(el) {
+    const code = el.querySelector('code');
+    if (code) {
+        navigator.clipboard.writeText(code.textContent).then(() => {
+            const origBg = el.style.background;
+            el.style.background = '#dcfce7';
+            setTimeout(() => { el.style.background = origBg || '#fff'; }, 800);
+        }).catch(() => {});
+    }
+}
+
+// ===== 聊天逻辑 =====
+const chatBox = document.getElementById('chat-box');
+const inputField = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
+const cancelBtn = document.getElementById('cancel-btn');
+const busyBtn = document.getElementById('busy-btn');
+let _chatBottomStickCleanup = null;
+let _chatUserPinnedToBottom = true;
+const _chatPinTrackerBoxes = new WeakSet();
+
+function _ensureChatPinTracker(box) {
+    if (!box || _chatPinTrackerBoxes.has(box)) return;
+    _chatPinTrackerBoxes.add(box);
+    let lastTop = box.scrollTop;
+    box.addEventListener('scroll', () => {
+        const top = box.scrollTop;
+        const distFromBottom = box.scrollHeight - top - box.clientHeight;
+        if (top < lastTop - 1) {
+            // 向上滚动只可能来自用户（程序滚动永远吸底），立即解除吸底，
+            // 不设距离阈值——否则流式期间小幅上滚会被下一个 chunk 拉回。
+            _chatUserPinnedToBottom = false;
+        } else if (distFromBottom < 100) {
+            _chatUserPinnedToBottom = true;
+        }
+        lastTop = top;
+    }, { passive: true });
+}
+
+function scrollChatToBottom(target = null, options = {}) {
+    const box = target || document.getElementById('chat-box');
+    if (!box) return;
+    _ensureChatPinTracker(box);
+    const force = options.force === true;
+    if (!force && !_chatUserPinnedToBottom) {
+        return;
+    }
+    if (force) {
+        _chatUserPinnedToBottom = true;
+    }
+    const settle = options.settle !== false;
+    if (settle && typeof _chatBottomStickCleanup === 'function') {
+        _chatBottomStickCleanup();
+        _chatBottomStickCleanup = null;
+    }
+    const apply = () => {
+        if (!box.isConnected) return;
+        // 排队中的 rAF/stick-loop 调用也要尊重用户解除吸底（force 路径已提前置 true）
+        if (!_chatUserPinnedToBottom) return;
+        const top = Math.max(box.scrollHeight, box.scrollTop, 0);
+        if (typeof box.scrollTo === 'function') {
+            box.scrollTo({ top, behavior: 'auto' });
+        }
+        box.scrollTop = top;
+        const last = box.lastElementChild;
+        if (last && typeof last.scrollIntoView === 'function') {
+            last.scrollIntoView({ block: 'end', inline: 'nearest', behavior: 'auto' });
+        }
+        box.scrollTop = Math.max(box.scrollHeight, box.scrollTop, 0);
+    };
+    apply();
+    if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+            apply();
+            requestAnimationFrame(apply);
+        });
+    }
+    if (settle) {
+        _chatBottomStickCleanup = keepChatPinnedToBottomUntilStable(box, apply);
+    }
+}
+
+function keepChatPinnedToBottomUntilStable(box, apply) {
+    let frame = 0;
+    let stableFrames = 0;
+    let lastSignature = '';
+    let stopped = false;
+    const cleanups = [];
+
+    const stop = () => {
+        if (stopped) return;
+        stopped = true;
+        while (cleanups.length) {
+            const cleanup = cleanups.pop();
+            try { cleanup(); } catch (e) {}
+        }
+        if (_chatBottomStickCleanup === stop) {
+            _chatBottomStickCleanup = null;
+        }
+    };
+
+    const pendingImages = () => Array.from(box.querySelectorAll('img')).filter(img => !img.complete);
+    const isAtBottom = () => (box.scrollHeight - box.scrollTop - box.clientHeight) <= 2;
+    const signature = () => [
+        box.scrollHeight,
+        box.clientHeight,
+        box.children.length,
+        pendingImages().length,
+    ].join(':');
+
+    const tick = () => {
+        if (stopped || !box.isConnected) {
+            stop();
+            return;
+        }
+        if (!_chatUserPinnedToBottom) {
+            stop();
+            return;
+        }
+        apply();
+        const nextSignature = signature();
+        stableFrames = nextSignature === lastSignature && isAtBottom() ? stableFrames + 1 : 0;
+        lastSignature = nextSignature;
+        if (stableFrames >= 2) {
+            stop();
+            return;
+        }
+        frame = requestAnimationFrame(tick);
+    };
+
+    if (typeof MutationObserver === 'function') {
+        const observer = new MutationObserver(() => {
+            if (!_chatUserPinnedToBottom) { stop(); return; }
+            stableFrames = 0;
+            apply();
+        });
+        observer.observe(box, { childList: true, subtree: true, attributes: true });
+        cleanups.push(() => observer.disconnect());
+    }
+    if (typeof ResizeObserver === 'function') {
+        const observer = new ResizeObserver(() => {
+            if (!_chatUserPinnedToBottom) { stop(); return; }
+            stableFrames = 0;
+            apply();
+        });
+        observer.observe(box);
+        cleanups.push(() => observer.disconnect());
+    }
+    pendingImages().forEach((img) => {
+        const onDone = () => {
+            stableFrames = 0;
+            apply();
+        };
+        img.addEventListener('load', onDone, { once: true });
+        img.addEventListener('error', onDone, { once: true });
+        cleanups.push(() => {
+            img.removeEventListener('load', onDone);
+            img.removeEventListener('error', onDone);
+        });
+    });
+    if (typeof requestAnimationFrame === 'function') {
+        frame = requestAnimationFrame(tick);
+        cleanups.push(() => cancelAnimationFrame(frame));
+    } else {
+        apply();
+        stop();
+    }
+    return stop;
+}
+
+// 按钮三态：idle(发送) / streaming(终止) / busy(系统占用中)
+function setStreamingUI(streaming) {
+    if (streaming) {
+        sendBtn.style.display = 'none';
+        cancelBtn.style.display = 'inline-block';
+        busyBtn.style.display = 'none';
+        inputField.disabled = true;
+        cancelTargetSessionId = currentSessionId;
+    } else {
+        sendBtn.style.display = 'inline-block';
+        cancelBtn.style.display = 'none';
+        busyBtn.style.display = 'none';
+        sendBtn.disabled = false;
+        inputField.disabled = false;
+        cancelTargetSessionId = null;
+    }
+    syncStudioApprovalInput();
+}
+
+function setSystemBusyUI(busy) {
+    if (busy) {
+        sendBtn.style.display = 'none';
+        cancelBtn.style.display = 'inline-block';
+        busyBtn.style.display = 'none';
+        inputField.disabled = true;
+        cancelTargetSessionId = currentSessionId;
+    } else {
+        sendBtn.style.display = 'inline-block';
+        cancelBtn.style.display = 'none';
+        busyBtn.style.display = 'none';
+        sendBtn.disabled = false;
+        inputField.disabled = false;
+        cancelTargetSessionId = null;
+    }
+    syncStudioApprovalInput();
+}
+
+function chatRunContextKey(mode = _ocChatMode, sessionId = currentSessionId, acpTool = _acpTool) {
+    return JSON.stringify({
+        mode: mode || 'internal',
+        sid: sessionId || '',
+        acp: acpTool || null,
+    });
+}
+
+function currentActiveChatRun() {
+    return activeChatRuns.get(chatRunContextKey()) || null;
+}
+
+let _chatRunStatusRequestSeq = 0;
+
+function setChatStatusCheckingUI() {
+    sendBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
+    busyBtn.style.display = 'inline-flex';
+    inputField.disabled = true;
+    cancelTargetSessionId = null;
+}
+
+async function syncCurrentChatRunUI() {
+    const contextKey = chatRunContextKey();
+    const run = currentActiveChatRun();
+    if (run && ['running', 'cancelling'].includes(run.status)) {
+        currentAbortController = run.controller;
+        setStreamingUI(true);
+        return true;
+    }
+
+    // An external agent's running turn is what its follower shows.
+    if (_ocChatMode !== 'internal' || !currentSessionId) {
+        currentAbortController = null;
+        const busy = _ocChatMode === 'acp' && !!_acpFollower?.view;
+        setStreamingUI(busy);
+        return busy;
+    }
+
+    const requestSeq = ++_chatRunStatusRequestSeq;
+    const sessionId = currentSessionId;
+    currentAbortController = null;
+    setChatStatusCheckingUI();
+    try {
+        const status = await fetchSessionStatus(sessionId);
+        if (requestSeq !== _chatRunStatusRequestSeq || chatRunContextKey() !== contextKey) {
+            return false;
+        }
+        // A browser stream may have started while the status request was in flight.
+        const latestRun = currentActiveChatRun();
+        if (latestRun && ['running', 'cancelling'].includes(latestRun.status)) {
+            currentAbortController = latestRun.controller;
+            setStreamingUI(true);
+            return true;
+        }
+        const busy = status.state === 'running';
+        setSystemBusyUI(busy);
+        return busy;
+    } catch (e) {
+        // Keep the conservative checking state. The regular status poll will
+        // retry, avoiding an unsafe Send button while the state is unknown.
+        return true;
+    }
+}
+
+function markActiveRunBubble(div, run) {
+    const wrapper = div && div.parentElement;
+    if (!wrapper) return;
+    wrapper.classList.add('chat-active-run-overlay');
+    wrapper.dataset.chatRunKey = run.key;
+}
+
+function restoreActiveChatRunForCurrentContext() {
+    const run = currentActiveChatRun();
+    if (!run || run.status !== 'running') return null;
+
+    chatBox.querySelectorAll('.chat-active-run-overlay').forEach((node) => node.remove());
+    for (const segment of run.segments) {
+        if (!segment) continue;
+        const segmentDiv = appendMessage(segment, false);
+        markActiveRunBubble(segmentDiv, run);
+    }
+    const liveDiv = appendMessage(run.fullText || '', false);
+    if(!run.fullText)RunActivity.start(liveDiv,run.startedAt || Date.now());
+    markActiveRunBubble(liveDiv, run);
+    run.agentDiv = liveDiv;
+    return liveDiv;
+}
+
+async function handleCancel() {
+    const targetSession = _ocChatMode === 'acp' && _acpTool ? acpResolveSessionName() : (cancelTargetSessionId || currentSessionId);
+    const run = currentActiveChatRun();
+    const controller = run && run.controller ? run.controller : currentAbortController;
+    if (controller) {
+        controller.abort();
+        if (run) run.status = 'cancelling';
+        currentAbortController = null;
+    }
+    try {
+        await agentApi('POST', `/v1/agents/${encodeURIComponent(targetSession)}/control`, {action: 'cancel'});
+    } catch(e) { /* ignore */ }
+    // 恢复 UI（无论是用户流式还是系统调用被终止）
+    setStreamingUI(false);
+    setSystemBusyUI(false);
+}
+
+// ===== TTS 朗读功能 =====
+let currentTtsAudio = null;
+let currentTtsBtn = null;
+
+function stripMarkdownForTTS(md) {
+    // 移除代码块（含内容）
+    let text = md.replace(/```[\s\S]*?```/g, '('+t('code_omitted')+')');
+    // 移除行内代码
+    text = text.replace(/`[^`]+`/g, '');
+    // 移除图片
+    text = text.replace(/!\[.*?\]\(.*?\)/g, '');
+    // 移除链接，保留文字
+    text = text.replace(/\[([^\]]+)\]\(.*?\)/g, '$1');
+    // 移除标题标记
+    text = text.replace(/^#{1,6}\s+/gm, '');
+    // 移除粗体/斜体标记
+    text = text.replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1');
+    // 移除工具调用提示行
+    text = text.replace(/.*🔧.*调用工具.*\n?/g, '');
+    text = text.replace(/.*✅.*工具执行完成.*\n?/g, '');
+    // 清理多余空行
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+    return text;
+}
+
+function extractTtsTextFromElement(element) {
+    if (!element) return '';
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll('.tts-btn').forEach(btn => btn.remove());
+    return (clone.innerText || clone.textContent || '').trim();
+}
+
+function stopTtsPlayback() {
+    if (currentTtsAudio) {
+        currentTtsAudio.pause();
+        currentTtsAudio.src = '';
+        currentTtsAudio = null;
+    }
+    if (currentTtsBtn) {
+        currentTtsBtn.classList.remove('playing', 'loading');
+        currentTtsBtn.querySelector('.tts-label').textContent = t('tts_read');
+        currentTtsBtn = null;
+    }
+}
+
+async function handleTTS(btn, text) {
+    // 如果点击的是正在播放的按钮，则停止
+    if (btn === currentTtsBtn && currentTtsAudio) {
+        stopTtsPlayback();
+        return;
+    }
+    // 停止上一个播放
+    stopTtsPlayback();
+
+    const cleanText = stripMarkdownForTTS(text);
+    if (!cleanText) return;
+
+    currentTtsBtn = btn;
+    btn.classList.add('loading');
+    btn.querySelector('.tts-label').textContent = t('tts_loading');
+
+    try {
+        const resp = await fetch('/proxy_tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: cleanText })
+        });
+        if (!resp.ok) throw new Error(t('tts_request_failed'));
+
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        currentTtsAudio = audio;
+
+        btn.classList.remove('loading');
+        btn.classList.add('playing');
+        btn.querySelector('.tts-label').textContent = t('tts_stop');
+
+        audio.onended = () => {
+            URL.revokeObjectURL(url);
+            stopTtsPlayback();
+        };
+        audio.onerror = () => {
+            URL.revokeObjectURL(url);
+            stopTtsPlayback();
+        };
+        audio.play();
+    } catch (e) {
+        console.error('TTS error:', e);
+        stopTtsPlayback();
+    }
+}
+
+function createTtsButton(textRef) {
+    const btn = document.createElement('div');
+    btn.className = 'tts-btn';
+    btn.innerHTML = `
+        <span class="tts-spinner"></span>
+        <svg class="tts-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+        </svg>
+        <span class="tts-label">${t('tts_read')}</span>`;
+    btn.onclick = () => handleTTS(btn, textRef());
+    return btn;
+}
+
+const CONVERSATION_UI_PANEL_KIND = 'clawcross_ui_panel_v1';
+
+document.addEventListener('pointerdown', event => {
+    const menu = document.getElementById('studio-more-menu');
+    if (menu && menu.open && !menu.contains(event.target)) menu.open = false;
+});
+
+function parseConversationUiPanel(value) {
+    try {
+        const panel = typeof value === 'string' ? JSON.parse(value) : value;
+        if (!panel || panel.kind !== CONVERSATION_UI_PANEL_KIND) return null;
+        if (typeof panel.title !== 'string' || !panel.title.trim() || panel.title.length > 100) return null;
+        if (typeof panel.html !== 'string' || !panel.html.trim() || panel.html.length > 24000) return null;
+        if (typeof panel.css !== 'string' || panel.css.length > 12000) return null;
+        if (typeof panel.javascript !== 'string' || panel.javascript.length > 12000) return null;
+        return panel;
+    } catch (_) {
+        return null;
+    }
+}
+
+function createConversationUiPanel(panel) {
+    return ConversationUiPanels.create(panel, currentSessionId || 'default');
+}
+
+function appendMessage(content, isUser = false, images = [], fileNames = [], audioNames = [], workflowNames = []) {
+    document.querySelector('#chat-box > [data-conversation-welcome]')?.remove();
+    const wrapper = document.createElement('div');
+    wrapper.className = `flex ${isUser ? 'justify-end' : 'justify-start'} animate-in fade-in duration-300`;
+    const div = document.createElement('div');
+    div.className = `p-4 max-w-[85%] shadow-sm ${isUser ? 'bg-blue-600 text-white message-user' : 'bg-white border text-gray-800 message-agent'}`;
+    if (isUser) {
+        let extraHtml = '';
+        if (images && images.length > 0) {
+            extraHtml += images.map(src => `<img src="${src}" class="chat-inline-image">`).join('');
+        }
+        if (fileNames && fileNames.length > 0) {
+            extraHtml += fileNames.map(n => `<div class="chat-file-tag">📄 ${escapeHtml(n)}</div>`).join('');
+        }
+        if (audioNames && audioNames.length > 0) {
+            extraHtml += audioNames.map(n => `<div class="chat-audio-tag">🎤 ${escapeHtml(n)}</div>`).join('');
+        }
+        if (workflowNames && workflowNames.length > 0) {
+            extraHtml += workflowNames.map(n => `<div class="chat-workflow-tag">📋 ${escapeHtml(n)}</div>`).join('');
+        }
+        if (extraHtml) {
+            div.innerHTML = extraHtml + (content ? '<div style="margin-top:6px">' + escapeHtml(content) + '</div>' : '');
+        } else {
+            div.innerText = content;
+        }
+    } else {
+        div.className += " markdown-body tc-markdown";
+        div.innerHTML = renderMarkdown(content);
+        highlightMarkdownIn(div);
+        // AI 消息添加朗读按钮（content 非空时）
+        if (content) {
+            const ttsBtn = createTtsButton(() => extractTtsTextFromElement(div));
+            div.appendChild(ttsBtn);
+        }
+    }
+    wrapper.appendChild(div);
+    chatBox.appendChild(wrapper);
+    scrollChatToBottom(chatBox, { settle: false, force: isUser });
+    return div;
+}
+
+function showTyping() {
+    const wrapper = document.createElement('div');
+    wrapper.id = 'typing-indicator';
+    wrapper.className = 'flex justify-start';
+    const status=document.createElement('div');status.className='message-agent run-activity';RunActivity.start(status);wrapper.append(status);
+    chatBox.appendChild(wrapper);
+    scrollChatToBottom(chatBox, { settle: false });
+}
+
+function renderWeBotWelcomeMessage() {
+    const chatBox = document.getElementById('chat-box');
+    if (!chatBox) return;
+    ConversationUiPanels.beginSession(currentSessionId);
+    chatBox.innerHTML = ConversationStart.welcome();
+    scrollChatToBottom(chatBox, { force: true });
+}
+
+// The user message of a chat request: the text with any persona or workflow it
+// carries first, then its images, audio and files as OpenAI content parts.
+function chatMessageContent(text, imagesToSend, audiosToSend, filesToSend, workflowsToSend) {
+    // --- 构造 workflow / persona 前缀（隐藏在消息中发送给后端） ---
+    let personaPrefix = '';
+    if (selectedPersona && selectedPersona.persona && personaInjectedSession !== currentSessionId) {
+        personaPrefix =
+            `【expert persona, apply it now】\n` +
+            `Name: ${selectedPersona.name || selectedPersona.tag || 'expert'}\n` +
+            `Tag: ${selectedPersona.tag || '(none)'}\n` +
+            `---\n${selectedPersona.persona}\n---\n`;
+        personaInjectedSession = currentSessionId;
+    }
+
+    let workflowPrefix = '';
+    for (const wf of workflowsToSend) {
+        if ((wf.mode || 'yaml') === 'python') {
+            workflowPrefix += `【python workflow, use it now】\n` +
+                `Team Name: ${wf.team || '(non-team)'}\n` +
+                `Python Name: ${wf.name}\n` +
+                `Absolute Path: ${wf.path || '(unknown)'}\n` +
+                (wf.content ? `---\n${wf.content}\n---\n` : '');
+        } else {
+            workflowPrefix += `【oasis workflow, use it now】\n` +
+                `Team Name: ${wf.team || '(non-team)'}\n` +
+                `YAML Name: ${wf.name}\n` +
+                `Absolute Path: ${wf.path || '(unknown)'}\n` +
+                (wf.content ? `---\n${wf.content}\n---\n` : '');
+        }
+    }
+    const fullText_to_send = personaPrefix + workflowPrefix + text;
+
+    // --- 构造 OpenAI 格式的 content parts ---
+    const contentParts = [];
+    if (fullText_to_send) {
+        contentParts.push({ type: 'text', text: fullText_to_send });
+    }
+    // 图片 → image_url
+    for (const img of imagesToSend) {
+        contentParts.push({ type: 'image_url', image_url: { url: img } });
+    }
+    // 音频 → input_audio
+    for (const audio of audiosToSend) {
+        contentParts.push({
+            type: 'input_audio',
+            input_audio: { data: audio.base64, format: audio.format || 'webm' }
+        });
+    }
+    // 文件 → file
+    for (const f of filesToSend) {
+        const fileData = f.content.startsWith('data:') ? f.content : 'data:application/octet-stream;base64,' + f.content;
+        contentParts.push({
+            type: 'file',
+            file: { filename: f.name, file_data: fileData }
+        });
+    }
+
+    // 如果只有纯文本，content 用字符串；否则用 parts 数组
+    let msgContent;
+    if (contentParts.length === 1 && contentParts[0].type === 'text') {
+        msgContent = contentParts[0].text;
+    } else if (contentParts.length > 0) {
+        msgContent = contentParts;
+    } else {
+        msgContent = '(空消息)';
+    }
+    return msgContent;
+}
+
+async function handleSend() {
+    const text = inputField.value.trim();
+    if (!text && pendingImages.length === 0 && pendingFiles.length === 0 && pendingAudios.length === 0 && pendingWorkflows.length === 0) return;
+    if (text && !pendingImages.length && !pendingFiles.length && !pendingAudios.length && !pendingWorkflows.length) {
+        try {
+            const result = await ClawcrossApproval.reply(text, [currentSessionId]);
+            if (result) {
+                inputField.value = '';
+                inputField.style.height = 'auto';
+                await refreshStudioApprovalStrip();
+                if (result.continuation !== 'resumed') watchApprovalContinuation(result.session_id);
+                return;
+            }
+        } catch (e) {
+            _setWeBotPolicyStatus(String(e.message), 'error');
+            _projectUpdateToast(String(e.message));
+            return;
+        }
+    }
+    if (_studioPendingApproval) {
+        _projectUpdateToast(currentLang === 'zh-CN' ? '请确认当前操作：同意、拒绝或回复 Y / N / KEEP Y。' : 'Confirm the current action with Allow, Deny, or Y / N / KEEP Y.');
+        return;
+    }
+    if (sendBtn.disabled) return;
+
+    if (_ocChatMode === 'acp' && !_acpTool) {
+        alert(t('oc_select_acp_hint'));
+        return;
+    }
+
+    // Safety guard: the backend may still be running even when the browser
+    // stream was lost or the page was reloaded. Starting another Internal
+    // request on the same session would cancel the existing task.
+    if (_ocChatMode === 'internal' && await syncCurrentChatRunUI()) {
+        return;
+    }
+
+    // Stop recording if active
+    if (isRecording) stopRecording();
+
+    // Capture images, files, audios, workflows before clearing
+    const imagesToSend = pendingImages.map(img => img.base64);
+    const imagePreviewSrcs = [...imagesToSend];
+    const filesToSend = pendingFiles.map(f => ({ name: f.name, content: f.content, type: f.type }));
+    const fileNames = pendingFiles.map(f => f.name);
+    const audiosToSend = pendingAudios.map(a => ({ base64: a.base64, name: a.name, format: a.format }));
+    const audioNames = pendingAudios.map(a => a.name);
+    const workflowsToSend = pendingWorkflows.map(w => ({
+        name: w.name,
+        team: w.team,
+        mode: w.mode || 'yaml',
+        displayName: w.displayName,
+        content: w.content || '',
+        path: w.path || '',
+    }));
+    const workflowNames = pendingWorkflows.map(w => `${(w.mode || 'yaml').toUpperCase()} ${w.displayName}`);
+
+    const label = text || (imagePreviewSrcs.length ? '('+t('image_placeholder')+')' : audioNames.length ? '('+t('audio_placeholder')+')' : workflowNames.length ? '(workflow)' : '('+t('file_placeholder')+')');
+    appendMessage(label, true, imagePreviewSrcs, fileNames, audioNames, workflowNames);
+    inputField.value = '';
+    inputField.style.height = 'auto';
+    pendingImages = [];
+    pendingFiles = [];
+    pendingAudios = [];
+    pendingWorkflows = [];
+    renderImagePreviews();
+    renderFilePreviews();
+    renderAudioPreviews();
+    renderWorkflowPreviews();
+    sendBtn.disabled = true;
+    showTyping();
+    const msgContent = chatMessageContent(text, imagesToSend, audiosToSend, filesToSend, workflowsToSend);
+    if (_ocChatMode === 'acp') {
+        await acpSendTurn(msgContent);
+        return;
+    }
+
+    const streamAbortController = new AbortController();
+    currentAbortController = streamAbortController;
+    setStreamingUI(true);
+
+    let agentDiv = null;
+    let fullText = '';
+
+    // --- 会话/平台隔离：捕获本次流所属的上下文。一旦用户切到别的 session 或平台，
+    //     就停止向 DOM 写入（仍继续把流读完，保持后端连接/存储不受影响），避免串味。 ---
+    const _computeStreamCtxKey = () => chatRunContextKey();
+    const _streamOwnerKey = _computeStreamCtxKey();
+    const chatRun = {
+        key: _streamOwnerKey,
+        mode: _ocChatMode,
+        sessionId: currentSessionId,
+        controller: streamAbortController,
+        status: 'running',
+        startedAt: Date.now(),
+        fullText: '',
+        segments: [],
+        agentDiv: null,
+    };
+    activeChatRuns.set(_streamOwnerKey, chatRun);
+    const streamOwns = () => _computeStreamCtxKey() === _streamOwnerKey;
+
+    try {
+        // --- 构造 OpenAI /v1/chat/completions 请求 ---
+        const openaiPayload = {
+            model: 'webot',
+            messages: [{ role: 'user', content: msgContent }],
+            stream: true,
+            session_id: currentSessionId,
+            enabled_tools: getEnabledTools(),
+        };
+        applyRunModeToPayload(openaiPayload);
+        const chatEndpoint = '/v1/chat/completions';
+
+        const response = await fetch(chatEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(openaiPayload),
+            signal: streamAbortController.signal
+        });
+
+        if (streamOwns()) {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (typingIndicator) typingIndicator.remove();
+        }
+
+        if (response.status === 401) {
+            if (streamOwns()) {
+                appendMessage(t('login_expired'), false);
+                showLoginScreen();
+            }
+            return;
+        }
+        if (!response.ok) throw new Error(await extractErrorMessageFromResponse(response, "Agent error"));
+
+        // Unsent drafts stay out of the rail. Refresh persisted Agents after the first request.
+        if (streamOwns()) void loadSessionList();
+
+        if (streamOwns()) {
+            agentDiv = appendMessage('', false);
+            chatRun.agentDiv = agentDiv;
+            RunActivity.start(agentDiv,chatRun.startedAt);
+            markActiveRunBubble(agentDiv, chatRun);
+        }
+
+        // --- 解析 OpenAI SSE 流式响应（支持分段渲染） ---
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let allSegmentTexts = [];  // 记录所有段落的文本
+        let sawToolActivity = false;
+
+        // 辅助函数：封存当前文本气泡，添加朗读按钮
+        function sealCurrentBubble() {
+            if (fullText) {
+                if (streamOwns()) {
+                    if (!agentDiv || !agentDiv.isConnected) {
+                        agentDiv = restoreActiveChatRunForCurrentContext();
+                    }
+                    if (agentDiv) {
+                        agentDiv.innerHTML = renderMarkdown(fullText);
+                        highlightMarkdownIn(agentDiv);
+                        const sealedDiv = agentDiv;
+                        const ttsBtn = createTtsButton(() => extractTtsTextFromElement(sealedDiv));
+                        agentDiv.appendChild(ttsBtn);
+                    }
+                }
+                allSegmentTexts.push(fullText);
+                chatRun.segments = [...allSegmentTexts];
+            }
+        }
+
+        // 辅助函数：创建新的 AI 文本气泡
+        function startNewBubble() {
+            fullText = '';
+            chatRun.fullText = '';
+            if (streamOwns()) {
+                agentDiv = appendMessage('', false);
+                RunActivity.start(agentDiv,chatRun.startedAt);
+                markActiveRunBubble(agentDiv, chatRun);
+                chatRun.agentDiv = agentDiv;
+            } else {
+                agentDiv = null;
+                chatRun.agentDiv = null;
+            }
+        }
+
+        // 辅助函数：创建工具调用指示区
+        function createToolIndicator(toolName, type, payload = null) {
+            if (!streamOwns()) return;
+            if (type === 'end') {
+                const panel = toolName === 'show_ui_panel' ? parseConversationUiPanel(payload) : null;
+                // 查找最后一个同名且仍在运行的 indicator 并更新
+                const allIndicators = chatBox.querySelectorAll(`.stream-tool-indicator[data-tool-name="${CSS.escape(toolName)}"]`);
+                const indicator = allIndicators.length ? allIndicators[allIndicators.length - 1] : null;
+                if (indicator) {
+                    if (panel) {
+                        indicator.parentElement.replaceWith(createConversationUiPanel(panel));
+                        scrollChatToBottom(chatBox, { settle: false });
+                        return;
+                    }
+                    const statusEl = indicator.querySelector('.stream-tool-status');
+                    if (statusEl) {
+                        statusEl.textContent = '';
+                        statusEl.classList.remove('run-activity-pulse');
+                        RunActivity.finish(indicator);
+                        statusEl.classList.remove('stream-tool-running');
+                        statusEl.classList.add('stream-tool-done');
+                    }
+                    const detailsEl = indicator.querySelector('.stream-tool-result');
+                    if (detailsEl && payload != null) {
+                        detailsEl.innerHTML = renderToolPager(payload, { title: t('tool_full_output') });
+                        detailsEl.style.display = '';
+                    }
+                    indicator.open = false;
+                }
+                return;
+            }
+            const w = document.createElement('div');
+            w.className = 'flex justify-start animate-in fade-in duration-200';
+            const d = document.createElement('details');
+            d.open = false;
+            d.className = 'stream-tool-indicator';
+            d.dataset.toolName = toolName;
+            d.innerHTML = `<summary><span class="run-activity-pulse stream-tool-status stream-tool-running" aria-hidden="true"></span><span class="stream-tool-name">${escapeHtml(typeof toolDisplayName==='function'?toolDisplayName(toolName):toolName)}</span>${RunActivity.time()}</summary><div class="stream-tool-result" style="display:none;margin-top:8px;"></div>`;
+            w.appendChild(d);
+            chatBox.appendChild(w);
+            scrollChatToBottom(chatBox, { settle: false });
+        }
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') continue;
+
+                try {
+                    const chunk = JSON.parse(data);
+                    const delta = chunk.choices && chunk.choices[0] && chunk.choices[0].delta;
+                    if (!delta) continue;
+
+                    // --- 处理结构化 meta 事件 ---
+                    if (delta.meta) {
+                        const m = delta.meta;
+                        if (m.type === 'error') {
+                            chatRun.error = m.message || 'Agent call failed';
+                        } else if (m.type === 'tools_start') {
+                            // LLM 回复结束，即将调工具 → 封存当前气泡
+                            sawToolActivity = true;
+                            sealCurrentBubble();
+                        } else if (m.type === 'tool_start') {
+                            sawToolActivity = true;
+                            createToolIndicator(m.name, 'start');
+                        } else if (m.type === 'tool_end') {
+                            sawToolActivity = true;
+                            createToolIndicator(m.name, 'end', m.result);
+                        } else if (m.type === 'tools_end') {
+                            // 所有工具执行完毕（可选：加分隔符）
+                        } else if (m.type === 'ai_start') {
+                            // 新一轮 LLM 开始 → 创建新文本气泡
+                            startNewBubble();
+                        }
+                        continue;
+                    }
+
+                    // --- 处理文本内容 ---
+                    if (delta.content) {
+                        fullText += delta.content;
+                        chatRun.fullText = fullText;
+                        if (!streamOwns()) continue;
+                        if (!agentDiv || !agentDiv.isConnected) {
+                            agentDiv = restoreActiveChatRunForCurrentContext();
+                        }
+                        if (!agentDiv) continue;
+                        agentDiv.innerHTML = renderMarkdown(fullText);
+                        agentDiv.classList.add('tc-markdown');
+                        highlightMarkdownIn(agentDiv);
+                        scrollChatToBottom(chatBox, { settle: false });
+                    }
+                } catch(e) {
+                    // 跳过无法解析的 chunk
+                }
+            }
+        }
+        if (chatRun.error) throw new Error(chatRun.error);
+        chatRun.status = 'completed';
+
+        // 流完成时若仍在别的 session/平台，不触碰当前 DOM；完整结果由该
+        // session 的既有历史存储负责，下次切回时正常加载。
+        if (!streamOwns()) {
+            return;
+        }
+
+        // 流式结束：封存最后一个气泡
+        if (fullText) {
+            if (!agentDiv || !agentDiv.isConnected) {
+                agentDiv = appendMessage('', false);
+            }
+        }
+        if (fullText && agentDiv) {
+            agentDiv.innerHTML = renderMarkdown(fullText);
+            highlightMarkdownIn(agentDiv);
+            const ttsBtn = createTtsButton(() => extractTtsTextFromElement(agentDiv));
+            agentDiv.appendChild(ttsBtn);
+            scrollChatToBottom(chatBox);
+        }
+
+        if (!fullText && allSegmentTexts.length === 0 && agentDiv) {
+            agentDiv.innerHTML = `<span class="text-gray-400">${sawToolActivity ? '本轮没有文本回复，请查看工具结果。' : t('no_response')}</span>`;
+        }
+
+        const hasRenderedToolIndicators = !!chatBox.querySelector('.stream-tool-indicator');
+        if ((sawToolActivity || hasRenderedToolIndicators) && currentSessionId &&
+            window.ExternalAgentSettings?.peek(currentSessionId)?.transport !== 'acpx') {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            await switchToSession(currentSessionId, true, { quiet: true });
+        }
+
+        // After agent response, refresh OASIS topics (in case a new discussion was started)
+        setTimeout(() => refreshOasisTopics(), 1000);
+
+    } catch (error) {
+        chatRun.status = error && error.name === 'AbortError' ? 'cancelled' : 'failed';
+        const typingIndicator = document.getElementById('typing-indicator');
+        if (typingIndicator) typingIndicator.remove();
+        // 流已被切走：不要把错误/中止提示塞进当前显示的对话
+        if (!streamOwns()) {
+            return;
+        }
+        if (error.name === 'AbortError') {
+            if (agentDiv) {
+                fullText += '\n\n' + t('thinking_stopped');
+                agentDiv.innerHTML = renderMarkdown(fullText);
+            } else {
+                appendMessage(t('thinking_stopped'), false);
+            }
+        } else {
+            let errText = '';
+            if (error instanceof Error && error.message && error.message !== '[object Object]') {
+                errText = error.message;
+            } else if (error != null) {
+                errText = formatApiErrorField(error);
+            }
+            if (!errText || errText === '[object Object]') {
+                errText = (typeof currentLang !== 'undefined' && currentLang === 'zh-CN')
+                    ? '请求失败，请在开发者工具 Network 中查看接口返回内容'
+                    : 'Request failed; inspect the Network tab for the API response';
+            }
+            appendMessage(t('agent_error') + ': ' + errText, false);
+        }
+    } finally {
+        if (activeChatRuns.get(_streamOwnerKey) === chatRun) {
+            activeChatRuns.delete(_streamOwnerKey);
+        }
+        // 仅复位本次流所属的当前视图，避免误清除另一会话的新流。
+        if(streamOwns())chatBox.querySelectorAll('.stream-tool-indicator').forEach(indicator=>{RunActivity.finish(indicator);indicator.open=false;});
+        if (streamOwns()) {
+            if (currentAbortController === streamAbortController) {
+                currentAbortController = null;
+            }
+            setStreamingUI(false);
+        }
+    }
+}
+
+inputField.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = (this.scrollHeight) + 'px';
+});
+inputField.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+});
+inputField.addEventListener('paste', handlePasteImage);
+
+// ================================================================
+// ===== Add Workflow 功能 =====
+// ================================================================
+let pendingWorkflows = [];  // [{name: 'xxx'}, ...]
+let pendingOasisWorkflows = [];  // [{name: 'xxx'}, ...]
+
+function getWorkflowTargetConfig(target = 'chat') {
+    if (target === 'oasis') {
+        return {
+            list: pendingOasisWorkflows,
+            areaId: 'oasis-workflow-preview-area',
+            inputId: 'oasis-town-input',
+            removeFn: 'removeOasisWorkflow',
+        };
+    }
+    return {
+        list: pendingWorkflows,
+        areaId: 'workflow-preview-area',
+        inputId: 'message-input',
+        removeFn: 'removeWorkflow',
+    };
+}
+
+function renderWorkflowPreviews(target = 'chat') {
+    const cfg = getWorkflowTargetConfig(target);
+    const area = document.getElementById(cfg.areaId);
+    if (!area) return;
+    if (!cfg.list.length) {
+        area.style.display = 'none';
+        area.innerHTML = '';
+        return;
+    }
+    area.style.display = 'flex';
+    area.innerHTML = cfg.list.map((wf, i) =>
+        `<span class="workflow-tag">${escapeHtml((wf.mode || 'yaml').toUpperCase())} Workflow: ${escapeHtml(wf.displayName)}<span class="wf-remove" onclick="${cfg.removeFn}(${i})">&times;</span></span>`
+    ).join('');
+}
+
+function removeWorkflow(idx) {
+    pendingWorkflows.splice(idx, 1);
+    renderWorkflowPreviews('chat');
+}
+
+function removeOasisWorkflow(idx) {
+    pendingOasisWorkflows.splice(idx, 1);
+    renderWorkflowPreviews('oasis');
+}
+
+async function showWorkflowPopup(target = 'chat') {
+    try {
+        // Load team list and global workflows in parallel
+        const [teamsResp, globalYamlResp, globalPyResp] = await Promise.all([
+            fetch('/teams'),
+            fetch('/proxy_visual/load-layouts'),
+            fetch('/proxy_visual/load-layouts?mode=python'),
+        ]);
+        const teamsData = await teamsResp.json();
+        const globalYamlLayouts = await globalYamlResp.json();
+        const globalPyLayouts = await globalPyResp.json();
+        const teams = teamsData.teams || [];
+
+        // Load team workflows in parallel
+        const teamResults = await Promise.all(teams.map(async (teamName) => {
+            try {
+                const [yamlResp, pyResp] = await Promise.all([
+                    fetch('/proxy_visual/load-layouts?team=' + encodeURIComponent(teamName)),
+                    fetch('/proxy_visual/load-layouts?team=' + encodeURIComponent(teamName) + '&mode=python'),
+                ]);
+                const [yamlLayouts, pyLayouts] = await Promise.all([
+                    yamlResp.json(),
+                    pyResp.json(),
+                ]);
+                return { team: teamName, yamlLayouts: yamlLayouts || [], pyLayouts: pyLayouts || [] };
+            } catch { return { team: teamName, layouts: [] }; }
+        }));
+
+        // Build grouped data: [{group, team, items}]
+        const groups = [];
+        const globalItems = [
+            ...(Array.isArray(globalYamlLayouts) ? globalYamlLayouts.map((name) => ({ name, mode: 'yaml' })) : []),
+            ...(Array.isArray(globalPyLayouts) ? globalPyLayouts.map((name) => ({ name, mode: 'python' })) : []),
+        ];
+        if (globalItems.length) groups.push({ group: '(公共)', team: '', items: globalItems });
+        teamResults.forEach((tr) => {
+            groups.push({
+                group: tr.team,
+                team: tr.team,
+                items: [
+                    ...(Array.isArray(tr.yamlLayouts) ? tr.yamlLayouts.map((name) => ({ name, mode: 'yaml' })) : []),
+                    ...(Array.isArray(tr.pyLayouts) ? tr.pyLayouts.map((name) => ({ name, mode: 'python' })) : []),
+                ],
+            });
+        });
+
+        if (!groups.length) { alert(t('wf_no_workflows')); return; }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'orch-modal-overlay';
+        overlay.id = 'wf-popup-overlay';
+        overlay.innerHTML = `
+            <div class="orch-modal" style="min-width:360px;max-width:460px;">
+                <h3>${t('wf_popup_title')}</h3>
+                <div id="wf-select-list" style="max-height:360px;overflow-y:auto;"></div>
+                <div class="orch-modal-btns">
+                    <button id="wf-cancel-btn" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">${t('wf_cancel')}</button>
+                    <button id="wf-confirm-btn" disabled style="padding:6px 14px;border-radius:6px;border:none;background:#7c3aed;color:white;cursor:pointer;font-size:12px;opacity:0.5;">${t('wf_confirm')}</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        let selectedName = null;
+        let selectedTeam = '';
+        let selectedMode = 'yaml';
+        overlay.querySelector('#wf-cancel-btn').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+        const listEl = overlay.querySelector('#wf-select-list');
+        for (const grp of groups) {
+            // Group header
+            const header = document.createElement('div');
+            header.style.cssText = 'padding:6px 8px;font-size:12px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;margin-top:6px;display:flex;align-items:center;gap:4px;';
+            header.innerHTML = `<span style="font-size:14px;">${grp.team ? '👥' : '🌐'}</span>${escapeHtml(grp.group)}`;
+            listEl.appendChild(header);
+
+            if (!grp.items.length) {
+                const emptyRow = document.createElement('div');
+                emptyRow.className = 'orch-session-item';
+                emptyRow.style.cssText = 'padding:8px 12px 8px 24px;border-radius:8px;cursor:default;opacity:0.65;margin-bottom:2px;display:flex;align-items:center;gap:8px;font-size:12px;color:#6b7280;';
+                emptyRow.innerHTML = `<span style="flex:1;">${escapeHtml(t('wf_team_no_layouts'))}</span>`;
+                listEl.appendChild(emptyRow);
+                continue;
+            }
+            for (const itemDef of grp.items) {
+                const name = itemDef.name;
+                const mode = itemDef.mode === 'python' ? 'python' : 'yaml';
+                const item = document.createElement('div');
+                item.className = 'orch-session-item';
+                item.style.cssText = 'padding:8px 12px 8px 24px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:2px;display:flex;align-items:center;gap:8px;transition:all 0.15s;';
+                item.innerHTML = `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:56px;padding:2px 8px;border-radius:999px;background:${mode === 'python' ? '#eff6ff' : '#f5f3ff'};border:1px solid ${mode === 'python' ? '#93c5fd' : '#c4b5fd'};font-size:11px;font-weight:700;color:${mode === 'python' ? '#1d4ed8' : '#6d28d9'};">${mode === 'python' ? 'Python' : 'YAML'}</span><span style="flex:1;font-size:13px;color:#374151;">${escapeHtml(name)}</span>`;
+                const teamVal = grp.team;
+                item.addEventListener('click', () => {
+                    listEl.querySelectorAll('.orch-session-item').forEach(el => {
+                        el.style.background = '';
+                        el.style.borderColor = 'transparent';
+                    });
+                    item.style.background = '#f5f3ff';
+                    item.style.borderColor = '#c4b5fd';
+                    selectedName = name;
+                    selectedTeam = teamVal;
+                    selectedMode = mode;
+                    const btn = overlay.querySelector('#wf-confirm-btn');
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                });
+                item.addEventListener('dblclick', async () => {
+                    selectedName = name;
+                    selectedTeam = teamVal;
+                    selectedMode = mode;
+                    await addWorkflowToContext(selectedName, selectedTeam, selectedMode, target);
+                    overlay.remove();
+                });
+                listEl.appendChild(item);
+            }
+        }
+
+        overlay.querySelector('#wf-confirm-btn').addEventListener('click', async () => {
+            if (selectedName) {
+                await addWorkflowToContext(selectedName, selectedTeam, selectedMode, target);
+                overlay.remove();
+            }
+        });
+    } catch(e) {
+        console.error('Failed to load workflows:', e);
+    }
+}
+
+function showOasisWorkflowPopup() {
+    return showWorkflowPopup('oasis');
+}
+
+async function addWorkflowToContext(name, team, mode = 'yaml', target = 'chat') {
+    team = team || '';
+    mode = mode === 'python' ? 'python' : 'yaml';
+    const displayName = team ? `${team}/${name}` : name;
+    const cfg = getWorkflowTargetConfig(target);
+    // Avoid duplicate
+    if (cfg.list.some(w => w.displayName === displayName && (w.mode || 'yaml') === mode)) return;
+
+    let contentText = '';
+    let workflowPath = '';
+    try {
+        const teamQ = team ? `?team=${encodeURIComponent(team)}` : '';
+        if (mode === 'python') {
+            const modeQ = teamQ ? `${teamQ}&mode=python` : '?mode=python';
+            const r = await fetch(`/proxy_visual/load-layout/${encodeURIComponent(name)}${modeQ}`);
+            const data = await r.json();
+            contentText = data.content || '';
+            workflowPath = data.path || '';
+        } else {
+            const r = await fetch(`/proxy_visual/load-yaml-raw/${encodeURIComponent(name)}${teamQ}`);
+            const data = await r.json();
+            contentText = data.yaml || '';
+            workflowPath = data.path || '';
+        }
+    } catch(e) {
+        console.warn('Failed to load workflow content:', e);
+    }
+
+    cfg.list.push({ name, team, mode, displayName, content: contentText, path: workflowPath });
+    renderWorkflowPreviews(target);
+    const input = document.getElementById(cfg.inputId);
+    if (input && typeof input.focus === 'function') input.focus();
+}
+
+// ================================================================
+// ===== Persona (Expert Persona) 功能 =====
+// ================================================================
+var selectedPersona = null;  // { name, tag, persona, source }
+var personaInjectedSession = null;  // session ID where persona was already injected (avoid repeated prompt)
+
+// ── Studio chat mode: WeBot or one ACP tool (codex, claude, openclaw, …) ──
+var _ocChatMode = 'internal';       // 'internal' | 'acp'
+var _acpAvailable = false;
+var _acpToolsCache = [];
+var _acpTool = null;                // selected acpx tool when _ocChatMode === 'acp'
+var _acpResolvedSessionNameByKey = Object.create(null);
+var _acpLastTranscriptKey = '';
+
+function _acpDisplayLabel(tool) {
+    const tName = String(tool || '').trim();
+    if (!tName) return '';
+    if (tName === 'acp') return currentLang === 'zh-CN' ? '自定义 ACP' : 'Custom ACP';
+    if (tName === 'codebuddy') return 'CodeBuddy';
+    if (tName === 'zcode') return 'ZCode';
+    return tName.charAt(0).toUpperCase() + tName.slice(1);
+}
+
+function _acpIconClass(tool) {
+    const tName = String(tool || '').toLowerCase();
+    if (tName === 'codex') return 'oc-acp-ico-codex';
+    if (tName === 'claude') return 'oc-acp-ico-claude';
+    if (tName === 'gemini') return 'oc-acp-ico-gemini';
+    return 'oc-acp-ico-generic';
+}
+
+function ocRenderAcpTabs(tools) {
+    const acpTabs = document.getElementById('oc-acp-tabs');
+    if (!acpTabs) return;
+    acpTabs.innerHTML = '';
+    for (const tool of (tools || [])) {
+        const tName = String(tool || '').trim().toLowerCase();
+        if (!tName) continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'oc-switcher-tab oc-tab-with-acp-ico';
+        btn.dataset.acpTool = tName;
+        btn.onclick = async () => { await ocSwitchTo('acp', tName); if(tName==='acp') await openExternalAgentSettings(); };
+        btn.innerHTML =
+            (window.StudioSidebar?.platformIcon(tName) || '<span class="oc-acp-ico ' + _acpIconClass(tName) + '" aria-hidden="true"></span>') +
+            '<span>' + escapeHtml(_acpDisplayLabel(tName)) + '</span>';
+        acpTabs.appendChild(btn);
+    }
+}
+
+function getLocalizedExpertName(expert) {
+    if (!expert) return '';
+    const isZh = (typeof currentLang !== 'undefined' && currentLang === 'zh-CN');
+    return (isZh ? (expert.name_zh || expert.name) : (expert.name_en || expert.name)) || expert.tag || '';
+}
+
+function createPersonaSelection(expert) {
+    if (!expert) return null;
+    return {
+        name: expert.name,
+        name_zh: expert.name_zh,
+        name_en: expert.name_en,
+        tag: expert.tag,
+        persona: expert.persona,
+        source: expert.source,
+    };
+}
+
+function renderPersonaPreview() {
+    const area = document.getElementById('persona-preview-area');
+    const btn = document.getElementById('persona-add-btn');
+    if (!area) return;
+    if (!selectedPersona) {
+        area.style.display = 'none';
+        if (btn) btn.classList.remove('active');
+        return;
+    }
+    area.style.display = 'flex';
+    if (btn) btn.classList.add('active');
+    const preview = selectedPersona.persona.length > 60 ? selectedPersona.persona.slice(0, 60) + '…' : selectedPersona.persona;
+    const displayName = getLocalizedExpertName(selectedPersona);
+    area.innerHTML = `<span class="persona-tag" title="${escapeHtml(selectedPersona.persona)}">🎭 ${escapeHtml(displayName)}: ${escapeHtml(preview)}<span class="persona-remove" onclick="clearPersona()">&times;</span></span>`;
+}
+
+function clearPersona() {
+    selectedPersona = null;
+    personaInjectedSession = null;
+    renderPersonaPreview();
+}
+
+async function showPersonaPopup() {
+    try {
+        const r = await fetch('/proxy_oasis/experts');
+        const data = await r.json();
+        const experts = data.experts || [];
+        if (!experts.length) { alert(t('persona_no_experts')); return; }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'orch-modal-overlay';
+        overlay.id = 'persona-popup-overlay';
+        overlay.innerHTML = `
+            <div class="orch-modal" style="min-width:360px;max-width:480px;">
+                <h3>${t('persona_popup_title')}</h3>
+                <div id="persona-search-box" style="margin-bottom:8px;">
+                    <input type="text" id="persona-search-input" placeholder="${escapeHtml(t('persona_search_placeholder'))}" style="width:100%;padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:12px;outline:none;" />
+                </div>
+                <div id="persona-select-list" style="max-height:360px;overflow-y:auto;"></div>
+                <div class="orch-modal-btns">
+                    <button id="persona-cancel-btn" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">${t('persona_cancel')}</button>
+                    <button id="persona-confirm-btn" disabled style="padding:6px 14px;border-radius:6px;border:none;background:#0891b2;color:white;cursor:pointer;font-size:12px;opacity:0.5;">${t('persona_confirm')}</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        let chosen = null;
+        overlay.querySelector('#persona-cancel-btn').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+        const listEl = overlay.querySelector('#persona-select-list');
+
+        function renderExpertList(filteredExperts) {
+            listEl.innerHTML = '';
+            const groups = [];
+            const pub = filteredExperts.filter(e => e.source === 'public');
+            const agn = filteredExperts.filter(e => e.source === 'agency');
+            const cus = filteredExperts.filter(e => e.source === 'custom');
+            if (pub.length) groups.push({ label: t('persona_public'), items: pub });
+            if (agn.length) groups.push({ label: t('persona_agency'), items: agn });
+            if (cus.length) groups.push({ label: t('persona_custom'), items: cus });
+
+            for (const group of groups) {
+                const header = document.createElement('div');
+                header.className = 'persona-expert-group';
+                header.textContent = `${group.label} (${group.items.length})`;
+                listEl.appendChild(header);
+
+                for (const expert of group.items) {
+                    const item = document.createElement('div');
+                    item.className = 'persona-expert-item';
+                    if (chosen && chosen.tag === expert.tag) {
+                        item.classList.add('selected');
+                    }
+                    const personaPreview = expert.persona.length > 80 ? expert.persona.slice(0, 80) + '…' : expert.persona;
+                    const displayName = getLocalizedExpertName(expert);
+                    const desc = expert.description ? `<div style="font-size:10px;color:#9ca3af;margin-top:1px;">${escapeHtml(expert.description)}</div>` : '';
+                    item.innerHTML = `
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="font-size:16px;">🎭</span>
+                            <div style="flex:1;min-width:0;">
+                                <div style="font-size:13px;color:#374151;font-weight:600;">${escapeHtml(displayName)} <span style="font-size:10px;color:#9ca3af;font-weight:400;">${escapeHtml(expert.tag)}</span></div>
+                                <div style="font-size:11px;color:#6b7280;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(personaPreview)}</div>
+                                ${desc}
+                            </div>
+                        </div>
+                    `;
+                    item.addEventListener('click', () => {
+                        listEl.querySelectorAll('.persona-expert-item').forEach(el => el.classList.remove('selected'));
+                        item.classList.add('selected');
+                        chosen = expert;
+                        const btn = overlay.querySelector('#persona-confirm-btn');
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                    });
+                    item.addEventListener('dblclick', () => {
+                        chosen = expert;
+                        selectedPersona = createPersonaSelection(chosen);
+                        personaInjectedSession = null;  // Reset so persona is injected in next send
+                        renderPersonaPreview();
+                        overlay.remove();
+                    });
+                    listEl.appendChild(item);
+                }
+            }
+
+            if (!filteredExperts.length) {
+                listEl.innerHTML = `<div style="text-align:center;color:#9ca3af;padding:20px;font-size:12px;">${escapeHtml(t('persona_no_match'))}</div>`;
+            }
+        }
+
+        renderExpertList(experts);
+
+        // Search filter
+        const searchInput = overlay.querySelector('#persona-search-input');
+        searchInput.addEventListener('input', () => {
+            const q = searchInput.value.trim().toLowerCase();
+            if (!q) { renderExpertList(experts); return; }
+            const filtered = experts.filter(e =>
+                (e.name || '').toLowerCase().includes(q) ||
+                (e.name_zh || '').toLowerCase().includes(q) ||
+                (e.name_en || '').toLowerCase().includes(q) ||
+                e.tag.toLowerCase().includes(q) ||
+                (e.persona || '').toLowerCase().includes(q) ||
+                (e.description || '').toLowerCase().includes(q) ||
+                (e.category || '').toLowerCase().includes(q)
+            );
+            renderExpertList(filtered);
+        });
+        setTimeout(() => searchInput.focus(), 100);
+
+        overlay.querySelector('#persona-confirm-btn').addEventListener('click', () => {
+            if (chosen) {
+                selectedPersona = createPersonaSelection(chosen);
+                personaInjectedSession = null;  // Reset so persona is injected in next send
+                renderPersonaPreview();
+                overlay.remove();
+            }
+        });
+    } catch(e) {
+        console.error('Failed to load experts:', e);
+    }
+}
+
+// ================================================================
+// ===== OASIS 讨论面板逻辑 =====
+// ================================================================
+
+let currentPage = 'chat'; // 'chat' or 'group' or 'orchestrate'
+let oasisPanelOpen = false;
+let oasisCurrentTopicId = null;
+let oasisPollingTimer = null;
+let oasisStreamReader = null;
+let oasisTownModeEnabled = localStorage.getItem('oasisTownModeEnabled') === '1';
+let oasisTownAudioEnabled = localStorage.getItem('oasisTownAudioEnabled') === '1';
+let oasisTownMountedTopicId = null;
+let oasisManualPostSubmitting = false;
+let oasisHumanReplySubmitting = false;
+let _oasisExpertsCache = null;
+let _overviewDetailCache = null;
+let oasisTownWorkspaceView = localStorage.getItem('oasisTownWorkspaceView') === 'graph' ? 'graph' : 'town';
+let oasisSwarmFilter = 'all';
+let oasisSwarmSelectedId = null;
+let oasisSwarmSelectedEdgeId = null;
+let oasisSwarmRefreshing = false;
+let oasisSwarmGraphCache = null;
+let oasisSwarmEdgeLabelsVisible = localStorage.getItem('oasisSwarmEdgeLabelsVisible') !== '0';
+let oasisSwarmViewport = { scale: 1, x: 0, y: 0 };
+let oasisReportLoading = false;
+const oasisReportCache = new Map();
+const CLAWCROSS_STUDIO_FIRST_VISIT_KEY = 'clawcrossStudioFirstVisitV2';
+
+function applyStudioFirstVisitDefaults() {
+    try {
+        if (localStorage.getItem(CLAWCROSS_STUDIO_FIRST_VISIT_KEY) === '1') {
+            return;
+        }
+        currentPage = 'chat';
+        oasisPanelOpen = false;
+        oasisTownModeEnabled = false;
+        oasisTownAudioEnabled = false;
+        oasisTownWorkspaceView = 'town';
+        localStorage.setItem('oasisTownModeEnabled', '0');
+        localStorage.setItem('oasisTownAudioEnabled', '0');
+        localStorage.setItem('oasisTownWorkspaceView', 'town');
+        localStorage.setItem(CLAWCROSS_STUDIO_FIRST_VISIT_KEY, '1');
+    } catch (err) {
+        console.warn('[Studio] Failed to apply first-visit defaults:', err);
+    }
+}
+
+// BroadcastChannel for cross-tab OASIS data sharing
+const oasisBroadcast = (typeof BroadcastChannel !== 'undefined')
+    ? new BroadcastChannel('oasis-data-sync')
+    : null;
+
+// Listen for requests from other tabs (e.g. group_chat_mobile)
+if (oasisBroadcast) {
+    oasisBroadcast.onmessage = (e) => {
+        if (e.data.type === 'request-refresh') {
+            // Another tab is asking us to push fresh data
+            refreshOasisTopics();
+        }
+    };
+}
+
+// Expert avatar mapping
+const expertAvatars = {
+    [t('oasis_expert_creative')]: { cls: 'expert-creative', icon: '💡' },
+    [t('oasis_expert_critical')]: { cls: 'expert-critical', icon: '🔍' },
+    '批判专家': { cls: 'expert-critical', icon: '🔍' },
+    'Critical Expert': { cls: 'expert-critical', icon: '🔍' },
+    'Critical Thinker': { cls: 'expert-critical', icon: '🔍' },
+    [t('oasis_expert_data')]: { cls: 'expert-data', icon: '📊' },
+    [t('oasis_expert_synthesis')]: { cls: 'expert-synthesis', icon: '🎯' },
+};
+
+function getExpertAvatar(name) {
+    return expertAvatars[name] || { cls: 'expert-default', icon: '🤖' };
+}
+
+function getStatusBadge(status) {
+    const map = {
+        'pending': { cls: 'oasis-status-pending', text: t('oasis_status_pending') },
+        'discussing': { cls: 'oasis-status-discussing', text: t('oasis_status_discussing') },
+        'concluded': { cls: 'oasis-status-concluded', text: t('oasis_status_concluded') },
+        'error': { cls: 'oasis-status-error', text: t('oasis_status_error') },
+        'cancelled': { cls: 'oasis-status-error', text: t('oasis_status_cancelled') },
+    };
+    return map[status] || { cls: 'oasis-status-pending', text: status };
+}
+
+function getOasisTownTrackSrc() {
+    const hour = new Date().getHours();
+    if (hour < 12) return '/static/assets/audio/town-morning.mp3';
+    if (hour < 18) return '/static/assets/audio/town-afternoon.mp3';
+    return '/static/assets/audio/town-evening.mp3';
+}
+
+function updateOasisTownAudioButton() {
+    const btn = document.getElementById('oasis-town-audio-btn');
+    if (!btn) return;
+    btn.textContent = oasisTownAudioEnabled ? '♪ ON' : '♪ OFF';
+    btn.classList.toggle('is-on', oasisTownAudioEnabled);
+    btn.classList.toggle('is-off', !oasisTownAudioEnabled);
+}
+
+function destroyOasisTownRuntime() {
+    try {
+        if (window.OasisTown && typeof window.OasisTown.destroy === 'function') {
+            window.OasisTown.destroy();
+        }
+    } catch (err) {
+        console.warn('[OASIS] Failed to destroy town runtime:', err);
+    }
+    oasisTownMountedTopicId = null;
+    const canvas = document.getElementById('oasis-town-canvas');
+    if (canvas) canvas.innerHTML = '';
+}
+
+let oasisTownBundlePromise = null;
+function loadOasisTownBundle() {
+    if (window.OasisTown) return Promise.resolve();
+    if (!oasisTownBundlePromise) oasisTownBundlePromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = '/static/js/oasis-town.bundle.js?v=20260327-humanfix';
+        script.onload = resolve;
+        script.onerror = () => { script.remove(); oasisTownBundlePromise = null; reject(new Error('Town download failed')); };
+        document.head.appendChild(script);
+    });
+    return oasisTownBundlePromise;
+}
+
+function syncOasisTownRuntime(detail) {
+    ensureOasisTownPlacement();
+    const canvas = document.getElementById('oasis-town-canvas');
+    if (!oasisTownModeEnabled || !detail || !canvas) {
+        destroyOasisTownRuntime();
+        return;
+    }
+    if (!window.OasisTown || typeof window.OasisTown.mount !== 'function') {
+        loadOasisTownBundle().then(() => {
+            if (oasisTownModeEnabled) syncOasisTownRuntime(detail);
+        }).catch(error => console.warn('[OASIS]', error));
+        return;
+    }
+    if (oasisTownMountedTopicId !== detail.topic_id) {
+        window.OasisTown.mount(canvas, detail);
+        oasisTownMountedTopicId = detail.topic_id;
+        return;
+    }
+    if (typeof window.OasisTown.update === 'function') {
+        window.OasisTown.update(detail);
+    }
+}
+
+function isOasisTownHostedInChat() {
+    return oasisTownModeEnabled && currentPage === 'chat';
+}
+
+function ensureOasisPanelOpen() {
+    if (!oasisPanelOpen) {
+        toggleOasisPanel();
+    }
+}
+
+function setOasisTownWorkspaceView(view) {
+    const nextView = view === 'graph' ? 'graph' : 'town';
+    oasisTownWorkspaceView = nextView;
+    localStorage.setItem('oasisTownWorkspaceView', nextView);
+    applyOasisTownWorkspaceView();
+    if (nextView === 'graph') {
+        renderOasisSwarmPanel(getCurrentOasisDetail());
+    }
+}
+
+function applyOasisTownWorkspaceView() {
+    const hostInChat = isOasisTownHostedInChat();
+    const switcher = document.getElementById('oasis-chat-workspace-switcher');
+    const townBtn = document.getElementById('oasis-chat-view-town-btn');
+    const graphBtn = document.getElementById('oasis-chat-view-graph-btn');
+    const townHost = document.getElementById('oasis-chat-town-host');
+    const graphHost = document.getElementById('oasis-chat-graph-host');
+    const shell = document.getElementById('oasis-chat-town-shell');
+    const showWorkspace = hostInChat;
+    const showGraph = showWorkspace && oasisTownWorkspaceView === 'graph';
+    const showTown = showWorkspace && !showGraph;
+
+    if (switcher) switcher.style.display = showWorkspace ? 'inline-flex' : 'none';
+    if (townBtn) townBtn.classList.toggle('is-active', showTown);
+    if (graphBtn) graphBtn.classList.toggle('is-active', showGraph);
+    if (townHost) townHost.style.display = showTown ? 'flex' : 'none';
+    if (graphHost) graphHost.style.display = showGraph ? 'flex' : 'none';
+    if (shell) shell.classList.toggle('graph-view', showGraph);
+
+    if (showGraph) {
+        renderOasisSwarmPanel(getCurrentOasisDetail());
+    }
+}
+
+function ensureOasisTownPlacement() {
+    const stage = document.getElementById('oasis-town-stage');
+    const composer = document.getElementById('oasis-town-composer');
+    const chatHost = document.getElementById('oasis-chat-town-host');
+    const graphHost = document.getElementById('oasis-chat-graph-host');
+    const detailHost = document.getElementById('oasis-detail-town-host');
+    const graphDock = document.getElementById('oasis-detail-graph-dock');
+    const swarmPanel = document.getElementById('oasis-swarm-panel');
+    const panel = document.getElementById('oasis-panel');
+    const chatPage = document.getElementById('page-chat');
+    const hostInChat = isOasisTownHostedInChat();
+    const target = hostInChat ? chatHost : detailHost;
+    const graphTarget = hostInChat && oasisTownModeEnabled ? graphHost : graphDock;
+    if (panel) panel.classList.toggle('oasis-town-chat-mode', hostInChat);
+    if (chatPage) chatPage.classList.toggle('oasis-town-active', hostInChat);
+    if (target && stage && stage.parentElement !== target) target.appendChild(stage);
+    if (target && composer && composer.parentElement !== target) target.appendChild(composer);
+    if (graphTarget && swarmPanel && swarmPanel.parentElement !== graphTarget) graphTarget.appendChild(swarmPanel);
+    applyOasisTownWorkspaceView();
+}
+
+function renderOasisTownIdleState() {
+    const stageQuestionEl = document.getElementById('oasis-town-stage-question');
+    if (stageQuestionEl) {
+        stageQuestionEl.textContent = currentLang === 'zh-CN'
+            ? '在这里输入一个新话题，直接把专家们叫到广场里。'
+            : 'Type a new idea here to call the experts into the plaza.';
+    }
+    const metaEl = document.getElementById('oasis-town-stage-meta');
+    if (metaEl) {
+        metaEl.innerHTML = `
+            <span class="oasis-stage-chip">${currentLang === 'zh-CN' ? '🟡 未选中运行中的讨论' : '🟡 No live discussion selected'}</span>
+            <span class="oasis-stage-chip">${currentLang === 'zh-CN' ? '✍️ 发送即可开启新话题' : '✍️ Submit to start a topic'}</span>
+        `;
+    }
+    const stripEl = document.getElementById('oasis-resident-strip');
+    if (stripEl) {
+        stripEl.innerHTML = `<div class="oasis-resident-empty">${
+            currentLang === 'zh-CN'
+                ? '广场现在空着。左侧输入会新开一个 OASIS 讨论，并把详细发言放到右侧。'
+                : 'The plaza is idle. Submitting from the left starts a fresh OASIS thread on the right.'
+        }</div>`;
+    }
+    destroyOasisTownRuntime();
+    updateOasisChatTownHud(null);
+}
+
+function updateOasisChatTownHud(detail) {
+    const copyEl = document.getElementById('oasis-chat-town-search-copy');
+    const residentEl = document.getElementById('oasis-chat-town-stat-residents');
+    const postsEl = document.getElementById('oasis-chat-town-stat-posts');
+    const hideBtn = document.getElementById('oasis-chat-town-hide-btn');
+    if (hideBtn) {
+        const hidden = document.getElementById('oasis-chat-town-shell')?.classList.contains('hud-hidden');
+        hideBtn.textContent = hidden ? 'SHOW UI' : 'HIDE UI';
+    }
+    if (!copyEl || !residentEl || !postsEl) return;
+
+    const participants = detail ? collectOasisParticipants(detail) : [];
+    const postCount = detail && detail.posts ? detail.posts.length : 0;
+    const liveCount = detail && (detail.status === 'discussing' || detail.status === 'pending')
+        ? participants.length
+        : 0;
+
+    residentEl.textContent = String(liveCount);
+    postsEl.textContent = String(postCount);
+    copyEl.textContent = detail && detail.question
+        ? `${currentLang === 'zh-CN'
+            ? (detail.status === 'concluded' ? '已归档话题' : '实时话题')
+            : (detail.status === 'concluded' ? 'Archived thread' : 'Live thread')}: ${detail.question}`
+        : (currentLang === 'zh-CN'
+            ? 'Idle plaza. 从左侧输入一句话，直接开启新的 OASIS 讨论。'
+            : 'Idle plaza. Start a fresh OASIS discussion from the town composer.');
+}
+
+function toggleOasisTownHudVisibility() {
+    const shell = document.getElementById('oasis-chat-town-shell');
+    if (!shell) return;
+    shell.classList.toggle('hud-hidden');
+    updateOasisChatTownHud(_overviewDetailCache && _overviewDetailCache.topic_id === oasisCurrentTopicId ? _overviewDetailCache : null);
+}
+
+function applyOasisTownMode() {
+    const panel = document.getElementById('oasis-panel');
+    const btn = document.getElementById('oasis-town-mode-btn');
+    if (panel) panel.classList.toggle('oasis-town-mode', oasisTownModeEnabled);
+    if (btn) {
+        btn.textContent = oasisTownModeEnabled ? '🏘️ ON' : '🏘️ OFF';
+        btn.classList.toggle('is-active', oasisTownModeEnabled);
+    }
+    if (!oasisTownModeEnabled) {
+        destroyOasisTownRuntime();
+    } else if (currentPage === 'chat') {
+        ensureOasisPanelOpen();
+    }
+    ensureOasisTownPlacement();
+    applyOasisTownWorkspaceView();
+    if (oasisTownModeEnabled && _overviewDetailCache && oasisCurrentTopicId) {
+        syncOasisTownRuntime(_overviewDetailCache);
+        updateOasisTownComposer(_overviewDetailCache);
+        updateOasisChatTownHud(_overviewDetailCache);
+    } else if (oasisTownModeEnabled) {
+        renderOasisTownIdleState();
+        updateOasisTownComposer(null);
+        updateOasisChatTownHud(null);
+    }
+    syncOasisTownAudioState(!oasisTownModeEnabled || !oasisPanelOpen);
+}
+
+function toggleOasisTownMode() {
+    oasisTownModeEnabled = !oasisTownModeEnabled;
+    localStorage.setItem('oasisTownModeEnabled', oasisTownModeEnabled ? '1' : '0');
+    applyOasisTownMode();
+}
+
+function syncOasisTownAudioState(forcePause = false) {
+    const audio = document.getElementById('oasis-town-bgm');
+    if (!audio) return;
+    const src = getOasisTownTrackSrc();
+    if (audio.getAttribute('src') !== src) {
+        audio.setAttribute('src', src);
+    }
+    audio.volume = 0.22;
+    updateOasisTownAudioButton();
+    if (forcePause || !oasisTownModeEnabled || !oasisTownAudioEnabled) {
+        audio.pause();
+        return;
+    }
+    audio.play().catch((err) => {
+        console.warn('[OASIS] Failed to play town audio:', err);
+        audio.pause();
+        oasisTownAudioEnabled = false;
+        localStorage.setItem('oasisTownAudioEnabled', '0');
+        updateOasisTownAudioButton();
+    });
+}
+
+function toggleOasisTownAudio() {
+    oasisTownAudioEnabled = !oasisTownAudioEnabled;
+    localStorage.setItem('oasisTownAudioEnabled', oasisTownAudioEnabled ? '1' : '0');
+    syncOasisTownAudioState(!oasisTownAudioEnabled);
+}
+
+function formatTime(ts) {
+    const d = new Date(ts * 1000);
+    return d.toLocaleTimeString(currentLang === 'zh-CN' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function openWorkflowRuns() {
+    const panel = document.getElementById('oasis-panel');
+    oasisPanelOpen = true;
+    panel.classList.remove('collapsed-panel');
+    panel.classList.toggle('mobile-open', window.innerWidth < 768);
+    showOasisTopicList();
+    syncOasisTownAudioState();
+}
+
+function toggleOasisPanel() {
+    const panel = document.getElementById('oasis-panel');
+    oasisPanelOpen = !oasisPanelOpen;
+    if (oasisPanelOpen) {
+        panel.classList.remove('collapsed-panel');
+        panel.classList.remove('mobile-open');
+        syncOasisTownAudioState();
+        if (oasisTownModeEnabled && _overviewDetailCache && oasisCurrentTopicId) {
+            syncOasisTownRuntime(_overviewDetailCache);
+        }
+        refreshOasisTopics();
+    } else {
+        panel.classList.add('collapsed-panel');
+        panel.classList.remove('mobile-open');
+        syncOasisTownAudioState(true);
+        destroyOasisTownRuntime();
+        stopOasisPolling();
+    }
+}
+
+function toggleOasisMobile() {
+    const panel = document.getElementById('oasis-panel');
+    if (panel.classList.contains('mobile-open')) {
+        panel.classList.remove('mobile-open');
+        syncOasisTownAudioState(true);
+        destroyOasisTownRuntime();
+        stopOasisPolling();
+    } else {
+        panel.classList.remove('collapsed-panel');
+        panel.classList.add('mobile-open');
+        syncOasisTownAudioState();
+        refreshOasisTopics();
+    }
+}
+
+applyStudioFirstVisitDefaults();
+updateOasisTownAudioButton();
+applyOasisTownMode();
+
+// ── Hamburger menu (tab-bar left ☰ button) ──
+function toggleHamburgerMenu() {
+    const panel = document.getElementById('hamburger-panel');
+    if (!panel) return;
+    if (panel.style.display === 'none' || !panel.style.display) {
+        // Sync UID display
+        const uidSrc = document.getElementById('uid-display');
+        const uidDst = document.getElementById('hamburger-uid');
+        if (uidSrc && uidDst) uidDst.textContent = uidSrc.textContent || '—';
+        panel.style.display = 'block';
+        // Close on outside click
+        setTimeout(() => document.addEventListener('click', _closeHamburgerOutside, { once: true }), 0);
+    } else {
+        panel.style.display = 'none';
+    }
+}
+function closeHamburgerMenu() {
+    const panel = document.getElementById('hamburger-panel');
+    if (panel) panel.style.display = 'none';
+}
+function _closeHamburgerOutside(e) {
+    const wrapper = document.querySelector('.hamburger-menu-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) closeHamburgerMenu();
+}
+
+function _projectUpdateToast(message) {
+    if (typeof orchToast === 'function') {
+        orchToast(message);
+        return;
+    }
+    alert(message);
+}
+
+function _renderProjectUpdateSummary(update) {
+    const summaryEl = document.getElementById('project-update-summary');
+    const logWrap = document.getElementById('project-update-log-wrap');
+    const logEl = document.getElementById('project-update-log');
+    const startBtn = document.getElementById('project-update-start-btn');
+    if (!summaryEl || !startBtn) return;
+    if (!update) {
+        updateProjectUpdateBanner(null);
+        summaryEl.textContent = t('project_update_summary_placeholder');
+        startBtn.disabled = true;
+        if (logWrap) logWrap.style.display = 'none';
+        return;
+    }
+    const isNpm = update.deployment_mode === 'npm';
+    const channelLabel = t(isNpm ? 'project_update_channel_label' : 'project_update_branch_label');
+    const lines = [
+        `${t('project_update_status_label')}: ${update.status || 'idle'}`,
+        `${channelLabel}: ${update.branch || (isNpm ? 'latest' : 'unknown')}`,
+        `${t('project_update_current_label')}: ${(update.current_short_commit || '-')} ${update.current_subject ? `(${update.current_subject})` : ''}`.trim(),
+        `${t('project_update_remote_label')}: ${(update.latest_short_commit || '-')} ${update.latest_subject ? `(${update.latest_subject})` : ''}`.trim(),
+    ];
+    if (!isNpm && update.dirty) {
+        lines.push(t('project_update_dirty_warning'));
+    } else if (update.has_update) {
+        lines.push(t(isNpm ? 'project_update_has_update_npm' : 'project_update_has_update'));
+    } else {
+        lines.push(t('project_update_up_to_date'));
+    }
+    if (update.message) {
+        lines.push('');
+        lines.push(update.message);
+    }
+    summaryEl.textContent = lines.join('\n');
+    startBtn.disabled = Boolean(update.in_progress);
+    if (Array.isArray(update.log_tail) && update.log_tail.length) {
+        if (logWrap) logWrap.style.display = 'block';
+        if (logEl) logEl.textContent = update.log_tail.join('\n');
+    } else if (logWrap) {
+        logWrap.style.display = 'none';
+    }
+    updateProjectUpdateBanner(update);
+}
+
+async function _fetchProjectUpdate(endpoint, payload) {
+    const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    let data = {};
+    try {
+        data = await resp.json();
+    } catch (_) {}
+    if (!resp.ok) {
+        throw new Error(data.detail || data.error || `HTTP ${resp.status}`);
+    }
+    return data.update || data;
+}
+
+function _projectUpdatePollingActive(update) {
+    return !!update && ['queued', 'checking', 'updating', 'restarting'].includes(update.status);
+}
+
+function _stopProjectUpdatePolling() {
+    if (projectUpdatePollTimer) {
+        clearTimeout(projectUpdatePollTimer);
+        projectUpdatePollTimer = null;
+    }
+}
+
+function openProjectUpdateModal() {
+    const modal = document.getElementById('project-update-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    _renderProjectUpdateSummary(null);
+}
+
+function closeProjectUpdateModal() {
+    const modal = document.getElementById('project-update-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function checkProjectUpdate(refreshRemote = true) {
+    if (!currentUserId) {
+        _projectUpdateToast(t('project_update_login'));
+        return;
+    }
+    const checkBtn = document.getElementById('project-update-check-btn');
+    if (checkBtn) checkBtn.disabled = true;
+    try {
+        const update = await _fetchProjectUpdate('/proxy_update_check', {
+            refresh_remote: !!refreshRemote,
+        });
+        _renderProjectUpdateSummary(update);
+    } catch (err) {
+        _projectUpdateToast(t('project_update_check_failed', {error: err.message}));
+    } finally {
+        if (checkBtn) checkBtn.disabled = false;
+    }
+}
+
+async function pollProjectUpdateStatus() {
+    if (!currentUserId) return;
+    try {
+        const update = await _fetchProjectUpdate('/proxy_update_status', {});
+        _renderProjectUpdateSummary(update);
+        if (_projectUpdatePollingActive(update)) {
+            _stopProjectUpdatePolling();
+            projectUpdatePollTimer = setTimeout(pollProjectUpdateStatus, 3000);
+            return;
+        }
+        _stopProjectUpdatePolling();
+        if (update.status === 'done') {
+            _projectUpdateToast(t('project_update_done'));
+            setTimeout(() => window.location.reload(), 1500);
+        } else if (update.status === 'failed') {
+            _projectUpdateToast(update.message || t('project_update_failed'));
+        }
+    } catch (err) {
+        _renderProjectUpdateSummary({
+            status: 'restarting',
+            message: t('project_update_restarting', {error: err.message}),
+            log_tail: [],
+        });
+        _stopProjectUpdatePolling();
+        projectUpdatePollTimer = setTimeout(pollProjectUpdateStatus, 3000);
+    }
+}
+
+async function startProjectUpdate() {
+    if (!currentUserId) {
+        _projectUpdateToast(t('project_update_login'));
+        return;
+    }
+    const startBtn = document.getElementById('project-update-start-btn');
+    const branchInput = document.getElementById('project-update-branch');
+    const branch = branchInput ? String(branchInput.value || '').trim() : '';
+    if (startBtn) startBtn.disabled = true;
+    try {
+        const update = await _fetchProjectUpdate('/proxy_update_start', { branch });
+        _renderProjectUpdateSummary(update);
+        _projectUpdateToast(t('project_update_started'));
+        _stopProjectUpdatePolling();
+        projectUpdatePollTimer = setTimeout(pollProjectUpdateStatus, 1500);
+    } catch (err) {
+        _projectUpdateToast(t('project_update_start_failed', {error: err.message}));
+        if (startBtn) startBtn.disabled = false;
+    }
+}
+
+function toggleMobileMenu() {
+    const dd = document.getElementById('mobile-menu-dropdown');
+    if (dd.style.display === 'none') {
+        dd.style.display = 'block';
+        // close when tapping outside
+        setTimeout(() => document.addEventListener('click', closeMobileMenuOutside, { once: true }), 0);
+    } else {
+        dd.style.display = 'none';
+    }
+}
+function closeMobileMenu() {
+    document.getElementById('mobile-menu-dropdown').style.display = 'none';
+}
+function closeMobileMenuOutside(e) {
+    const wrapper = document.querySelector('.mobile-menu-wrapper');
+    if (!wrapper.contains(e.target)) closeMobileMenu();
+}
+
+function stopOasisPolling() {
+    if (oasisPollingTimer) {
+        clearInterval(oasisPollingTimer);
+        oasisPollingTimer = null;
+    }
+    if (oasisStreamReader) {
+        oasisStreamReader.cancel();
+        oasisStreamReader = null;
+    }
+}
+
+async function refreshOasisTopics() {
+    try {
+        const resp = await fetch('/proxy_oasis/topics');
+        console.log('[OASIS] Topics response status:', resp.status);
+        if (!resp.ok) {
+            console.error('[OASIS] Failed to fetch topics:', resp.status);
+            return;
+        }
+        const topics = await resp.json();
+        console.log('[OASIS] Topics data:', topics);
+        renderTopicList(topics);
+        // Broadcast to other tabs (group_chat_mobile etc.)
+        if (oasisBroadcast) {
+            oasisBroadcast.postMessage({ type: 'topics', data: topics });
+        }
+    } catch (e) {
+        console.error('[OASIS] Failed to load topics:', e);
+    }
+}
+
+function renderTopicList(topics) {
+    const container = document.getElementById('oasis-topic-list');
+    const countEl = document.getElementById('oasis-topic-count');
+    countEl.textContent = topics.length + ' ' + t('oasis_topics_count');
+
+    if (topics.length === 0) {
+        container.innerHTML = `
+            <div class="oasis-topic-list-empty">
+                <div class="oasis-empty-town">🏘️</div>
+                <p>${t('oasis_no_topics')}</p>
+                <p class="oasis-empty-subtitle">${t('oasis_start_hint')}</p>
+            </div>`;
+        return;
+    }
+
+    // Sort: discussing first, then by created_at desc
+    topics.sort((a, b) => {
+        if (a.status === 'discussing' && b.status !== 'discussing') return -1;
+        if (b.status === 'discussing' && a.status !== 'discussing') return 1;
+        return (b.created_at || 0) - (a.created_at || 0);
+    });
+
+    container.innerHTML = topics.map(topic => {
+        const badge = getStatusBadge(topic.status);
+        const isActive = topic.topic_id === oasisCurrentTopicId;
+        const isRunning = topic.status === 'discussing' || topic.status === 'pending';
+        return `
+            <div class="oasis-topic-item ${isActive ? 'active' : ''}" onclick="openOasisTopic('${topic.topic_id}')">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="oasis-status-badge ${badge.cls}">${badge.text}</span>
+                    <div class="flex items-center space-x-1">
+                        ${isRunning ? `<button onclick="event.stopPropagation(); cancelOasisTopic('${topic.topic_id}')" class="oasis-action-btn oasis-btn-cancel" title="${t('oasis_cancel')}">⏹</button>` : ''}
+                        <button onclick="event.stopPropagation(); deleteOasisTopic('${topic.topic_id}')" class="oasis-action-btn oasis-btn-delete" title="${t('oasis_delete')}">🗑</button>
+                        <span class="oasis-list-count">${topic.created_at ? formatTime(topic.created_at) : ''}</span>
+                    </div>
+                </div>
+                <p class="text-sm font-semibold leading-relaxed text-[#32293a] line-clamp-3">${escapeHtml(topic.question)}</p>
+                <div class="flex items-center flex-wrap gap-2 mt-3">
+                    <span class="oasis-stage-chip">💬 ${topic.post_count || 0} ${t('oasis_posts')}</span>
+                    <span class="oasis-stage-chip">🔄 ${topic.current_round}/${topic.max_rounds} ${t('oasis_round')}</span>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function openOasisTopic(topicId) {
+    oasisCurrentTopicId = topicId;
+    oasisSwarmSelectedId = null;
+    oasisSwarmSelectedEdgeId = null;
+    oasisSwarmViewport = { scale: 1, x: 0, y: 0 };
+    stopOasisPolling();
+
+    // Switch to detail view
+    document.getElementById('oasis-topic-list-view').style.display = 'none';
+    document.getElementById('oasis-detail-view').style.display = 'flex';
+    const postsBox = document.getElementById('oasis-posts-box');
+    if (postsBox) {
+        postsBox.innerHTML = `
+            <div class="oasis-topic-list-empty" style="min-height: 260px;">
+                <div class="oasis-empty-town">🏘️</div>
+                <p>${t('loading')}</p>
+            </div>`;
+    }
+
+    // Load topic detail
+    await loadTopicDetail(topicId);
+}
+
+function showOasisTopicList() {
+    stopOasisPolling();
+    oasisCurrentTopicId = null;
+    oasisSwarmSelectedId = null;
+    oasisSwarmSelectedEdgeId = null;
+    oasisSwarmViewport = { scale: 1, x: 0, y: 0 };
+    destroyOasisTownRuntime();
+    document.getElementById('oasis-detail-view').style.display = 'none';
+    document.getElementById('oasis-topic-list-view').style.display = 'flex';
+    renderOasisSwarmPanel(null);
+    if (oasisTownModeEnabled) {
+        renderOasisTownIdleState();
+        updateOasisTownComposer(null);
+        updateOasisChatTownHud(null);
+    }
+    refreshOasisTopics();
+}
+
+async function loadTopicDetail(topicId) {
+    const enc = encodeURIComponent(String(topicId));
+    const postsBox = document.getElementById('oasis-posts-box');
+    try {
+        const resp = await fetch(`/proxy_oasis/topics/${enc}`);
+        console.log('[OASIS] Detail response status:', resp.status);
+        const text = await resp.text();
+        let detail;
+        try {
+            detail = text ? JSON.parse(text) : {};
+        } catch (parseErr) {
+            throw new Error(text ? text.slice(0, 200) : `HTTP ${resp.status}`);
+        }
+        if (!resp.ok) {
+            const msg = (detail && (detail.detail || detail.error || detail.message)) || `HTTP ${resp.status}`;
+            const readable = typeof msg === 'string' ? msg : JSON.stringify(msg);
+            console.error('[OASIS] Failed to fetch detail:', resp.status, readable);
+            if (postsBox) {
+                postsBox.innerHTML = `<div class="oasis-topic-list-empty" style="min-height:200px;padding:16px;">
+                    <div class="oasis-empty-town">❌</div>
+                    <p class="text-sm text-red-500">${escapeHtml(t('error') + ': ' + readable)}</p>
+                    <p class="text-xs text-gray-500 mt-2">请确认 OASIS 服务已启动（默认端口与 front 中 PORT_OASIS 一致），且当前登录用户与创建该讨论的用户一致。</p>
+                </div>`;
+            }
+            return;
+        }
+        console.log('[OASIS] Detail data:', detail);
+        console.log('[OASIS] Posts count:', (detail.posts || []).length);
+        renderTopicDetail(detail);
+
+        // If still discussing, start polling for updates
+        if (detail.status === 'discussing' || detail.status === 'pending') {
+            startDetailPolling(topicId);
+        }
+    } catch (e) {
+        console.warn('Failed to load topic detail:', e);
+        if (postsBox) {
+            postsBox.innerHTML = `<div class="oasis-topic-list-empty" style="min-height:200px;padding:16px;">
+                <div class="oasis-empty-town">❌</div>
+                <p class="text-sm text-red-500">${escapeHtml(t('error') + ': ' + (e.message || String(e)))}</p>
+            </div>`;
+        }
+    }
+}
+
+function collectOasisParticipants(detail) {
+    const people = new Map();
+    (detail.timeline || []).forEach(ev => {
+        if (!ev.agent) return;
+        const item = people.get(ev.agent) || { name: ev.agent, posts: 0, events: 0 };
+        item.events += 1;
+        people.set(ev.agent, item);
+    });
+    (detail.posts || []).forEach(post => {
+        if (!post.author) return;
+        const item = people.get(post.author) || { name: post.author, posts: 0, events: 0 };
+        item.posts += 1;
+        people.set(post.author, item);
+    });
+    return [...people.values()].sort((a, b) => {
+        if (b.posts !== a.posts) return b.posts - a.posts;
+        if (b.events !== a.events) return b.events - a.events;
+        return a.name.localeCompare(b.name);
+    });
+}
+
+async function loadOasisExperts(force = false) {
+    if (_oasisExpertsCache && !force) return _oasisExpertsCache;
+    const resp = await fetch('/proxy_oasis/experts');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    _oasisExpertsCache = data.experts || [];
+    return _oasisExpertsCache;
+}
+
+function pickTownDefaultExpertTags(experts) {
+    const preferred = ['creative', 'critical', 'data', 'synthesis'];
+    const available = [...new Set((experts || []).map(e => e.tag).filter(Boolean))];
+    const tags = [];
+    if (selectedPersona && selectedPersona.tag && available.includes(selectedPersona.tag)) {
+        tags.push(selectedPersona.tag);
+    }
+    preferred.forEach(tag => {
+        if (available.includes(tag) && !tags.includes(tag)) tags.push(tag);
+    });
+    available.forEach(tag => {
+        if (!tags.includes(tag)) tags.push(tag);
+    });
+    return tags.slice(0, Math.min(4, Math.max(available.length, 1)));
+}
+
+function buildTownQuickStartYaml(tags) {
+    const lines = [
+        'version: 1',
+        'discussion: true',
+        'repeat: true',
+        'plan:',
+        '  - parallel:',
+    ];
+    tags.forEach(tag => {
+        lines.push(`      - persona: ${JSON.stringify(tag)}`);
+    });
+    return lines.join('\n');
+}
+
+function renderOasisTownStage(detail) {
+    const stageQuestionEl = document.getElementById('oasis-town-stage-question');
+    if (stageQuestionEl) {
+        stageQuestionEl.textContent = detail.question || '';
+    }
+
+    const badge = getStatusBadge(detail.status);
+    const metaEl = document.getElementById('oasis-town-stage-meta');
+    if (metaEl) {
+        metaEl.innerHTML = `
+            <span class="oasis-stage-chip">${escapeHtml(badge.text)}</span>
+            <span class="oasis-stage-chip">💬 ${(detail.posts || []).length} ${t('oasis_posts')}</span>
+            <span class="oasis-stage-chip">🔄 ${detail.current_round}/${detail.max_rounds} ${t('oasis_round')}</span>
+        `;
+    }
+
+    const stripEl = document.getElementById('oasis-resident-strip');
+    if (!stripEl) return;
+    const participants = collectOasisParticipants(detail);
+    if (participants.length === 0) {
+        stripEl.innerHTML = `<div class="oasis-resident-empty">${t('oasis_waiting')}</div>`;
+        return;
+    }
+
+    stripEl.innerHTML = participants.slice(0, 8).map(person => {
+        const avatar = getExpertAvatar(person.name);
+        const roleText = person.posts > 0
+            ? (currentLang === 'zh-CN' ? `${person.posts} 条发言` : `${person.posts} posts`)
+            : (currentLang === 'zh-CN' ? '等待出场' : 'waiting');
+        const eventText = currentLang === 'zh-CN'
+            ? `${person.events} 次调度`
+            : `${person.events} calls`;
+        return `
+            <div class="oasis-resident-card">
+                <div class="oasis-resident-house">
+                    <div class="oasis-expert-avatar ${avatar.cls}" title="${escapeHtml(person.name)}">${avatar.icon}</div>
+                </div>
+                <div class="oasis-resident-name">${escapeHtml(person.name)}</div>
+                <div class="oasis-resident-role">${roleText}<br>${eventText}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function updateOasisTownComposer(detail) {
+    const input = document.getElementById('oasis-town-input');
+    const note = document.getElementById('oasis-town-composer-note');
+    const title = document.getElementById('oasis-town-composer-title');
+    const submitBtn = document.getElementById('oasis-town-submit-btn');
+    if (!input || !note || !title || !submitBtn) return;
+
+    const topicId = detail && detail.topic_id ? detail.topic_id : '';
+    const sameTopic = input.dataset.topicId === topicId;
+    if (!sameTopic) {
+        input.value = '';
+        pendingOasisWorkflows = [];
+        renderWorkflowPreviews('oasis');
+    }
+    input.dataset.topicId = topicId;
+
+    const status = detail && detail.status ? detail.status : '';
+    const isLive = topicId && topicId === oasisCurrentTopicId && status === 'discussing';
+    const isBusy = oasisManualPostSubmitting;
+    title.textContent = currentLang === 'zh-CN' ? '实时引导' : 'LIVE PROMPT';
+
+    if (isLive) {
+        note.textContent = currentLang === 'zh-CN'
+            ? '输入一句新观点后回车或点按钮，正在进行的讨论会立刻收到这条发言。'
+            : 'Press Enter or click the button to inject a new angle into the running discussion.';
+        note.className = 'oasis-town-composer-note is-live';
+        input.placeholder = currentLang === 'zh-CN'
+            ? '例如：请从成本、风险和用户体验三个角度继续争论'
+            : 'Example: keep debating from cost, risk, and user experience.';
+    } else {
+        note.textContent = currentLang === 'zh-CN'
+            ? '当前没有选中运行中的 topic。直接发送会新开一个 OASIS 讨论，并自动生成第一版 swarm graph。'
+            : 'No live topic is selected. Submit here to start a fresh OASIS discussion and auto-build a first swarm graph.';
+        note.className = 'oasis-town-composer-note is-live';
+        input.placeholder = currentLang === 'zh-CN'
+            ? '例如：围绕这个想法拉起一场新的专家讨论'
+            : 'Example: start a new expert discussion around this idea.';
+    }
+
+    input.disabled = isBusy;
+    submitBtn.disabled = isBusy;
+    submitBtn.textContent = isBusy
+        ? (currentLang === 'zh-CN' ? '发送中' : 'SENDING')
+        : (isLive
+            ? (currentLang === 'zh-CN' ? '推动发帖' : 'NUDGE')
+            : (currentLang === 'zh-CN' ? '开启讨论' : 'START TOPIC'));
+}
+
+const OASIS_SWARM_COLORS = {
+    objective: { fill: '#f9c74f', stroke: '#f4a261', text: '#3a2300', icon: '🎯' },
+    agent: { fill: '#7dc8e3', stroke: '#4d7ea8', text: '#10213d', icon: '🧠' },
+    entity: { fill: '#8bd3a1', stroke: '#3d7a57', text: '#0e2a1b', icon: '◈' },
+    memory: { fill: '#cdb4db', stroke: '#7b5ea7', text: '#29143b', icon: '🗂' },
+    signal: { fill: '#f28482', stroke: '#b95f5f', text: '#3d1111', icon: '✦' },
+    scenario: { fill: '#f7d794', stroke: '#c78c3c', text: '#3f2700', icon: '⇢' },
+};
+
+function getCurrentOasisDetail() {
+    return _overviewDetailCache && _overviewDetailCache.topic_id === oasisCurrentTopicId
+        ? _overviewDetailCache
+        : null;
+}
+
+function setOasisSwarmFilter(filter) {
+    oasisSwarmFilter = filter || 'all';
+    renderOasisSwarmPanel(getCurrentOasisDetail());
+}
+
+function selectOasisSwarmNode(nodeId) {
+    oasisSwarmSelectedId = nodeId || null;
+    oasisSwarmSelectedEdgeId = null;
+    renderOasisSwarmPanel(getCurrentOasisDetail());
+}
+
+function selectOasisSwarmEdge(edgeId) {
+    oasisSwarmSelectedEdgeId = edgeId || null;
+    oasisSwarmSelectedId = null;
+    renderOasisSwarmPanel(getCurrentOasisDetail());
+}
+
+function clearOasisSwarmSelection() {
+    oasisSwarmSelectedId = null;
+    oasisSwarmSelectedEdgeId = null;
+    renderOasisSwarmPanel(getCurrentOasisDetail());
+}
+
+function toggleOasisSwarmEdgeLabels() {
+    oasisSwarmEdgeLabelsVisible = !oasisSwarmEdgeLabelsVisible;
+    localStorage.setItem('oasisSwarmEdgeLabelsVisible', oasisSwarmEdgeLabelsVisible ? '1' : '0');
+    renderOasisSwarmPanel(getCurrentOasisDetail());
+}
+
+function clampOasisSwarmScale(scale) {
+    return Math.max(0.72, Math.min(2.4, Number(scale || 1)));
+}
+
+function applyOasisSwarmViewportTransform() {
+    const viewport = document.querySelector('#oasis-swarm-canvas [data-oasis-swarm-viewport]');
+    if (!viewport) return;
+    viewport.setAttribute(
+        'transform',
+        `translate(${oasisSwarmViewport.x} ${oasisSwarmViewport.y}) scale(${oasisSwarmViewport.scale})`
+    );
+}
+
+function zoomOasisSwarm(delta) {
+    const nextScale = clampOasisSwarmScale(oasisSwarmViewport.scale + delta);
+    if (nextScale === oasisSwarmViewport.scale) return;
+    oasisSwarmViewport.scale = nextScale;
+    applyOasisSwarmViewportTransform();
+}
+
+function fitOasisSwarmViewport(graphState) {
+    if (!graphState?.nodes?.length) {
+        oasisSwarmViewport = { scale: 1, x: 0, y: 0 };
+        return oasisSwarmViewport;
+    }
+    const bounds = graphState.nodes.reduce((acc, node) => {
+        const halfW = (node.boxWidth || 96) / 2;
+        const halfH = (node.boxHeight || 44) / 2;
+        return {
+            minX: Math.min(acc.minX, node.x - halfW),
+            maxX: Math.max(acc.maxX, node.x + halfW),
+            minY: Math.min(acc.minY, node.y - halfH),
+            maxY: Math.max(acc.maxY, node.y + halfH),
+        };
+    }, { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+    const padding = 36;
+    const boundsWidth = Math.max(240, bounds.maxX - bounds.minX);
+    const boundsHeight = Math.max(180, bounds.maxY - bounds.minY);
+    const scale = clampOasisSwarmScale(Math.min(
+        graphState.width / (boundsWidth + (padding * 2)),
+        graphState.height / (boundsHeight + (padding * 2)),
+        2.2
+    ));
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    oasisSwarmViewport = {
+        scale,
+        x: Math.round(((graphState.width / (2 * scale)) - centerX) * 10) / 10,
+        y: Math.round(((graphState.height / (2 * scale)) - centerY) * 10) / 10,
+    };
+    return oasisSwarmViewport;
+}
+
+function resetOasisSwarmViewport() {
+    fitOasisSwarmViewport(oasisSwarmGraphCache);
+    applyOasisSwarmViewportTransform();
+}
+
+function bindOasisSwarmCanvasInteractions(canvas) {
+    if (!canvas || canvas.dataset.boundSwarmCanvas === '1') return;
+    canvas.dataset.boundSwarmCanvas = '1';
+
+    let dragState = null;
+    const finishDrag = () => {
+        dragState = null;
+        canvas.classList.remove('is-panning');
+    };
+
+    canvas.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        if (event.target.closest('[data-swarm-node],[data-swarm-edge]')) return;
+        dragState = {
+            startX: event.clientX,
+            startY: event.clientY,
+            baseX: oasisSwarmViewport.x,
+            baseY: oasisSwarmViewport.y,
+        };
+        canvas.classList.add('is-panning');
+        if (typeof canvas.setPointerCapture === 'function') {
+            try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
+        }
+    });
+
+    canvas.addEventListener('pointermove', (event) => {
+        if (!dragState) return;
+        const scale = Math.max(oasisSwarmViewport.scale, 0.1);
+        oasisSwarmViewport.x = dragState.baseX + ((event.clientX - dragState.startX) / scale);
+        oasisSwarmViewport.y = dragState.baseY + ((event.clientY - dragState.startY) / scale);
+        applyOasisSwarmViewportTransform();
+    });
+
+    canvas.addEventListener('pointerup', finishDrag);
+    canvas.addEventListener('pointercancel', finishDrag);
+    canvas.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        zoomOasisSwarm(event.deltaY < 0 ? 0.12 : -0.12);
+    }, { passive: false });
+}
+
+function buildOasisSwarmActivityLookup(detail) {
+    const byKey = new Map();
+    const participants = collectOasisParticipants(detail);
+    participants.forEach((person) => {
+        const key = (person.name || '').trim().toLowerCase();
+        if (!key) return;
+        byKey.set(key, {
+            posts: Number(person.posts || 0),
+            events: Number(person.events || 0),
+            name: person.name || '',
+        });
+    });
+    return byKey;
+}
+
+function pickOasisSwarmActivity(node, detail, activityMap) {
+    if (!node || node.type !== 'agent') return { posts: 0, events: 0 };
+    const aliases = [node.label].concat(node.aliases || [], node.meta?.tag ? [node.meta.tag] : []);
+    for (const alias of aliases) {
+        const key = String(alias || '').trim().toLowerCase();
+        if (!key) continue;
+        const activity = activityMap.get(key);
+        if (activity) return activity;
+    }
+    return { posts: 0, events: 0 };
+}
+
+function clampOasisSwarmNumber(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function getClawcrossTextLayout() {
+    if (typeof window === 'undefined') return null;
+    return window.ClawcrossTextLayout || null;
+}
+
+function oasisSwarmStableHash(value) {
+    return Array.from(String(value || '')).reduce((acc, ch) => ((acc * 33) + ch.charCodeAt(0)) >>> 0, 5381);
+}
+
+function oasisSwarmCharUnits(ch) {
+    if (!ch) return 0;
+    if (/\s/.test(ch)) return 0.36;
+    if (/[\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]/.test(ch)) return 1.72;
+    if (/[A-Z]/.test(ch)) return 0.96;
+    if (/[a-z0-9]/.test(ch)) return 0.78;
+    return 1.04;
+}
+
+function measureOasisSwarmTextUnits(text) {
+    return Array.from(String(text || '')).reduce((sum, ch) => sum + oasisSwarmCharUnits(ch), 0);
+}
+
+function fitOasisSwarmLabelSegment(text, maxUnits) {
+    const chars = Array.from(String(text || ''));
+    let out = '';
+    let units = 0;
+    for (const ch of chars) {
+        const nextUnits = oasisSwarmCharUnits(ch);
+        if (out && units + nextUnits > maxUnits) break;
+        out += ch;
+        units += nextUnits;
+    }
+    return out || (chars[0] || '');
+}
+
+function truncateOasisSwarmLabelText(label, maxUnits) {
+    const value = String(label || '').trim() || 'Untitled';
+    const chars = Array.from(value);
+    const segment = fitOasisSwarmLabelSegment(value, Math.max(4.6, maxUnits - 1.2));
+    return segment.length < chars.length ? `${segment}…` : value;
+}
+
+function buildOasisSwarmNodeMetrics(node) {
+    const typeConfig = node.type === 'objective'
+        ? { radius: 17.5, maxUnits: 14.2, labelFontSize: 11.5, minLabelWidth: 68, maxLabelWidth: 150, labelGap: 16 }
+        : node.type === 'scenario'
+            ? { radius: 15.5, maxUnits: 12.4, labelFontSize: 10.8, minLabelWidth: 58, maxLabelWidth: 132, labelGap: 14 }
+            : node.type === 'agent'
+                ? { radius: 13.4, maxUnits: 11.3, labelFontSize: 10.2, minLabelWidth: 50, maxLabelWidth: 120, labelGap: 13 }
+                : { radius: 12.4, maxUnits: 10.4, labelFontSize: 9.8, minLabelWidth: 46, maxLabelWidth: 112, labelGap: 12 };
+    const textLayout = getClawcrossTextLayout();
+    const labelLineHeight = Math.round(typeConfig.labelFontSize + 4);
+    let labelLines = [truncateOasisSwarmLabelText(node.label, typeConfig.maxUnits)];
+    let labelText = labelLines[0];
+    let labelWidth = Math.round(clampOasisSwarmNumber(18 + (measureOasisSwarmTextUnits(labelText) * 7.1), typeConfig.minLabelWidth, typeConfig.maxLabelWidth));
+    let labelHeight = Math.round(typeConfig.labelFontSize + 10);
+    let labelLineCount = 1;
+    if (textLayout && typeof textLayout.measureDisplay === 'function') {
+        const measured = textLayout.measureDisplay(node.label || 'Untitled', {
+            font: `700 ${typeConfig.labelFontSize}px Arial`,
+            lineHeight: labelLineHeight,
+            maxWidth: Math.max(typeConfig.minLabelWidth, typeConfig.maxLabelWidth - 8),
+            maxLines: node.type === 'agent' ? 1 : 2,
+            suffix: '…',
+        });
+        labelLines = measured.lines && measured.lines.length ? measured.lines : [measured.text || 'Untitled'];
+        labelText = measured.text || 'Untitled';
+        labelWidth = Math.round(clampOasisSwarmNumber(Math.ceil(measured.width) + 18, typeConfig.minLabelWidth, typeConfig.maxLabelWidth));
+        labelHeight = Math.round(Math.max(labelLineHeight, Math.ceil(measured.height) + 4));
+        labelLineCount = Math.max(1, measured.lineCount || labelLines.length || 1);
+    }
+    const boxWidth = Math.round((typeConfig.radius * 2) + typeConfig.labelGap + labelWidth + 28);
+    const boxHeight = Math.round(Math.max((typeConfig.radius * 2) + 18, labelHeight + 14));
+    const collisionRadius = Math.sqrt(((boxWidth / 2) ** 2) + ((boxHeight / 2) ** 2)) + 14;
+    return {
+        ...node,
+        labelText,
+        labelLines,
+        labelUnits: measureOasisSwarmTextUnits(labelText),
+        labelWidth,
+        labelHeight,
+        labelLineHeight,
+        labelLineCount,
+        labelFontSize: typeConfig.labelFontSize,
+        baseRadius: typeConfig.radius,
+        labelGap: typeConfig.labelGap,
+        boxWidth,
+        boxHeight,
+        collisionRadius,
+    };
+}
+
+function applyOasisSwarmNodeGeometry(node) {
+    const degreeBoost = clampOasisSwarmNumber(Number(node.degree || 0), 0, 9) * 0.72;
+    const activityBoost = node.type === 'agent'
+        ? clampOasisSwarmNumber(((Number(node.activity?.posts || 0) + Number(node.activity?.events || 0)) / 9), 0, 2.8)
+        : 0;
+    const nodeRadius = Math.round((Number(node.baseRadius || 12.4) + degreeBoost + activityBoost) * 10) / 10;
+    const labelOffsetX = Math.round((nodeRadius + Number(node.labelGap || 12)) * 10) / 10;
+    const badgeValue = node.type === 'agent'
+        ? Math.min(99, Number(node.activity?.posts || 0) || Number(node.activity?.events || 0) || 0)
+        : 0;
+    const badgeRadius = badgeValue ? 8.5 : 0;
+    const boxWidth = Math.round((nodeRadius * 2) + labelOffsetX + Number(node.labelWidth || 72) + 18);
+    const boxHeight = Math.round(Math.max((nodeRadius * 2) + 18, Number(node.labelHeight || 20) + 12, badgeValue ? (nodeRadius * 2) + 24 : 0));
+    return {
+        ...node,
+        nodeRadius,
+        ringRadius: Math.round((nodeRadius + 5.5) * 10) / 10,
+        labelOffsetX,
+        badgeValue,
+        badgeRadius,
+        boxWidth,
+        boxHeight,
+        collisionRadius: Math.sqrt(((boxWidth / 2) ** 2) + ((boxHeight / 2) ** 2)) + 10,
+    };
+}
+
+function buildOasisSwarmClusterConfig(layout) {
+    return {
+        objective: { x: layout.width * 0.5, y: layout.height * 0.12, cols: 2, anchorStrength: 0.052 },
+        signal: { x: layout.width * 0.18, y: layout.height * 0.22, cols: 2, anchorStrength: 0.035 },
+        agent: { x: layout.width * 0.18, y: layout.height * 0.58, cols: 3, anchorStrength: 0.033 },
+        entity: { x: layout.width * 0.52, y: layout.height * 0.46, cols: 5, anchorStrength: 0.028 },
+        memory: { x: layout.width * 0.82, y: layout.height * 0.28, cols: 3, anchorStrength: 0.032 },
+        scenario: { x: layout.width * 0.54, y: layout.height * 0.82, cols: 3, anchorStrength: 0.04 },
+    };
+}
+
+function seedOasisSwarmCluster(items, cluster, layout) {
+    if (!items.length) return [];
+    const sorted = [...items].sort((a, b) =>
+        (Number(b.degree || 0) - Number(a.degree || 0))
+        || (measureOasisSwarmTextUnits(b.label) - measureOasisSwarmTextUnits(a.label))
+        || String(a.label || '').localeCompare(String(b.label || ''))
+    );
+    const cols = clampOasisSwarmNumber(Math.ceil(Math.sqrt(sorted.length)), 1, cluster.cols || 3);
+    const rows = Math.ceil(sorted.length / cols);
+    const widest = Math.max(...sorted.map((item) => item.boxWidth), 140);
+    const tallest = Math.max(...sorted.map((item) => item.boxHeight), 52);
+    const gapX = widest + 44;
+    const gapY = tallest + 34;
+    const boundsPad = 40;
+
+    return sorted.map((item, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        const hash = oasisSwarmStableHash(item.id);
+        const jitterX = ((hash % 9) - 4) * 4;
+        const jitterY = (((Math.floor(hash / 9)) % 9) - 4) * 4;
+        const x = cluster.x + ((col - ((cols - 1) / 2)) * gapX) + jitterX;
+        const y = cluster.y + ((row - ((rows - 1) / 2)) * gapY) + jitterY;
+        return {
+            ...item,
+            anchorX: cluster.x,
+            anchorY: cluster.y,
+            anchorStrength: cluster.anchorStrength,
+            vx: 0,
+            vy: 0,
+            x: clampOasisSwarmNumber(x, (item.boxWidth / 2) + boundsPad, layout.width - (item.boxWidth / 2) - boundsPad),
+            y: clampOasisSwarmNumber(y, (item.boxHeight / 2) + boundsPad, layout.height - (item.boxHeight / 2) - boundsPad),
+        };
+    });
+}
+
+function settleOasisSwarmCollisions(nodes, layout) {
+    const boundsPad = 40;
+    for (let pass = 0; pass < 10; pass += 1) {
+        let moved = false;
+        for (let i = 0; i < nodes.length; i += 1) {
+            for (let j = i + 1; j < nodes.length; j += 1) {
+                const a = nodes[i];
+                const b = nodes[j];
+                let dx = b.x - a.x;
+                let dy = b.y - a.y;
+                const overlapX = ((a.boxWidth + b.boxWidth) / 2) + 16 - Math.abs(dx);
+                const overlapY = ((a.boxHeight + b.boxHeight) / 2) + 14 - Math.abs(dy);
+                if (overlapX <= 0 || overlapY <= 0) continue;
+                moved = true;
+                if (!dx && !dy) {
+                    const hash = oasisSwarmStableHash(`${a.id}:${b.id}`);
+                    dx = ((hash % 7) - 3) || 1;
+                    dy = (((Math.floor(hash / 7)) % 7) - 3) || -1;
+                }
+                if (overlapX < overlapY) {
+                    const dir = dx >= 0 ? 1 : -1;
+                    const shift = overlapX / 2;
+                    a.x -= dir * shift;
+                    b.x += dir * shift;
+                } else {
+                    const dir = dy >= 0 ? 1 : -1;
+                    const shift = overlapY / 2;
+                    a.y -= dir * shift;
+                    b.y += dir * shift;
+                }
+            }
+        }
+        nodes.forEach((node) => {
+            node.x = clampOasisSwarmNumber(node.x, (node.boxWidth / 2) + boundsPad, layout.width - (node.boxWidth / 2) - boundsPad);
+            node.y = clampOasisSwarmNumber(node.y, (node.boxHeight / 2) + boundsPad, layout.height - (node.boxHeight / 2) - boundsPad);
+        });
+        if (!moved) break;
+    }
+}
+
+function runOasisSwarmForceLayout(nodes, edges, layout) {
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+    const links = edges
+        .map((edge) => ({ edge, source: nodeMap.get(edge.source), target: nodeMap.get(edge.target) }))
+        .filter((item) => item.source && item.target);
+    const iterations = clampOasisSwarmNumber(120 + (nodes.length * 4), 140, 280);
+    const boundsPad = 40;
+
+    for (let iter = 0; iter < iterations; iter += 1) {
+        const cooling = 1 - (iter / iterations);
+        nodes.forEach((node) => {
+            node.vx = (node.vx || 0) * 0.78;
+            node.vy = (node.vy || 0) * 0.78;
+            const anchorPull = (node.anchorStrength || 0.03) * (0.9 + (cooling * 0.8));
+            node.vx += (node.anchorX - node.x) * anchorPull;
+            node.vy += (node.anchorY - node.y) * anchorPull;
+        });
+
+        links.forEach(({ edge, source, target }) => {
+            let dx = target.x - source.x;
+            let dy = target.y - source.y;
+            let dist = Math.hypot(dx, dy);
+            if (!dist) {
+                dist = 0.001;
+                dx = 0.001;
+                dy = 0;
+            }
+            const desired = Math.max(
+                108,
+                (source.collisionRadius * 0.66)
+                + (target.collisionRadius * 0.66)
+                + (source.type === target.type ? 22 : 42)
+                + ((1 - clampOasisSwarmNumber(edge.weight || 0.55, 0.15, 1)) * 18)
+            );
+            const spring = (dist - desired) * 0.0032;
+            const nx = dx / dist;
+            const ny = dy / dist;
+            source.vx += nx * spring;
+            source.vy += ny * spring;
+            target.vx -= nx * spring;
+            target.vy -= ny * spring;
+        });
+
+        for (let i = 0; i < nodes.length; i += 1) {
+            for (let j = i + 1; j < nodes.length; j += 1) {
+                const a = nodes[i];
+                const b = nodes[j];
+                let dx = b.x - a.x;
+                let dy = b.y - a.y;
+                let dist = Math.hypot(dx, dy);
+                if (!dist) {
+                    const hash = oasisSwarmStableHash(`${a.id}-${b.id}-${iter}`);
+                    dx = ((hash % 7) - 3) || 1;
+                    dy = (((Math.floor(hash / 7)) % 7) - 3) || -1;
+                    dist = Math.hypot(dx, dy);
+                }
+                const minDist = a.collisionRadius + b.collisionRadius + 10;
+                let force = 0;
+                if (dist < minDist) {
+                    force = (minDist - dist) * 0.12;
+                } else {
+                    const repelRange = minDist * 1.78;
+                    if (dist < repelRange) {
+                        force = ((repelRange - dist) / repelRange) * 2.15 * (0.45 + cooling);
+                    }
+                }
+                if (!force) continue;
+                const nx = dx / dist;
+                const ny = dy / dist;
+                a.vx -= nx * force;
+                a.vy -= ny * force;
+                b.vx += nx * force;
+                b.vy += ny * force;
+            }
+        }
+
+        nodes.forEach((node) => {
+            node.vx = clampOasisSwarmNumber(node.vx, -18, 18);
+            node.vy = clampOasisSwarmNumber(node.vy, -18, 18);
+            node.x = clampOasisSwarmNumber(node.x + node.vx, (node.boxWidth / 2) + boundsPad, layout.width - (node.boxWidth / 2) - boundsPad);
+            node.y = clampOasisSwarmNumber(node.y + node.vy, (node.boxHeight / 2) + boundsPad, layout.height - (node.boxHeight / 2) - boundsPad);
+        });
+    }
+
+    settleOasisSwarmCollisions(nodes, layout);
+    return nodes.map((node) => ({
+        ...node,
+        x: Math.round(node.x * 10) / 10,
+        y: Math.round(node.y * 10) / 10,
+    }));
+}
+
+function buildOasisSwarmGraph(detail) {
+    const swarm = detail?.swarm || {};
+    const rawNodes = Array.isArray(swarm?.graph?.nodes) ? swarm.graph.nodes : [];
+    const rawEdges = Array.isArray(swarm?.graph?.edges) ? swarm.graph.edges : [];
+    if (!rawNodes.length) return null;
+
+    const layout = {
+        width: Math.round(clampOasisSwarmNumber(1160 + (rawNodes.length * 18) + (rawEdges.length * 2.8), 1180, 2140)),
+        height: Math.round(clampOasisSwarmNumber(700 + (rawNodes.length * 12) + (rawEdges.length * 1.6), 760, 1420)),
+    };
+
+    const activityMap = buildOasisSwarmActivityLookup(detail);
+    const nodes = rawNodes.map((node) => {
+        const type = node?.type || 'entity';
+        const palette = OASIS_SWARM_COLORS[type] || OASIS_SWARM_COLORS.entity;
+        const activity = pickOasisSwarmActivity(node, detail, activityMap);
+        const meta = node?.meta && typeof node.meta === 'object' ? node.meta : {};
+        return buildOasisSwarmNodeMetrics({
+            id: String(node.id || ''),
+            label: String(node.label || node.id || ''),
+            type,
+            summary: String(node.summary || ''),
+            aliases: Array.isArray(node.aliases) ? node.aliases : [],
+            fullText: String(node.full_text || meta.full_text || ''),
+            meta,
+            fill: palette.fill,
+            stroke: palette.stroke,
+            text: palette.text,
+            icon: palette.icon,
+            activity,
+        });
+    });
+
+    const nodeIdSet = new Set(nodes.map((node) => node.id));
+    const edges = rawEdges
+        .map((edge, idx) => ({
+            id: String(edge?.id || `edge-${idx + 1}`),
+            source: String(edge?.source || ''),
+            target: String(edge?.target || ''),
+            label: String(edge?.label || edge?.kind || 'links'),
+            kind: String(edge?.kind || 'links'),
+            weight: Number(edge?.weight || 0.55),
+            summary: String(edge?.summary || ''),
+        }))
+        .filter((edge) => nodeIdSet.has(edge.source) && nodeIdSet.has(edge.target));
+    const degreeMap = new Map();
+    edges.forEach((edge) => {
+        degreeMap.set(edge.source, (degreeMap.get(edge.source) || 0) + 1);
+        degreeMap.set(edge.target, (degreeMap.get(edge.target) || 0) + 1);
+    });
+
+    const positionedNodes = nodes.map((node) => applyOasisSwarmNodeGeometry({
+        ...node,
+        degree: degreeMap.get(node.id) || 0,
+    }));
+
+    const groups = {
+        objective: positionedNodes.filter((node) => node.type === 'objective'),
+        signal: positionedNodes.filter((node) => node.type === 'signal'),
+        agent: positionedNodes.filter((node) => node.type === 'agent'),
+        entity: positionedNodes.filter((node) => node.type === 'entity'),
+        memory: positionedNodes.filter((node) => node.type === 'memory'),
+        scenario: positionedNodes.filter((node) => node.type === 'scenario'),
+    };
+    const clusters = buildOasisSwarmClusterConfig(layout);
+    const seeded = [
+        ...seedOasisSwarmCluster(groups.objective, clusters.objective, layout),
+        ...seedOasisSwarmCluster(groups.signal, clusters.signal, layout),
+        ...seedOasisSwarmCluster(groups.agent, clusters.agent, layout),
+        ...seedOasisSwarmCluster(groups.entity, clusters.entity, layout),
+        ...seedOasisSwarmCluster(groups.memory, clusters.memory, layout),
+        ...seedOasisSwarmCluster(groups.scenario, clusters.scenario, layout),
+    ];
+    const placed = runOasisSwarmForceLayout(seeded, edges, layout);
+
+    const nodeMap = new Map(placed.map((node) => [node.id, node]));
+
+    return {
+        swarm,
+        width: layout.width,
+        height: layout.height,
+        nodes: placed,
+        edges,
+        nodeMap,
+        edgeMap: new Map(edges.map((edge) => [edge.id, edge])),
+    };
+}
+
+function buildOasisSwarmNodeSvg(node, selected, muted) {
+    const radius = node.nodeRadius || node.baseRadius || 12.4;
+    const ringRadius = node.ringRadius || (radius + 5.5);
+    const opacity = muted ? 0.28 : 1;
+    const shadowId = selected ? 'oasisSwarmGlow' : 'oasisSwarmShadow';
+    const labelX = node.x + (node.labelOffsetX || (radius + 12));
+    const labelLineHeight = node.labelLineHeight || Math.round((node.labelFontSize || 10) + 4);
+    const labelY = node.y - (((node.labelHeight || labelLineHeight) - labelLineHeight) / 2) + ((node.labelFontSize || 10) * 0.34);
+    const labelFill = selected ? '#fff6bf' : '#fff1e8';
+    const labelStroke = selected ? 'rgba(92,68,10,0.92)' : 'rgba(8,12,26,0.9)';
+    const textLayout = getClawcrossTextLayout();
+    const labelMarkup = textLayout && typeof textLayout.renderSvgTspans === 'function'
+        ? textLayout.renderSvgTspans(node.labelLines || [node.labelText || node.label || ''], labelX, labelY, labelLineHeight, escapeHtml)
+        : escapeHtml(node.labelText || node.label || '');
+    const badge = node.badgeValue
+        ? `<g opacity="${opacity}">
+            <circle cx="${node.x + (radius * 0.7)}" cy="${node.y - (radius * 0.74)}" r="${node.badgeRadius || 8.5}" fill="#111827" stroke="#fff1e8" stroke-width="1.4"></circle>
+            <text x="${node.x + (radius * 0.7)}" y="${node.y - (radius * 0.74) + 2.8}" text-anchor="middle" font-size="7.2" font-weight="700" fill="#fff1e8">${node.badgeValue}</text>
+        </g>`
+        : '';
+    const selectedHalo = selected
+        ? `<circle cx="${node.x}" cy="${node.y}" r="${ringRadius}" fill="rgba(249,199,79,0.12)" stroke="rgba(249,199,79,0.88)" stroke-width="2"></circle>`
+        : '';
+    const outlineStroke = selected ? '#f9c74f' : 'rgba(255,241,232,0.3)';
+    return `
+        <g data-swarm-node="${escapeHtml(node.id)}" onclick="selectOasisSwarmNode('${escapeHtml(node.id)}')" style="cursor:pointer;opacity:${opacity};">
+            ${selectedHalo}
+            <circle cx="${node.x}" cy="${node.y}" r="${radius + 1.4}" fill="rgba(255,255,255,0.04)" stroke="${outlineStroke}" stroke-width="${selected ? 2.4 : 1.4}"></circle>
+            <circle cx="${node.x}" cy="${node.y}" r="${radius}" fill="${node.fill}" stroke="${node.stroke}" stroke-width="${selected ? 2.7 : 2.1}" filter="url(#${shadowId})"></circle>
+            <text text-anchor="start" font-size="${node.labelFontSize || 10}" font-weight="${selected ? 700 : 600}" fill="${labelFill}" stroke="${labelStroke}" stroke-width="2.6" paint-order="stroke fill" stroke-linejoin="round">${labelMarkup}</text>
+            ${badge}
+        </g>
+    `;
+}
+
+function buildOasisSwarmEdgeSvg(edge, graphState, muted, selected) {
+    const source = graphState.nodeMap.get(edge.source);
+    const target = graphState.nodeMap.get(edge.target);
+    if (!source || !target) return '';
+    const opacity = muted ? 0.12 : Math.max(0.22, Math.min(0.9, edge.weight));
+    const ctrlX = (source.x + target.x) / 2;
+    const ctrlY = (source.y + target.y) / 2 + (source.type === target.type ? -34 : -10);
+    const path = `M ${source.x} ${source.y} Q ${ctrlX} ${ctrlY} ${target.x} ${target.y}`;
+    const labelX = ctrlX;
+    const labelY = ctrlY - 8;
+    const stroke = selected ? '#f9c74f' : '#c2c3c7';
+    const strokeWidth = selected ? (2.6 + (edge.weight || 0.5) * 2.4) : (1.2 + (edge.weight || 0.5) * 1.9);
+    const textLayout = getClawcrossTextLayout();
+    const edgeLabel = textLayout && typeof textLayout.fitSingleLine === 'function'
+        ? textLayout.fitSingleLine(edge.label || '', 118, { font: '600 8px Arial', lineHeight: 10, suffix: '…' }).text
+        : (edge.label || '').slice(0, 18);
+    return `
+        <g opacity="${opacity}">
+            <path d="${path}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" marker-end="url(#oasisSwarmArrow)"></path>
+            <path data-swarm-edge="${escapeHtml(edge.id)}" d="${path}" fill="none" stroke="transparent" stroke-width="18" onclick="selectOasisSwarmEdge('${escapeHtml(edge.id)}')"></path>
+            ${oasisSwarmEdgeLabelsVisible
+                ? `<text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="8" fill="#fff1e8">${escapeHtml(edgeLabel)}</text>`
+                : ''}
+        </g>
+    `;
+}
+
+function renderOasisSwarmDetail(detail, graphState) {
+    const swarm = graphState?.swarm || {};
+    const detailEl = document.getElementById('oasis-swarm-detail');
+    const summaryEl = document.getElementById('oasis-swarm-summary');
+    const refreshBtn = document.getElementById('oasis-swarm-refresh-btn');
+    const labelsBtn = document.getElementById('oasis-swarm-labels-btn');
+    const titleEl = document.getElementById('oasis-swarm-title');
+    if (!detailEl || !summaryEl || !refreshBtn || !titleEl) return;
+
+    refreshBtn.disabled = !detail?.topic_id || oasisSwarmRefreshing || swarm.status === 'pending';
+    refreshBtn.textContent = oasisSwarmRefreshing || swarm.status === 'pending'
+        ? 'FORGING'
+        : 'REFORGE';
+    if (labelsBtn) {
+        labelsBtn.classList.toggle('is-active', oasisSwarmEdgeLabelsVisible);
+        labelsBtn.textContent = oasisSwarmEdgeLabelsVisible ? 'LABELS ON' : 'LABELS OFF';
+    }
+
+    titleEl.textContent = swarm.status === 'pending'
+        ? (currentLang === 'zh-CN' ? 'Swarm Graph 生成中' : 'Swarm Graph Forging')
+        : (currentLang === 'zh-CN' ? 'Swarm Graph' : 'Swarm Graph');
+
+    const chips = [
+        `${swarm.mode || 'prediction'}`.toUpperCase(),
+        `${(graphState?.nodes || []).length} NODES`,
+        `${(graphState?.edges || []).length} EDGES`,
+        ...(Array.isArray(swarm?.graphrag?.collections) ? swarm.graphrag.collections.slice(0, 2).map((item) => `MEM:${item}`) : []),
+    ];
+    summaryEl.innerHTML = chips
+        .map((chip) => `<span class="oasis-swarm-summary-chip">${escapeHtml(chip)}</span>`)
+        .join('');
+
+    const selectedNode = oasisSwarmSelectedId && graphState?.nodeMap?.has(oasisSwarmSelectedId)
+        ? graphState.nodeMap.get(oasisSwarmSelectedId)
+        : null;
+    const selectedEdge = !selectedNode && oasisSwarmSelectedEdgeId && graphState?.edgeMap?.has(oasisSwarmSelectedEdgeId)
+        ? graphState.edgeMap.get(oasisSwarmSelectedEdgeId)
+        : null;
+    if (!selectedNode && !selectedEdge) {
+        const scenarios = Array.isArray(swarm.scenarios) ? swarm.scenarios.slice(0, 2) : [];
+        const nudges = Array.isArray(swarm.nudges) ? swarm.nudges.slice(0, 2) : [];
+        const signals = Array.isArray(swarm.signals) ? swarm.signals.slice(0, 2) : [];
+        detailEl.innerHTML = `
+            <div class="oasis-swarm-detail-title">${escapeHtml(swarm.summary || '')}</div>
+            <div class="oasis-swarm-detail-copy">${escapeHtml(swarm.prediction || '')}</div>
+            <div class="oasis-swarm-detail-list">
+                <span>${currentLang === 'zh-CN' ? '提示' : 'Hint'}: ${currentLang === 'zh-CN' ? '拖动画布平移，滚轮或按钮缩放，点击节点或连线查看细节。' : 'Drag to pan, use wheel or buttons to zoom, and click a node or link for details.'}</span>
+                ${signals.map((item) => `<span>✦ ${escapeHtml(item)}</span>`).join('')}
+                ${scenarios.map((item) => `<span>⇢ ${escapeHtml(item.label || '')}: ${escapeHtml(item.summary || '')}</span>`).join('')}
+                ${nudges.map((item) => `<span>🧪 ${escapeHtml(item)}</span>`).join('')}
+            </div>
+        `;
+        return;
+    }
+
+    if (selectedEdge) {
+        const source = graphState.nodeMap.get(selectedEdge.source);
+        const target = graphState.nodeMap.get(selectedEdge.target);
+        detailEl.innerHTML = `
+            <div class="oasis-swarm-detail-title">⇢ ${escapeHtml(source?.label || selectedEdge.source)} → ${escapeHtml(target?.label || selectedEdge.target)}</div>
+            <div class="oasis-swarm-detail-copy">${escapeHtml(selectedEdge.summary || selectedEdge.label || '')}</div>
+            <div class="oasis-swarm-detail-list">
+                <span>${currentLang === 'zh-CN' ? '关系' : 'Relation'}: ${escapeHtml(selectedEdge.label || selectedEdge.kind || 'links')}</span>
+                <span>${currentLang === 'zh-CN' ? '类型' : 'Kind'}: ${escapeHtml(selectedEdge.kind || 'links')}</span>
+                <span>${currentLang === 'zh-CN' ? '强度' : 'Weight'}: ${escapeHtml(String(selectedEdge.weight || 0))}</span>
+                ${source ? `<span>${currentLang === 'zh-CN' ? '起点' : 'Source'}: ${escapeHtml(source.label)}</span>` : ''}
+                ${target ? `<span>${currentLang === 'zh-CN' ? '终点' : 'Target'}: ${escapeHtml(target.label)}</span>` : ''}
+            </div>
+        `;
+        return;
+    }
+
+    const connected = graphState.edges
+        .filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id)
+        .map((edge) => {
+            const otherId = edge.source === selectedNode.id ? edge.target : edge.source;
+            return graphState.nodeMap.get(otherId)?.label || otherId;
+        })
+        .filter(Boolean)
+        .slice(0, 4);
+    const metaPairs = Object.entries(selectedNode.meta || {})
+        .filter(([key]) => key !== 'full_text')
+        .slice(0, 3);
+    const activityText = selectedNode.type === 'agent'
+        ? `${currentLang === 'zh-CN' ? '发言' : 'posts'} ${selectedNode.activity.posts || 0} · ${currentLang === 'zh-CN' ? '调度' : 'events'} ${selectedNode.activity.events || 0}`
+        : '';
+    const detailCopy = selectedNode.fullText || selectedNode.summary || '';
+    detailEl.innerHTML = `
+        <div class="oasis-swarm-detail-title">${selectedNode.icon} ${escapeHtml(selectedNode.label)}</div>
+        <div class="oasis-swarm-detail-copy">${escapeHtml(detailCopy)}</div>
+        <div class="oasis-swarm-detail-list">
+            <span>${currentLang === 'zh-CN' ? '类型' : 'Type'}: ${escapeHtml(selectedNode.type)}</span>
+            ${activityText ? `<span>${escapeHtml(activityText)}</span>` : ''}
+            ${connected.map((item) => `<span>${currentLang === 'zh-CN' ? '连接' : 'Links'}: ${escapeHtml(item)}</span>`).join('')}
+            ${metaPairs.map(([key, value]) => `<span>${escapeHtml(key)}: ${escapeHtml(String(value))}</span>`).join('')}
+        </div>
+    `;
+}
+
+function renderOasisReport(detail) {
+    const answerEl = document.getElementById('oasis-report-answer');
+    const askBtn = document.getElementById('oasis-report-ask-btn');
+    if (!answerEl || !askBtn) return;
+
+    askBtn.disabled = oasisReportLoading || !detail?.topic_id;
+    askBtn.textContent = oasisReportLoading ? 'THINKING' : 'EXPLAIN';
+
+    if (!detail?.topic_id) {
+        answerEl.innerHTML = `
+            <div class="oasis-report-placeholder">
+                ${currentLang === 'zh-CN'
+                    ? '切到 Town Mode 并打开一个讨论后，这里会显示 ReportAgent 的解释工作台。'
+                    : 'Open a discussion in Town Mode to use the ReportAgent workbench here.'}
+            </div>
+        `;
+        return;
+    }
+
+    const report = detail?.topic_id ? oasisReportCache.get(detail.topic_id) : null;
+    const provider = detail?.swarm?.graphrag?.provider || 'local';
+    const memoryCount = Number(detail?.swarm?.graphrag?.memory_count || 0);
+    if (!report) {
+        answerEl.innerHTML = `
+            <div class="oasis-report-placeholder">
+                ${currentLang === 'zh-CN'
+                    ? `向 ReportAgent 提问“为什么这么预测”，它会只基于图谱记忆回答。当前 provider: ${escapeHtml(provider)}，已累计 ${memoryCount} 条长期记忆。`
+                    : `Ask ReportAgent why the prediction leans this way. It answers from graph memory only. Provider: ${escapeHtml(provider)}, memories: ${memoryCount}.`}
+            </div>
+        `;
+        return;
+    }
+
+    const because = Array.isArray(report.because) ? report.because : [];
+    const watchouts = Array.isArray(report.watchouts) ? report.watchouts : [];
+    const evidence = Array.isArray(report.evidence) ? report.evidence.slice(0, 6) : [];
+    answerEl.innerHTML = `
+        <div class="oasis-report-answer-main">${escapeHtml(report.answer || '')}</div>
+        <div class="oasis-report-answer-label">${currentLang === 'zh-CN' ? '因为' : 'Because'}</div>
+        <div class="oasis-report-answer-list">
+            ${because.map((item) => `<span>• ${escapeHtml(item)}</span>`).join('')}
+        </div>
+        ${watchouts.length ? `
+            <div class="oasis-report-answer-label">${currentLang === 'zh-CN' ? '监测点' : 'Watchouts'}</div>
+            <div class="oasis-report-answer-list">
+                ${watchouts.map((item) => `<span>• ${escapeHtml(item)}</span>`).join('')}
+            </div>
+        ` : ''}
+        ${evidence.length ? `
+            <div class="oasis-report-answer-label">${currentLang === 'zh-CN' ? '证据' : 'Evidence'}</div>
+            <div class="oasis-report-evidence-wrap">
+                ${evidence.map((item) => `
+                    <span class="oasis-report-evidence">
+                        <span class="oasis-report-evidence-kind">${escapeHtml(String(item.kind || '').toUpperCase())}</span>
+                        <span>${escapeHtml(item.title || item.snippet || '')}</span>
+                    </span>
+                `).join('')}
+            </div>
+        ` : ''}
+    `;
+}
+
+function renderOasisSwarmPanel(detail) {
+    const panel = document.getElementById('oasis-swarm-panel');
+    const canvas = document.getElementById('oasis-swarm-canvas');
+    if (!panel || !canvas) return;
+
+    const graphState = buildOasisSwarmGraph(detail);
+    oasisSwarmGraphCache = graphState;
+    panel.style.display = 'block';
+    bindOasisSwarmCanvasInteractions(canvas);
+
+    const filter = oasisSwarmFilter || 'all';
+    ['all', 'agent', 'entity', 'memory', 'scenario'].forEach((name) => {
+        const btn = document.getElementById(`oasis-swarm-filter-${name}`);
+        if (btn) btn.classList.toggle('is-active', filter === name);
+    });
+
+    if (!graphState || !graphState.nodes.length) {
+        canvas.innerHTML = `<div class="oasis-swarm-empty">${currentLang === 'zh-CN' ? 'Town Graph 正在准备中，或当前还没有可视化节点。' : 'Town graph is still preparing, or there are no visual nodes yet.'}</div>`;
+        renderOasisSwarmDetail(detail || {}, {
+            swarm: detail?.swarm || {},
+            nodes: [],
+            edges: [],
+            nodeMap: new Map(),
+            edgeMap: new Map(),
+        });
+        renderOasisReport(detail || null);
+        return;
+    }
+
+    if (oasisSwarmSelectedId && !graphState.nodeMap.has(oasisSwarmSelectedId)) {
+        oasisSwarmSelectedId = null;
+    }
+    if (oasisSwarmSelectedEdgeId && !graphState.edgeMap.has(oasisSwarmSelectedEdgeId)) {
+        oasisSwarmSelectedEdgeId = null;
+    }
+
+    const svg = `
+        <svg viewBox="0 0 ${graphState.width} ${graphState.height}" role="img" aria-label="OASIS swarm graph">
+            <defs>
+                <marker id="oasisSwarmArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+                    <path d="M0,0 L10,5 L0,10 Z" fill="#c2c3c7"></path>
+                </marker>
+                <filter id="oasisSwarmShadow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.35)"></feDropShadow>
+                </filter>
+                <filter id="oasisSwarmGlow" x="-80%" y="-80%" width="260%" height="260%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="rgba(249,199,79,0.55)"></feDropShadow>
+                </filter>
+            </defs>
+            <rect x="0" y="0" width="${graphState.width}" height="${graphState.height}" fill="transparent" onclick="clearOasisSwarmSelection()"></rect>
+            <g data-oasis-swarm-viewport>
+                ${graphState.edges.map((edge) => {
+                    const source = graphState.nodeMap.get(edge.source);
+                    const target = graphState.nodeMap.get(edge.target);
+                    const muted = filter !== 'all' && source?.type !== filter && target?.type !== filter;
+                    return buildOasisSwarmEdgeSvg(edge, graphState, muted, oasisSwarmSelectedEdgeId === edge.id);
+                }).join('')}
+                ${graphState.nodes.map((node) => buildOasisSwarmNodeSvg(
+                    node,
+                    oasisSwarmSelectedId === node.id,
+                    filter !== 'all' && node.type !== filter,
+                )).join('')}
+            </g>
+        </svg>
+    `;
+    canvas.innerHTML = svg;
+    if (oasisSwarmViewport.scale === 1 && oasisSwarmViewport.x === 0 && oasisSwarmViewport.y === 0) {
+        fitOasisSwarmViewport(graphState);
+    }
+    applyOasisSwarmViewportTransform();
+    renderOasisSwarmDetail(detail, graphState);
+    renderOasisReport(detail);
+}
+
+async function refreshOasisSwarm(topicId = oasisCurrentTopicId) {
+    if (!topicId) return;
+    oasisSwarmRefreshing = true;
+    const detail = getCurrentOasisDetail();
+    if (detail?.swarm) {
+        detail.swarm.status = 'pending';
+        renderOasisSwarmPanel(detail);
+    }
+    try {
+        const resp = await fetch(`/proxy_oasis/topics/${encodeURIComponent(String(topicId))}/swarm/refresh`, { method: 'POST' });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            throw new Error(data.error || data.detail || data.message || `HTTP ${resp.status}`);
+        }
+        await loadTopicDetail(topicId);
+    } catch (e) {
+        alert((currentLang === 'zh-CN' ? 'Swarm Graph 刷新失败' : 'Swarm graph refresh failed') + ': ' + e.message);
+    } finally {
+        oasisSwarmRefreshing = false;
+        const latest = getCurrentOasisDetail();
+        if (latest) renderOasisSwarmPanel(latest);
+    }
+}
+
+async function askOasisReport(topicId = oasisCurrentTopicId) {
+    if (!topicId) return;
+    const inputEl = document.getElementById('oasis-report-input');
+    const question = String(inputEl?.value || '').trim();
+    if (!question) {
+        alert(currentLang === 'zh-CN' ? '先输入你想追问的解释问题' : 'Enter a report question first');
+        return;
+    }
+    const detail = getCurrentOasisDetail();
+    oasisReportLoading = true;
+    if (detail) renderOasisReport(detail);
+    try {
+        const resp = await fetch(`/proxy_oasis/topics/${encodeURIComponent(String(topicId))}/report/ask`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, limit: 8 }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            throw new Error(data.error || data.detail || data.message || `HTTP ${resp.status}`);
+        }
+        oasisReportCache.set(topicId, data);
+    } catch (e) {
+        alert((currentLang === 'zh-CN' ? 'ReportAgent 提问失败' : 'ReportAgent failed') + ': ' + e.message);
+    } finally {
+        oasisReportLoading = false;
+        const latest = getCurrentOasisDetail();
+        if (latest) renderOasisReport(latest);
+    }
+}
+
+function handleOasisReportComposerKeydown(event) {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault();
+        askOasisReport();
+    }
+}
+
+function renderTopicDetail(detail) {
+    // Cache detail for overview visualization
+    cacheOverviewDetail(detail);
+
+    const badge = getStatusBadge(detail.status);
+    document.getElementById('oasis-detail-status').className = 'oasis-status-badge ' + badge.cls;
+    document.getElementById('oasis-detail-status').textContent = badge.text;
+    const roundText = currentLang === 'zh-CN' ? `第 ${detail.current_round}/${detail.max_rounds} ${t('oasis_round')}` : `Round ${detail.current_round}/${detail.max_rounds}`;
+    document.getElementById('oasis-detail-round').textContent = roundText;
+    document.getElementById('oasis-detail-question').textContent = detail.question;
+    renderPendingHumanPanel(detail);
+    renderOasisTownStage(detail);
+    updateOasisTownComposer(detail);
+    updateOasisChatTownHud(detail);
+    syncOasisTownRuntime(detail);
+    renderOasisSwarmPanel(detail);
+    applyOasisTownWorkspaceView();
+
+    // Render action buttons in detail header
+    const actionsEl = document.getElementById('oasis-detail-actions');
+    const isRunning = detail.status === 'discussing' || detail.status === 'pending';
+    let btns = '';
+    if (detail.workflow_mode) {
+        const modeText = detail.workflow_mode === 'python' ? 'Python Workflow' : 'YAML Workflow';
+        const refText = detail.workflow_ref ? ` · ${escapeHtml(detail.workflow_ref)}` : '';
+        btns += `<span class="oasis-detail-action-btn workflow" title="${escapeHtml(modeText)}${detail.workflow_ref ? `: ${escapeHtml(detail.workflow_ref)}` : ''}">${modeText}${refText}</span>`;
+    }
+    // Always show overview button when there is data
+    const hasData = (detail.posts && detail.posts.length > 0) || (detail.timeline && detail.timeline.length > 0);
+    if (hasData) {
+        btns += `<button onclick="showDiscussionOverview()" class="oasis-detail-action-btn overview">${currentLang==='zh-CN'?'讨论概览':'Overview'}</button>`;
+    }
+    if (isRunning) {
+        btns += `<button onclick="cancelOasisTopic('${detail.topic_id}')" class="oasis-detail-action-btn cancel">${t('oasis_cancel')}</button>`;
+    }
+    btns += `<button onclick="deleteOasisTopic('${detail.topic_id}')" class="oasis-detail-action-btn delete">${t('oasis_delete')}</button>`;
+    actionsEl.innerHTML = btns;
+
+    renderPosts(detail.posts || [], detail.timeline || [], detail.discussion !== false);
+
+    // Show/hide conclusion
+    const conclusionArea = document.getElementById('oasis-conclusion-area');
+    if (detail.conclusion && detail.status === 'concluded') {
+        renderMarkdownInto(document.getElementById('oasis-conclusion-text'), detail.conclusion || '');
+        conclusionArea.style.display = 'block';
+        // Reset to expanded state
+        const textEl = document.getElementById('oasis-conclusion-text');
+        const toggleEl = document.getElementById('oasis-conclusion-toggle');
+        textEl.style.display = '';
+        if (toggleEl) toggleEl.textContent = '▼';
+    } else {
+        conclusionArea.style.display = 'none';
+    }
+}
+
+function renderPendingHumanPanel(detail) {
+    const panel = document.getElementById('oasis-human-node-panel');
+    if (!panel) return;
+
+    const pending = detail && detail.pending_human ? detail.pending_human : null;
+    const isWaitingForHuman = !!pending && (detail.status === 'discussing' || detail.status === 'pending');
+    if (!isWaitingForHuman) {
+        panel.style.display = 'none';
+        panel.innerHTML = '';
+        return;
+    }
+
+    const disabled = oasisHumanReplySubmitting ? 'disabled' : '';
+    panel.style.display = 'block';
+    panel.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div>
+                <div style="font-size:12px;font-weight:700;color:#92400e;">${currentLang === 'zh-CN' ? '等待人类节点回复' : 'Waiting For Human Reply'}</div>
+                <div style="font-size:10px;color:#a16207;margin-top:3px;">
+                    node: ${escapeHtml(pending.node_id || '')} · round: ${escapeHtml(String(pending.round_num ?? ''))}
+                </div>
+            </div>
+            <div style="font-size:10px;color:#92400e;">${escapeHtml(pending.author || '')}</div>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#3f3f46;white-space:pre-wrap;">${escapeHtml(pending.prompt || '')}</div>
+        <textarea id="oasis-human-reply-input" rows="2" ${disabled}
+            placeholder="${currentLang === 'zh-CN' ? '直接输入你的普通回复，不需要 JSON 格式' : 'Type a plain text reply. No JSON needed.'}"
+            style="width:100%;min-height:44px;margin-top:8px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:12px;resize:vertical;background:white;"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+            <button id="oasis-human-reply-btn" ${disabled} onclick="submitOasisHumanReply()"
+                style="padding:8px 14px;border:none;border-radius:999px;background:#f59e0b;color:white;font-size:12px;font-weight:700;cursor:pointer;">
+                ${oasisHumanReplySubmitting
+                    ? (currentLang === 'zh-CN' ? '提交中' : 'Sending')
+                    : (currentLang === 'zh-CN' ? '提交人类回复' : 'Submit Human Reply')}
+            </button>
+        </div>
+    `;
+}
+
+async function submitOasisHumanReply() {
+    if (oasisHumanReplySubmitting || !_overviewDetailCache || !_overviewDetailCache.pending_human) return;
+    const detail = _overviewDetailCache;
+    const pending = detail.pending_human;
+    const input = document.getElementById('oasis-human-reply-input');
+    if (!input) return;
+    const content = (input.value || '').trim();
+    if (!content) {
+        input.focus();
+        return;
+    }
+
+    oasisHumanReplySubmitting = true;
+    renderPendingHumanPanel(detail);
+    try {
+        const resp = await fetch(`/proxy_oasis/topics/${encodeURIComponent(String(detail.topic_id))}/human-reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                node_id: pending.node_id,
+                round_num: pending.round_num,
+                content,
+            }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            throw new Error(data.error || data.detail || data.message || `HTTP ${resp.status}`);
+        }
+        input.value = '';
+        await loadTopicDetail(detail.topic_id);
+        refreshOasisTopics();
+    } catch (e) {
+        alert((currentLang === 'zh-CN' ? '提交人类回复失败' : 'Failed to submit human reply') + ': ' + e.message);
+    } finally {
+        oasisHumanReplySubmitting = false;
+        if (_overviewDetailCache) {
+            renderPendingHumanPanel(_overviewDetailCache);
+        }
+    }
+}
+
+function toggleConclusionCollapse() {
+    const textEl = document.getElementById('oasis-conclusion-text');
+    const toggleEl = document.getElementById('oasis-conclusion-toggle');
+    if (!textEl) return;
+    const collapsed = textEl.style.display === 'none';
+    textEl.style.display = collapsed ? '' : 'none';
+    if (toggleEl) toggleEl.textContent = collapsed ? '▼' : '▶';
+}
+
+// ── Discussion Overview: DAG timeline visualization ──
+function cacheOverviewDetail(detail) { _overviewDetailCache = detail; }
+
+function showDiscussionOverview() {
+    const detail = _overviewDetailCache;
+    if (!detail) { alert('No discussion data'); return; }
+    const timeline = detail.timeline || [];
+    const posts = detail.posts || [];
+    if (timeline.length === 0 && posts.length === 0) { alert(currentLang==='zh-CN'?'暂无讨论数据':'No discussion data'); return; }
+
+    // Collect all agents (with agent rows) + system row
+    const agentSet = new Set();
+    timeline.forEach(ev => { if (ev.agent) agentSet.add(ev.agent); });
+    posts.forEach(p => { if (p.author) agentSet.add(p.author); });
+    const agents = [...agentSet];
+    const hasSysEvents = timeline.some(ev => !ev.agent);
+    const rowKeys = [...agents];
+    if (hasSysEvents) rowKeys.push('__system__');
+
+    // Merge all events sorted by time
+    const allEvents = [];
+    timeline.forEach(ev => allEvents.push({ t: ev.elapsed||0, type: 'timeline', data: ev }));
+    posts.forEach(p => allEvents.push({ t: p.elapsed||0, type: 'post', data: p }));
+    allEvents.sort((a,b) => a.t - b.t);
+
+    const maxTime = allEvents.length ? Math.max(allEvents[allEvents.length-1].t, 1) : 1;
+    const fmtT = (s) => { const r=Math.round(s); if(r<60) return r+'s'; return Math.floor(r/60)+'m'+(r%60?r%60+'s':''); };
+
+    // Colors for each event type
+    const evColors = {
+        start:       { bg:'#ecfdf5', border:'#6ee7b7', text:'#047857' },
+        agent_call:  { bg:'#fef3c7', border:'#fcd34d', text:'#92400e' },
+        agent_done:  { bg:'#d1fae5', border:'#6ee7b7', text:'#065f46' },
+        post:        { bg:'#dbeafe', border:'#93c5fd', text:'#1e40af' },
+        conclude:    { bg:'#ede9fe', border:'#c4b5fd', text:'#5b21b6' },
+        round:       { bg:'#fce7f3', border:'#f9a8d4', text:'#9d174d' },
+        if_branch:   { bg:'#fff7ed', border:'#fdba74', text:'#c2410c' },
+        manual_post: { bg:'#e0e7ff', border:'#a5b4fc', text:'#3730a3' },
+    };
+    // Bar colors for duration spans (call→done)
+    const barColors = ['#3b82f6','#8b5cf6','#10b981','#f59e0b','#ef4444','#ec4899','#06b6d4','#84cc16'];
+    const evIcons = {start:'🚀',round:'📢',agent_call:'⏳',agent_done:'✅',conclude:'🏁',manual_post:'📝',if_branch:'🔀',post:'💬'};
+
+    const textLayout = getClawcrossTextLayout();
+    const overviewNames = rowKeys.map((key) => key === '__system__' ? (currentLang === 'zh-CN' ? '系统' : 'System') : key);
+    const labelW = textLayout && typeof textLayout.measureLabelGutter === 'function'
+        ? textLayout.measureLabelGutter(overviewNames, {
+            font: '600 10px Arial',
+            lineHeight: 12,
+            minWidth: 118,
+            maxWidth: 196,
+            padding: 28,
+        })
+        : 130;
+    const rowH = 42;       // row height
+    const markerR = 7;     // event marker radius
+    const headerH = 30;    // time axis header height
+
+    // Compute tick marks (aim for ~8-12 ticks)
+    const tickCount = Math.min(Math.max(Math.ceil(maxTime/5), 5), 20);
+    const tickStep = maxTime / tickCount;
+    const niceStep = tickStep < 5 ? 5 : tickStep < 10 ? 10 : tickStep < 15 ? 15 : tickStep < 30 ? 30 : tickStep < 60 ? 60 : Math.ceil(tickStep/60)*60;
+    const ticks = [];
+    for (let t = 0; t <= maxTime + niceStep*0.5; t += niceStep) ticks.push(t);
+    const preferredViewportWidth = Math.max(620, Math.min(960, Math.round((window.innerWidth || 1280) * 0.58)));
+    const chartW = Math.max(preferredViewportWidth, 420 + (allEvents.length * 18), ticks.length * 52);
+
+    const tToX = (t) => (t / maxTime) * chartW;
+
+    // Build per-agent events and duration bars
+    const agentEventsMap = {};
+    const agentBars = {};
+    rowKeys.forEach(k => { agentEventsMap[k] = []; agentBars[k] = []; });
+    allEvents.forEach(ev => {
+        let key;
+        if (ev.type === 'post') key = ev.data.author;
+        else if (ev.data.agent) key = ev.data.agent;
+        else key = '__system__';
+        if (!agentEventsMap[key]) return;
+        agentEventsMap[key].push(ev);
+    });
+
+    // Build duration bars: pair agent_call with agent_done
+    agents.forEach((agent, ai) => {
+        const evs = agentEventsMap[agent];
+        const callStack = [];
+        evs.forEach(ev => {
+            if (ev.type === 'timeline' && ev.data.event === 'agent_call') callStack.push(ev.t);
+            else if (ev.type === 'timeline' && ev.data.event === 'agent_done' && callStack.length > 0) {
+                const startT = callStack.shift();
+                agentBars[agent].push({ start: startT, end: ev.t, color: barColors[ai % barColors.length] });
+            }
+        });
+        // If there are unclosed calls, extend to current max
+        callStack.forEach(st => {
+            agentBars[agent].push({ start: st, end: maxTime, color: barColors[ai % barColors.length], open: true });
+        });
+    });
+
+    // Build SVG for each row
+    function buildRowSvg(key, _idx) {
+        const evs = agentEventsMap[key] || [];
+        const bars = agentBars[key] || [];
+        const y = rowH / 2;
+        let svg = '';
+
+        // Background track line
+        svg += `<line x1="0" y1="${y}" x2="${chartW}" y2="${y}" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="4,3"/>`;
+
+        // Duration bars
+        bars.forEach(bar => {
+            const x1 = tToX(bar.start);
+            const x2 = tToX(bar.end);
+            const w = Math.max(x2 - x1, 3);
+            svg += `<rect x="${x1}" y="${y-8}" width="${w}" height="16" rx="4" fill="${bar.color}" opacity="0.18" stroke="${bar.color}" stroke-width="1.5" ${bar.open?'stroke-dasharray="4,2"':''}/>`;
+            svg += `<rect x="${x1}" y="${y-8}" width="${w}" height="16" rx="4" fill="${bar.color}" opacity="0.08"/>`;
+            // Duration label inside bar if wide enough
+            const dur = bar.end - bar.start;
+            if (w > 36) {
+                svg += `<text x="${x1+w/2}" y="${y+3.5}" text-anchor="middle" font-size="8" font-weight="600" fill="${bar.color}" opacity="0.7">${fmtT(dur)}</text>`;
+            }
+        });
+
+        // Event markers (circles with icons)
+        evs.forEach(ev => {
+            const x = tToX(ev.t);
+            const evType = ev.type === 'post' ? 'post' : (ev.data.event || 'start');
+            const col = evColors[evType] || evColors.start;
+            const icon = evIcons[evType] || '⏱';
+
+            // Tooltip text
+            let tip = fmtT(ev.t) + ' ';
+            if (ev.type === 'post') {
+                tip += (currentLang==='zh-CN'?'💬 发言':'💬 Post');
+                const txt = (ev.data.content||'').substring(0,40);
+                if (txt) tip += ': ' + txt;
+            } else {
+                tip += icon + ' ' + (ev.data.detail || ev.data.event || '');
+            }
+
+            // Drop shadow + circle
+            svg += `<circle cx="${x}" cy="${y}" r="${markerR+1}" fill="white" opacity="0.9"/>`;
+            svg += `<circle cx="${x}" cy="${y}" r="${markerR}" fill="${col.bg}" stroke="${col.border}" stroke-width="1.5" style="cursor:pointer;">`;
+            svg += `<title>${escapeHtml(tip)}</title></circle>`;
+            // Icon text (emoji fallback)
+            svg += `<text x="${x}" y="${y+3.5}" text-anchor="middle" font-size="9" style="pointer-events:none;">${icon}</text>`;
+
+            // Time label below marker (only for significant events or sparse areas)
+            svg += `<text x="${x}" y="${y+markerR+10}" text-anchor="middle" font-size="7" fill="#94a3b8">${fmtT(ev.t)}</text>`;
+        });
+
+        return svg;
+    }
+
+    // Build the complete SVG chart
+    const totalH = headerH + rowKeys.length * rowH + 4;
+    let chartSvg = '';
+
+    // Time axis header with ticks
+    chartSvg += `<g transform="translate(0,0)">`;
+    ticks.forEach(t => {
+        const x = tToX(t);
+        if (x > chartW) return;
+        chartSvg += `<line x1="${x}" y1="${headerH-4}" x2="${x}" y2="${totalH}" stroke="#f1f5f9" stroke-width="1"/>`;
+        chartSvg += `<text x="${x}" y="${headerH-8}" text-anchor="middle" font-size="9" fill="#94a3b8" font-weight="500">${fmtT(t)}</text>`;
+    });
+    // Axis baseline
+    chartSvg += `<line x1="0" y1="${headerH}" x2="${chartW}" y2="${headerH}" stroke="#e2e8f0" stroke-width="1.5"/>`;
+    chartSvg += `</g>`;
+
+    // Rows
+    rowKeys.forEach((key, i) => {
+        const yOff = headerH + i * rowH;
+        // Alternating row background
+        if (i % 2 === 0) chartSvg += `<rect x="0" y="${yOff}" width="${chartW}" height="${rowH}" fill="#fafbfc"/>`;
+        // Row separator
+        chartSvg += `<line x1="0" y1="${yOff+rowH}" x2="${chartW}" y2="${yOff+rowH}" stroke="#f1f5f9" stroke-width="1"/>`;
+        chartSvg += `<g transform="translate(0,${yOff})">${buildRowSvg(key, i)}</g>`;
+    });
+
+    // Build left labels HTML
+    let labelsHtml = `<div style="height:${headerH}px;display:flex;align-items:flex-end;padding:0 8px 4px;font-size:9px;font-weight:600;color:#94a3b8;border-bottom:1.5px solid #e2e8f0;">Agent</div>`;
+    rowKeys.forEach((key, i) => {
+        const isSystem = key === '__system__';
+        const name = isSystem ? (currentLang==='zh-CN'?'系统':'System') : key;
+        const icon = isSystem ? '🎯' : getExpertAvatar(key).icon;
+        const bg = i % 2 === 0 ? '#fafbfc' : 'white';
+        labelsHtml += `<div style="height:${rowH}px;display:flex;align-items:center;padding:0 8px;gap:6px;background:${bg};border-bottom:1px solid #f1f5f9;white-space:nowrap;overflow:hidden;">
+            <span style="font-size:13px;flex-shrink:0;">${icon}</span>
+            <span style="font-size:11px;font-weight:600;color:#374151;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+        </div>`;
+    });
+
+    // Legend
+    const legendItems = [
+        {type:'start', label:currentLang==='zh-CN'?'开始':'Start'},
+        {type:'agent_call', label:currentLang==='zh-CN'?'调用':'Call'},
+        {type:'post', label:currentLang==='zh-CN'?'发言':'Post'},
+        {type:'agent_done', label:currentLang==='zh-CN'?'完成':'Done'},
+        {type:'round', label:currentLang==='zh-CN'?'轮次':'Round'},
+        {type:'conclude', label:currentLang==='zh-CN'?'总结':'Conclude'},
+        {type:'if_branch', label:currentLang==='zh-CN'?'分支':'Branch'},
+    ];
+    const legendHtml = legendItems.map(l => {
+        const c = evColors[l.type]||evColors.start;
+        return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#6b7280;">
+            <span style="width:14px;height:14px;border-radius:50%;background:${c.bg};border:1.5px solid ${c.border};display:inline-flex;align-items:center;justify-content:center;font-size:8px;">${evIcons[l.type]||'⏱'}</span>${l.label}</span>`;
+    }).join('');
+    const barLegend = `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#6b7280;margin-left:8px;">
+        <span style="width:24px;height:10px;border-radius:3px;background:${barColors[0]};opacity:0.25;border:1.5px solid ${barColors[0]};display:inline-block;"></span>${currentLang==='zh-CN'?'执行时长':'Duration'}</span>`;
+
+    // Summary stats
+    const totalDuration = allEvents.length ? allEvents[allEvents.length-1].t : 0;
+    const totalPosts = posts.length;
+    const summaryText = currentLang==='zh-CN'
+        ? `共 ${agents.length} 位专家 · ${totalPosts} 条发言 · ${detail.current_round||0} 轮讨论 · 总时长 ${fmtT(Math.round(totalDuration))}`
+        : `${agents.length} experts · ${totalPosts} posts · ${detail.current_round||0} rounds · Duration ${fmtT(Math.round(totalDuration))}`;
+
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'oasis-overview-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `
+        <div style="background:white;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.2);width:94vw;max-width:960px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #e5e7eb;flex-shrink:0;">
+                <h3 style="font-size:15px;font-weight:700;color:#111827;">📊 ${currentLang==='zh-CN'?'团队讨论时间轴':'Discussion Timeline'}</h3>
+                <button onclick="document.getElementById('oasis-overview-overlay').remove()" style="background:none;border:none;font-size:20px;color:#9ca3af;cursor:pointer;padding:4px 8px;border-radius:6px;line-height:1;">&times;</button>
+            </div>
+            <div style="padding:10px 20px 6px;flex-shrink:0;">
+                <div style="font-size:12px;color:#6b7280;padding:8px 12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+                    ${summaryText}
+                </div>
+            </div>
+            <div style="flex:1;overflow:hidden;display:flex;padding:0 20px 10px;">
+                <!-- Left labels (fixed) -->
+                <div style="width:${labelW}px;flex-shrink:0;overflow:hidden;border-right:1.5px solid #e2e8f0;">
+                    ${labelsHtml}
+                </div>
+                <!-- Right chart (horizontally scrollable) -->
+                <div style="flex:1;overflow-x:auto;overflow-y:hidden;">
+                    <svg width="${chartW+20}" height="${totalH}" viewBox="0 0 ${chartW+20} ${totalH}" style="display:block;min-width:${chartW+20}px;">
+                        <g transform="translate(10,0)">${chartSvg}</g>
+                    </svg>
+                </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;padding:8px 20px 14px;border-top:1px solid #e5e7eb;flex-shrink:0;align-items:center;">
+                ${legendHtml}${barLegend}
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+function fmtElapsed(sec) {
+    if (sec === undefined || sec === null) return '';
+    const s = Math.round(sec);
+    if (s < 60) return 'T+' + s + 's';
+    const m = Math.floor(s / 60);
+    return 'T+' + m + 'm' + (s % 60) + 's';
+}
+
+function handleOasisTownComposerKeydown(event) {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    submitOasisTopicPost();
+}
+
+async function createOasisTopicFromTownPrompt(question) {
+    const experts = await loadOasisExperts();
+    const tags = pickTownDefaultExpertTags(experts);
+    if (!tags.length) {
+        throw new Error(currentLang === 'zh-CN' ? '没有可用的 OASIS 专家' : 'No OASIS experts available');
+    }
+    const resp = await fetch('/proxy_oasis/topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            question,
+            max_rounds: 5,
+            discussion: true,
+            schedule_yaml: buildTownQuickStartYaml(tags),
+            autogen_swarm: true,
+            swarm_mode: 'prediction',
+        }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+        throw new Error(data.error || data.detail || data.message || `HTTP ${resp.status}`);
+    }
+    return data;
+}
+
+async function submitOasisTopicPost() {
+    if (oasisManualPostSubmitting) return;
+    const detail = _overviewDetailCache && _overviewDetailCache.topic_id === oasisCurrentTopicId
+        ? _overviewDetailCache
+        : null;
+    const isLive = !!(detail && detail.status === 'discussing' && detail.topic_id === oasisCurrentTopicId);
+
+    const input = document.getElementById('oasis-town-input');
+    if (!input) return;
+    const baseContent = (input.value || '').trim();
+    const workflowsToSend = pendingOasisWorkflows.map(w => ({
+        name: w.name,
+        team: w.team || '',
+        mode: w.mode || 'yaml',
+        displayName: w.displayName,
+        content: w.content || '',
+        path: w.path || '',
+    }));
+    if (!baseContent && workflowsToSend.length === 0) {
+        input.focus();
+        return;
+    }
+    let workflowPrefix = '';
+    for (const wf of workflowsToSend) {
+        if ((wf.mode || 'yaml') === 'python') {
+            workflowPrefix += `【python workflow, use it now】\n`
+                + `Team Name: ${wf.team || '(non-team)'}\n`
+                + `Python Name: ${wf.name}\n`
+                + `Absolute Path: ${wf.path || '(unknown)'}\n`
+                + (wf.content ? `---\n${wf.content}\n---\n\n` : '\n');
+        } else {
+            workflowPrefix += `【oasis workflow, use it now】\n`
+                + `Team Name: ${wf.team || '(non-team)'}\n`
+                + `YAML Name: ${wf.name}\n`
+                + `Absolute Path: ${wf.path || '(unknown)'}\n`
+                + (wf.content ? `---\n${wf.content}\n---\n\n` : '\n');
+        }
+    }
+    const content = workflowPrefix + baseContent;
+
+    oasisManualPostSubmitting = true;
+    updateOasisTownComposer(detail);
+    try {
+        ensureOasisPanelOpen();
+        if (isLive) {
+            const resp = await fetch(`/proxy_oasis/topics/${encodeURIComponent(String(oasisCurrentTopicId))}/posts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                throw new Error(data.error || data.detail || data.message || `HTTP ${resp.status}`);
+            }
+            input.value = '';
+            pendingOasisWorkflows = [];
+            renderWorkflowPreviews('oasis');
+            await loadTopicDetail(oasisCurrentTopicId);
+        } else {
+            const created = await createOasisTopicFromTownPrompt(content);
+            input.value = '';
+            pendingOasisWorkflows = [];
+            renderWorkflowPreviews('oasis');
+            await refreshOasisTopics();
+            if (created.topic_id) {
+                await openOasisTopic(created.topic_id);
+            }
+        }
+        refreshOasisTopics();
+        input.focus();
+    } catch (e) {
+        alert((currentLang === 'zh-CN' ? 'Town 提交失败' : 'Town submit failed') + ': ' + e.message);
+    } finally {
+        oasisManualPostSubmitting = false;
+        const latest = _overviewDetailCache && _overviewDetailCache.topic_id === oasisCurrentTopicId
+            ? _overviewDetailCache
+            : detail;
+        updateOasisTownComposer(latest);
+    }
+}
+
+function renderPosts(posts, timeline, _isDiscussion) {
+    const box = document.getElementById('oasis-posts-box');
+    if (!box) return;
+    const sameTopic = box.dataset.topicId === (oasisCurrentTopicId || '');
+    const shouldStickToBottom = !sameTopic || (box.scrollHeight - box.scrollTop - box.clientHeight < 96);
+    box.dataset.topicId = oasisCurrentTopicId || '';
+    box.classList.add('oasis-town-feed');
+
+    if (posts.length === 0 && (!timeline || timeline.length === 0)) {
+        box.innerHTML = `
+            <div class="oasis-topic-list-empty" style="min-height: 260px;">
+                <div class="oasis-empty-town">💭</div>
+                <p>${t('oasis_waiting')}</p>
+            </div>`;
+        return;
+    }
+
+    // ── timeline 事件（绿色卡片）+ 帖子混排 ──
+    const items = [];
+    if (timeline) {
+        for (const ev of timeline) {
+            // 讨论模式下不显示 agent_done
+            if (ev.event === 'agent_done') continue;
+            items.push({type: 'event', elapsed: ev.elapsed, data: ev});
+        }
+    }
+    for (const p of posts) {
+        items.push({type: 'post', elapsed: p.elapsed || 0, data: p});
+    }
+    items.sort((a, b) => a.elapsed - b.elapsed);
+
+    box.innerHTML = items.map(item => {
+        if (item.type === 'event') {
+            const ev = item.data;
+            const evIcons = {start:'🚀', round:'📢', agent_call:'⏳', agent_done:'✅', conclude:'🏁', manual_post:'📝', if_branch:'🔀', script_start:'🧪', script_done:'📜', script_timeout:'⏰', human_wait:'🙋', human_reply:'💬', human_timeout:'⌛'};
+            const icon = evIcons[ev.event] || '⏱';
+            const label = ev.agent ? ev.agent + (ev.detail ? ' · ' + ev.detail : '') : (ev.detail || ev.event);
+            return `
+                <div class="oasis-post oasis-town-event">
+                    <div class="oasis-town-event-icon">${icon}</div>
+                    <div class="oasis-town-event-body">
+                        <div class="oasis-town-event-title">${escapeHtml(label)}</div>
+                        <span class="oasis-town-event-time">${fmtElapsed(ev.elapsed)}</span>
+                    </div>
+                </div>`;
+        }
+        // Post
+        const p = item.data;
+        const avatar = getExpertAvatar(p.author);
+        const isReply = p.reply_to !== null && p.reply_to !== undefined;
+        const totalVotes = p.upvotes + p.downvotes;
+        const upPct = totalVotes > 0 ? (p.upvotes / totalVotes * 100) : 50;
+        const alignRight = ((p.id || 0) + (p.author || '').length) % 2 === 0;
+
+        return `
+            <div class="oasis-post oasis-town-post ${alignRight ? 'oasis-town-post-right' : ''} ${isReply ? 'reply' : ''}">
+                <div class="oasis-town-post-shell">
+                    <div class="oasis-town-speaker">
+                        <div class="oasis-expert-avatar ${avatar.cls}" title="${escapeHtml(p.author)}">${avatar.icon}</div>
+                        <div class="oasis-town-speaker-meta">
+                            <span class="oasis-town-speaker-name">${escapeHtml(p.author)}</span>
+                            <span class="oasis-town-speaker-role">${isReply ? '↩ ' + (currentLang === 'zh-CN' ? '回复' : 'reply') + ' #' + p.reply_to : (currentLang === 'zh-CN' ? '广场发言' : 'square post')}</span>
+                        </div>
+                        <div class="oasis-town-post-time">${fmtElapsed(p.elapsed)}</div>
+                    </div>
+                    <div class="oasis-town-speech markdown-body tc-markdown">${renderMarkdown(p.content || '')}</div>
+                    <div class="oasis-town-post-footer">
+                        <div class="oasis-town-post-meta">
+                            <span class="oasis-town-vote-summary">#${p.id}</span>
+                            <span class="oasis-town-vote-summary">👍 ${p.upvotes}</span>
+                            <span class="oasis-town-vote-summary">👎 ${p.downvotes}</span>
+                        </div>
+                        ${totalVotes > 0 ? `
+                            <div class="flex-1 oasis-vote-bar flex">
+                                <div class="oasis-vote-up" style="width: ${upPct}%"></div>
+                                <div class="oasis-vote-down" style="width: ${100 - upPct}%"></div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+
+    if (shouldStickToBottom) {
+        box.scrollTop = box.scrollHeight;
+    }
+
+    highlightMarkdownIn(box);
+}
+
+function startDetailPolling(topicId) {
+    stopOasisPolling();
+    let lastPostCount = 0;
+    let lastTimelineCount = 0;
+    let errorCount = 0;
+    oasisPollingTimer = setInterval(async () => {
+        if (oasisCurrentTopicId !== topicId) {
+            stopOasisPolling();
+            return;
+        }
+        try {
+            const enc = encodeURIComponent(String(topicId));
+            const resp = await fetch(`/proxy_oasis/topics/${enc}`);
+            if (!resp.ok) {
+                errorCount++;
+                console.warn(`OASIS polling error: HTTP ${resp.status}`);
+                if (errorCount >= 5) {
+                    console.error('OASIS polling failed 5 times, stopping');
+                    stopOasisPolling();
+                }
+                return;
+            }
+            errorCount = 0;
+            const detail = await resp.json();
+
+            // Re-render if posts or timeline changed
+            const currentPostCount = (detail.posts || []).length;
+            const currentTimelineCount = (detail.timeline || []).length;
+            if (currentPostCount !== lastPostCount || currentTimelineCount !== lastTimelineCount || detail.status !== 'discussing') {
+                renderTopicDetail(detail);
+                lastPostCount = currentPostCount;
+                lastTimelineCount = currentTimelineCount;
+            }
+
+            // Stop polling when discussion ends
+            if (detail.status === 'concluded' || detail.status === 'error') {
+                stopOasisPolling();
+                refreshOasisTopics();
+            }
+        } catch (e) {
+            errorCount++;
+            console.warn('OASIS polling error:', e);
+        }
+    }, 1500); // Poll every 1.5 seconds for faster updates
+}
+
+async function cancelOasisTopic(topicId) {
+    if (!confirm(t('oasis_cancel_confirm'))) return;
+    try {
+        const resp = await fetch(`/proxy_oasis/topics/${encodeURIComponent(String(topicId))}/cancel`, { method: 'POST' });
+        const data = await resp.json();
+        if (resp.ok) {
+            stopOasisPolling();
+            if (oasisCurrentTopicId === topicId) {
+                await loadTopicDetail(topicId);
+            }
+            refreshOasisTopics();
+        } else {
+            alert(t('oasis_action_fail') + ': ' + (data.error || data.detail || data.message || ''));
+        }
+    } catch (e) {
+        alert(t('oasis_action_fail') + ': ' + e.message);
+    }
+}
+
+async function deleteOasisTopic(topicId) {
+    if (!confirm(t('oasis_delete_confirm'))) return;
+    try {
+        const resp = await fetch(`/proxy_oasis/topics/${encodeURIComponent(String(topicId))}/purge`, { method: 'POST' });
+        const data = await resp.json();
+        if (resp.ok) {
+            stopOasisPolling();
+            if (oasisCurrentTopicId === topicId) {
+                showOasisTopicList();
+            } else {
+                refreshOasisTopics();
+            }
+        } else {
+            alert(t('oasis_action_fail') + ': ' + (data.error || data.detail || data.message || ''));
+        }
+    } catch (e) {
+        alert(t('oasis_action_fail') + ': ' + e.message);
+    }
+}
+
+async function deleteAllOasisTopics() {
+    const countEl = document.getElementById('oasis-topic-count');
+    const count = parseInt(countEl.textContent) || 0;
+    if (count === 0) {
+        alert(t('oasis_no_topics') || '暂无讨论话题');
+        return;
+    }
+    const confirmMsg = (currentLang === 'zh-CN')
+        ? `确定要清空所有 ${count} 个讨论话题吗？此操作不可恢复！`
+        : `Delete all ${count} topics? This cannot be undone!`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        const resp = await fetch('/proxy_oasis/topics', { method: 'DELETE' });
+        const data = await resp.json();
+        if (resp.ok) {
+            stopOasisPolling();
+            showOasisTopicList();
+            alert((currentLang === 'zh-CN' ? '已删除 ' : 'Deleted ') + data.deleted_count + (currentLang === 'zh-CN' ? ' 个话题' : ' topics'));
+        } else {
+            alert(t('oasis_action_fail') + ': ' + (data.error || data.detail || data.message || ''));
+        }
+    } catch (e) {
+        alert(t('oasis_action_fail') + ': ' + e.message);
+    }
+}
+
+// Auto-refresh topic list periodically when panel is open
+setInterval(() => {
+    if (oasisPanelOpen && !oasisCurrentTopicId && currentUserId) {
+        refreshOasisTopics();
+    }
+}, 10000); // Every 10 seconds
+
+// === System trigger polling: 检测后台系统触发产生的新消息 ===
+let _sessionStatusTimer = null;
+let _sessionStatusPolling = false;
+
+async function pollCurrentSessionStatus() {
+    if (!currentUserId || !currentSessionId) return;
+    if (_ocChatMode !== 'internal') return;
+    // Compression runs independently of browser streams, so always query its
+    // backend state. Stream-owned Send/Stop controls are updated separately.
+    if (_sessionStatusPolling) return;
+    _sessionStatusPolling = true;
+    const contextKey = chatRunContextKey();
+    const sessionId = currentSessionId;
+    try {
+        const status = await fetchSessionStatus(sessionId);
+        if (chatRunContextKey() !== contextKey || currentActiveChatRun()) return;
+
+        const busy = status.state === 'running';
+        const wasBusy = cancelBtn.style.display !== 'none';
+        setSystemBusyUI(busy);
+        if (!busy && wasBusy) {
+            // Completed background turns appear automatically, without a manual refresh button.
+            await switchToSession(sessionId, true, {quiet: true});
+        }
+        if (status.context) showSessionContextUsage(status.context);
+    } catch(e) {
+        // A later poll retries without changing the last known UI state.
+    } finally {
+        _sessionStatusPolling = false;
+    }
+}
+
+function startSessionStatusPolling() {
+    stopSessionStatusPolling();
+    void pollCurrentSessionStatus();
+    _sessionStatusTimer = setInterval(pollCurrentSessionStatus, 5000);
+}
+
+function stopSessionStatusPolling() {
+    if (_sessionStatusTimer) {
+        clearInterval(_sessionStatusTimer);
+        _sessionStatusTimer = null;
+    }
+}
+
+// Keep one stable timer. The poll itself is cheap and exits immediately while
+// logged out, without a selected session, or outside Internal chat mode.
+startSessionStatusPolling();
+
+// ================================================================
+// ===== Teams page (团队) =====
+// ================================================================
+
+// The team currently open on the teams page.
+let currentGroupId = null;
+
+// 点击上下文用量浮层之外时关闭它
+document.addEventListener('click', function(e) {
+    const contextUsageWrap = document.querySelector('.oc-context-usage-wrap');
+    if (contextUsageWrap && !contextUsageWrap.contains(e.target)) {
+        closeSessionContextDetail();
+    }
+});
+
+async function switchPage(page) {
+    currentPage = page;
+    closeAgentCenter();
+    window.StudioSidebar?.updateNavigation(page);
+    showPageLoading();
+    // Update tabs
+    document.getElementById('tab-chat').classList.toggle('active', page === 'chat');
+    document.getElementById('tab-group').classList.toggle('active', page === 'group');
+    document.getElementById('tab-orchestrate').classList.toggle('active', page === 'orchestrate');
+    // Show/hide pages
+    const chatPage = document.getElementById('page-chat');
+    const groupPage = document.getElementById('page-group');
+    const orchPage = document.getElementById('page-orchestrate');
+    try {
+        if (page === 'chat') {
+            chatPage.classList.remove('hidden-page');
+            chatPage.style.display = 'flex';
+            groupPage.classList.remove('active');
+            groupPage.classList.remove('mobile-chat-open');
+            if (orchPage) orchPage.classList.remove('active');
+            stopGroupListPolling();
+            // Lazy-init the WeBot / ACP chat switcher on first visit to Chat tab
+            if (!window._ocSwitcherInitialized && typeof ocInitSwitcher === 'function') {
+                window._ocSwitcherInitialized = true;
+                ocInitSwitcher();
+            }
+        } else if (page === 'group') {
+            chatPage.classList.add('hidden-page');
+            chatPage.style.display = 'none';
+            groupPage.classList.add('active');
+            if (orchPage) orchPage.classList.remove('active');
+            await loadGroupList();
+            startGroupListPolling();
+        } else if (page === 'orchestrate') {
+            chatPage.classList.add('hidden-page');
+            chatPage.style.display = 'none';
+            groupPage.classList.remove('active');
+            groupPage.classList.remove('mobile-chat-open');
+            if (orchPage) orchPage.classList.add('active');
+            stopGroupListPolling();
+            if (!window._orchInitialized) { orchInit(); window._orchInitialized = true; }
+        }
+    } finally {
+        applyOasisTownMode();
+        hidePageLoading();
+    }
+}
+
+let _groupListPollingTimer = null;
+function startGroupListPolling() {
+    stopGroupListPolling();
+    _groupListPollingTimer = setInterval(() => {
+        if (currentPage === 'group' && currentUserId) {
+            loadGroupList();
+        }
+    }, 8000);
+}
+function stopGroupListPolling() {
+    if (_groupListPollingTimer) { clearInterval(_groupListPollingTimer); _groupListPollingTimer = null; }
+}
+
+async function loadGroupList() {
+    try {
+        const resp = await fetch('/teams', { cache: 'no-store' });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const teams = data.teams || [];
+        renderGroupList(teams);
+    } catch (e) {
+        console.error('Failed to load teams:', e);
+    }
+}
+
+function renderGroupList(teams) {
+    const container = document.getElementById('group-list');
+    const placeholder = document.getElementById('group-empty-placeholder');
+    if (!teams || teams.length === 0) {
+        container.innerHTML = `
+            <div class="group-empty-state" style="padding:40px 0;">
+                <div class="empty-icon">👥</div>
+                <div class="empty-text">${t('group_no_groups')}</div>
+            </div>`;
+        // Update placeholder hint to "create or import"
+        if (placeholder) {
+            const hintEl = placeholder.querySelector('.empty-text');
+            if (hintEl) {
+                hintEl.textContent = t('group_create_hint');
+                hintEl.setAttribute('data-i18n', 'group_create_hint');
+            }
+        }
+        return;
+    }
+    // Has teams: restore placeholder hint to "select a team"
+    if (placeholder) {
+        const hintEl = placeholder.querySelector('.empty-text');
+        if (hintEl) {
+            hintEl.textContent = t('group_select_hint');
+            hintEl.setAttribute('data-i18n', 'group_select_hint');
+        }
+    }
+    const ordered = ['__default__', ...teams.filter(team => team !== '__default__')].filter(team => teams.includes(team));
+    const firstNamedTeam = ordered.find(team => team !== '__default__');
+    container.innerHTML = ordered.map(team => {
+        const isActive = team === currentGroupId;
+        const virtual = team === '__default__';
+        // encodeURIComponent 放入 onclick 内层单引号字符串，避免 JSON.stringify 的双引号截断 HTML 属性
+        const te = encodeURIComponent(team).replace(/'/g, '%27');
+        return `
+            ${virtual || team === firstNamedTeam ? `<div class="team-list-section-label">${currentLang === 'en' ? (virtual ? 'PERSONAL' : 'PROJECT TEAMS') : (virtual ? '我的空间' : '项目团队')}</div>` : ''}
+            <div class="group-item ${isActive ? 'active' : ''} ${virtual ? 'user-space-item' : ''}" data-team="${te}" onclick="void openGroup(decodeURIComponent('${te}'))">
+                <span class="team-list-icon"><svg class="ui-icon"><use href="/static/icons.svg#${virtual ? 'user' : 'users'}"/></svg></span>
+                <div class="team-list-copy"><div class="group-name">${escapeHtml(virtual ? (currentLang === 'en' ? 'User space' : '用户空间') : team)}</div>
+                <div class="group-meta">${escapeHtml(virtual ? (currentLang === 'en' ? 'All Agents & shared resources' : '全部 Agent 与共享资源') : t('group_item_open_hint'))}</div>
+                ${virtual ? `<span class="user-space-badge">${currentLang === 'en' ? 'Personal overview' : '固定个人总览'}</span>` : ''}</div>
+                ${virtual ? '' : `
+                <button type="button" class="group-rename-btn" title="${escapeHtml(t('group_rename_team'))}" aria-label="${escapeHtml(t('group_rename_team'))}" onclick="event.stopPropagation(); renameTeamByName(decodeURIComponent('${te}'))">✏️</button>
+                <button type="button" class="group-delete-btn" title="删除团队" onclick="event.stopPropagation(); deleteTeamByName(decodeURIComponent('${te}'))">🗑️</button>`}
+            </div>`;
+    }).join('');
+}
+
+async function openGroup(teamName) {
+    showPageLoading();
+    currentGroupId = teamName;
+
+    // Mobile: switch to chat view
+    document.getElementById('page-group').classList.add('mobile-chat-open');
+
+    document.getElementById('group-empty-placeholder').style.display = 'none';
+    const activeChat = document.getElementById('group-active-chat');
+    activeChat.style.display = 'flex';
+    activeChat.classList.toggle('is-user-space', teamName === '__default__');
+    const spaceContext = document.getElementById('team-space-context');
+    if (spaceContext) {
+        spaceContext.hidden = teamName !== '__default__';
+        spaceContext.innerHTML = `<span class="team-space-emblem"><svg class="ui-icon"><use href="/static/icons.svg#user"/></svg></span><div><strong>${currentLang === 'en' ? 'Your personal overview' : '你的个人空间总览'}</strong><p>${currentLang === 'en' ? 'All your Agents and shared resources, in one fixed view. This is not a project team.' : '汇总你的全部 Agent 与共享资源。这是固定视图，不是一个项目团队。'}</p></div>`;
+    }
+
+    // 设置团队名称和ID
+    document.getElementById('group-active-name').textContent = workspaceTeamLabel(teamName);
+    document.getElementById('group-active-id').textContent = teamName === '__default__' ? (currentLang === 'en' ? 'Virtual user space' : '虚拟用户空间') : '#Team';
+
+    // 清空消息框内容（保留成员表格）
+    const box = document.getElementById('group-messages-box');
+    box.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:40px 0;font-size:13px;">暂无消息</div>' +
+        '<div id="team-members-overlay" class="team-members-overlay" style="display:flex;">'+        '<div class="team-members-header">' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<button id="team-tab-members" onclick="switchTeamTab(\'members\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #2563eb;background:#2563eb;color:white;">👥 成员</button>' +
+        '<button id="team-tab-experts" onclick="switchTeamTab(\'experts\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#374151;">🧑‍💼 人设池</button>' +
+        '<button id="team-tab-workflows" onclick="switchTeamTab(\'workflows\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#374151;">📂 工作流</button>' +
+        '<button id="team-tab-alarms" onclick="switchTeamTab(\'alarms\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#374151;">⏰ 定时任务</button>' +
+        '<button id="team-tab-skills" onclick="switchTeamTab(\'skills\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#374151;">🧩 Skill</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+        '<span id="team-tab-actions-members">' +
+        '<button onclick="loadTeamMembers()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded transition-colors" title="刷新成员列表">🔄</button>' +
+        '<button onclick="showAddTeamMemberModal()" class="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1 rounded border border-blue-200" title="添加成员">➕ 添加成员</button>' +
+        '</span>' +
+        '<span id="team-tab-actions-experts" style="display:none;">' +
+        '<button onclick="loadTeamExperts()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded transition-colors" title="刷新专家列表">🔄</button>' +
+        '<button onclick="showAddTeamExpertModal()" class="text-xs bg-green-50 text-green-600 hover:bg-green-100 px-3 py-1 rounded border border-green-200" title="添加专家">➕ 创建专家</button>' +
+        '</span>' +
+        '<span id="team-tab-actions-workflows" style="display:none;">' +
+        '<button onclick="loadTeamWorkflows()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded transition-colors" title="刷新工作流列表">🔄</button>' +
+        '<button onclick="showImportTeamWorkflowTemplateModal()" class="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1 rounded border border-blue-200" title="导入通用 Python 工作流模板">📥 导入模板</button>' +
+        '<button onclick="newTeamWorkflowOnCanvas()" class="text-xs bg-purple-50 text-purple-600 hover:bg-purple-100 px-3 py-1 rounded border border-purple-200" title="新建工作流（跳转画布）">➕ 创建工作流</button>' +
+        '</span>' +
+        '<span id="team-tab-actions-alarms" style="display:none;">' +
+        '<button onclick="loadTeamAlarms()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded transition-colors" title="刷新定时任务">🔄</button>' +
+        '</span>' +
+        '<span id="team-tab-actions-skills" style="display:none;">' +
+        '<button onclick="loadTeamSkills()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded transition-colors" title="刷新 Skill 列表">🔄</button>' +
+        '<button onclick="openTeamSkillHub()" class="text-xs bg-amber-50 text-amber-700 hover:bg-amber-100 px-3 py-1 rounded border border-amber-200" title="前往 ClawHub 查找 Skill">🌐 ClawHub</button>' +
+        '<button onclick="document.getElementById(\'team-skill-zip-input\').click()" class="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-3 py-1 rounded border border-orange-200" title="导入 Skill ZIP">📦 导入 Skill ZIP</button>' +
+        '<input id="team-skill-zip-input" type="file" accept=".zip" style="display:none;" onchange="importTeamSkillZip(this)">' +
+        '</span>' +
+        '<button onclick="toggleTeamMembersView()" class="text-gray-400 hover:text-gray-600 text-sm">&times;</button>' +
+        '</div>' +
+        '</div>' +
+        '<div id="team-panel-members" class="team-members-table-container">' +
+        '<table class="team-members-table">' +
+        '<thead>' +
+        '<tr>' +
+        '<th class="text-left">名称</th>' +
+        '<th class="text-left">平台</th>' +
+        '<th class="text-left">人设</th>' +
+        '<th class="text-left">地址</th>' +
+        '<th class="text-right">操作</th>' +
+        '</tr>' +
+        '</thead>' +
+        '<tbody id="team-members-table-body">' +
+        '</tbody>' +
+        '</table>' +
+        '</div>' +
+        '<div id="team-panel-experts" class="team-members-table-container" style="display:none;">' +
+        '<table class="team-members-table">' +
+        '<thead>' +
+        '<tr>' +
+        '<th class="text-left">名称</th>' +
+        '<th class="text-left">标签 (Tag)</th>' +
+        '<th class="text-left" style="max-width:300px;">人设 (Persona)</th>' +
+        '<th class="text-center">温度</th>' +
+        '<th class="text-right">操作</th>' +
+        '</tr>' +
+        '</thead>' +
+        '<tbody id="team-experts-table-body">' +
+        '</tbody>' +
+        '</table>' +
+        '</div>' +
+        '<div id="team-panel-workflows" class="team-members-table-container" style="display:none;">' +
+        '<table class="team-members-table">' +
+        '<thead>' +
+        '<tr>' +
+        '<th class="text-left">工作流名称</th>' +
+        '<th class="text-left">文件</th>' +
+        '<th class="text-right">操作</th>' +
+        '</tr>' +
+        '</thead>' +
+        '<tbody id="team-workflows-table-body">' +
+        '</tbody>' +
+        '</table>' +
+        '</div>' +
+        '<div id="team-panel-alarms" class="team-members-table-container" style="display:none;padding:12px;">' +
+        '<form id="team-alarm-form" onsubmit="createTeamAlarm(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;align-items:center;margin-bottom:6px;">' +
+        '<select id="team-alarm-target" title="目标" style="border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;"></select>' +
+        '<select id="team-alarm-repeat" title="重复" onchange="updateTeamAlarmScheduleControls()" style="border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        '<option value="once">只响一次</option>' +
+        '<option value="daily">每天</option>' +
+        '<option value="weekdays">工作日</option>' +
+        '<option value="weekends">周末</option>' +
+        '<option value="weekly">每周</option>' +
+        '<option value="monthly">每月</option>' +
+        '<option value="custom">自定义</option>' +
+        '</select>' +
+        '<input id="team-alarm-once-at" type="datetime-local" title="触发时间" onchange="updateTeamAlarmScheduleControls()" style="display:none;border:1px solid #d1d5db;border-radius:6px;padding:6px 8px;font-size:12px;min-width:0;">' +
+        '<input id="team-alarm-time" type="time" value="09:00" title="时间" onchange="updateTeamAlarmScheduleControls()" style="border:1px solid #d1d5db;border-radius:6px;padding:6px 8px;font-size:12px;min-width:0;">' +
+        '<select id="team-alarm-weekday" title="星期" onchange="updateTeamAlarmScheduleControls()" style="display:none;border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        '<option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option>' +
+        '</select>' +
+        '<select id="team-alarm-monthday" title="日期" onchange="updateTeamAlarmScheduleControls()" style="display:none;border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        Array.from({length:31}, (_, i) => `<option value="${i + 1}">每月 ${i + 1} 日</option>`).join('') +
+        '</select>' +
+        '<input id="team-alarm-custom-cron" placeholder="0 9 * * *" oninput="updateTeamAlarmScheduleControls()" style="display:none;border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        '<input id="team-alarm-text" placeholder="到点发送给该 agent 的任务内容" style="border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        '<button type="submit" class="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-2 rounded border border-blue-200">添加</button>' +
+        '</form>' +
+        '<div id="team-alarm-schedule-preview" class="text-xs text-gray-500" style="margin:0 0 12px 2px;"></div>' +
+        '<table class="team-members-table">' +
+        '<thead><tr><th class="text-left">目标</th><th class="text-left">时间</th><th class="text-left">内容</th><th class="text-right">操作</th></tr></thead>' +
+        '<tbody id="team-alarms-table-body"></tbody>' +
+        '</table>' +
+        '</div>' +
+        '<div id="team-panel-skills" class="team-members-table-container" style="display:none;padding:0;">' +
+        '<div style="display:flex;min-height:420px;">' +
+        '<div style="width:280px;border-right:1px solid #e5e7eb;padding:12px;overflow:auto;">' +
+        '<div id="team-skills-list" style="display:flex;flex-direction:column;gap:8px;"></div>' +
+        '</div>' +
+        '<div style="flex:1;min-width:0;padding:16px;overflow:auto;">' +
+        '<div id="team-skill-view-empty" style="color:#9ca3af;font-size:12px;padding:20px 0;">请选择一个 Skill 查看 SKILL.md</div>' +
+        '<div id="team-skill-view" style="display:none;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">' +
+        '<div>' +
+        '<div id="team-skill-view-name" style="font-size:16px;font-weight:700;color:#111827;"></div>' +
+        '<div id="team-skill-view-meta" style="font-size:11px;color:#6b7280;margin-top:4px;"></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+        '<button id="team-skill-save-btn" onclick="saveTeamSkillDetail()" style="padding:6px 12px;background:#2563eb;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">保存</button>' +
+        '<button id="team-skill-delete-btn" onclick="deleteTeamSkillDetail()" style="padding:6px 12px;background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">删除</button>' +
+        '</div>' +
+        '</div>' +
+        '<textarea id="team-skill-view-content" spellcheck="false" style="width:100%;min-height:360px;box-sizing:border-box;white-space:pre-wrap;word-break:break-word;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:12px;line-height:1.6;color:#1f2937;overflow:auto;font-family:monospace;resize:vertical;"></textarea>' +
+        '<div id="team-skill-view-status" style="margin-top:8px;font-size:12px;color:#6b7280;"></div>' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+
+
+    // 默认加载并显示成员表
+    const addMember = box.querySelector('[onclick="showAddTeamMemberModal()"]');
+    if (addMember) addMember.hidden = teamName === '__default__';
+    await loadTeamMembers();
+
+    // 更新团队列表选中状态
+    await loadGroupList();
+    hidePageLoading();
+}
+
+function groupBackToList() {
+    document.getElementById('page-group').classList.remove('mobile-chat-open');
+}
+
+
+
+function showCreateTeamModal() {
+    const modal = document.getElementById('create-team-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        setTimeout(() => {
+            document.getElementById('team-name-input').focus();
+        }, 100);
+    }
+}
+
+function closeCreateTeamModal() {
+    const modal = document.getElementById('create-team-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function submitCreateTeam() {
+    const input = document.getElementById('team-name-input');
+    const name = (input.value || '').trim();
+    if (!name) {
+        alert('请输入团队名称');
+        return;
+    }
+
+    try {
+        const resp = await fetch('/teams', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ team: name })
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            alert('创建失败: ' + (err.error || '未知错误'));
+            return;
+        }
+        closeCreateTeamModal();
+        await loadGroupList();
+        openGroup(name);
+    } catch (e) {
+        alert('创建失败: ' + e.message);
+    }
+}
+
+async function renameTeamByName(oldName) {
+    const def = typeof oldName === 'string' ? oldName : '';
+    const newName = prompt(
+        currentLang === 'zh-CN'
+            ? '将团队文件夹重命名为（仅改 data/.../teams 下目录名）：'
+            : 'Rename team folder to (only renames the directory under teams/):',
+        def
+    );
+    if (newName == null) return;
+    const trimmed = String(newName).trim();
+    if (!trimmed || trimmed === oldName) return;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(oldName)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_name: trimmed }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            alert((currentLang === 'zh-CN' ? '重命名失败: ' : 'Rename failed: ') + (data.error || resp.statusText));
+            return;
+        }
+        if (typeof loadAgentTeams === 'function') await loadAgentTeams();
+        if (currentGroupId === oldName) {
+            currentGroupId = trimmed;
+            const gn = document.getElementById('group-active-name');
+            if (gn) gn.textContent = trimmed;
+            const sel = document.getElementById('orch-team-select');
+            if (sel && sel.value === oldName) sel.value = trimmed;
+        }
+        await loadGroupList();
+        if (typeof orchToast === 'function') {
+            orchToast(currentLang === 'zh-CN' ? '团队文件夹已重命名' : 'Team folder renamed');
+        }
+    } catch (e) {
+        alert((currentLang === 'zh-CN' ? '重命名失败: ' : 'Rename failed: ') + e.message);
+    }
+}
+
+async function deleteTeamByName(teamName) {
+    const msg =
+        currentLang === 'zh-CN'
+            ? `确定要删除团队 "${teamName}" 吗？`
+            : `Delete team "${teamName}"?`;
+    if (!confirm(msg)) return;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(teamName)}`, {
+            method: 'DELETE'
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            alert('删除失败: ' + (err.error || '未知错误'));
+            return;
+        }
+        if (currentGroupId === teamName) {
+            currentGroupId = null;
+            document.getElementById('group-active-chat').style.display = 'none';
+            document.getElementById('group-empty-placeholder').style.display = 'flex';
+            document.getElementById('page-group').classList.remove('mobile-chat-open');
+        }
+        loadGroupList();
+    } catch (e) {
+        alert('删除失败: ' + e.message);
+    }
+}
+
+function toggleTeamMembersView() {
+    const overlay = document.getElementById('team-members-overlay');
+    if (!overlay) return;
+    
+    if (overlay.style.display === 'none' || overlay.style.display === '') {
+        overlay.style.display = 'flex';
+        loadTeamMembers();
+    } else {
+        overlay.style.display = 'none';
+    }
+}
+
+// The open team's members as last loaded: [{agent: card, role, is_lead}]
+let _teamMembersCache = [];
+
+function _teamMember(agentId) {
+    return _teamMembersCache.find(m => m.agent.agent_id === agentId) || null;
+}
+
+async function loadTeamMembers() {
+    if (!currentGroupId) return;
+
+    const tbody = document.getElementById('team-members-table-body');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">加载中...</td></tr>';
+
+    try {
+        const card = await agentApi('GET', `/v1/teams/${encodeURIComponent(currentGroupId)}`);
+        _teamMembersCache = card.members || [];
+        if (_teamMembersCache.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">暂无成员</td></tr>';
+            return;
+        }
+        tbody.innerHTML = _teamMembersCache.map(m => {
+            const agent = m.agent;
+            const id = escapeHtml(agent.agent_id);
+            const badgeClass = agent.platform === 'webot' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600';
+            const safeRole = escapeHtml(m.role || agent.name);
+            const persona = escapeHtml(m.tag || '-');  // the team persona it wears
+            const lead = m.is_lead;
+            const leadBtn = `<button onclick="toggleTeamMemberPrimary('${id}', ${lead ? 'false' : 'true'})" class="${lead ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100' : 'text-gray-500 hover:text-amber-600 hover:bg-amber-50'} text-xs px-2 py-1 rounded" title="${lead ? '点击取消团队主 agent' : '设为团队主 agent（团队群里代表团队发言）'}">${lead ? '取消主' : '设为主'}</button>`;
+            const configBtn = `<button onclick="showAgentConfigModal('${id}')" class="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-50" title="配置">⚙️</button>`;
+            return `
+                <tr>
+                    <td class="team-member-cell font-medium text-gray-800" title="${safeRole}">${safeRole}${lead ? ' <span class="text-xs text-amber-600" title="团队主 agent">· 主 agent</span>' : ''}</td>
+                    <td><span class="text-xs ${badgeClass} px-2 py-1 rounded">${escapeHtml(agent.platform)}</span></td>
+                    <td class="team-member-cell" title="${persona}">${persona}</td>
+                    <td class="team-member-cell team-member-cell--mono" title="${id}">${id}</td>
+                    <td class="team-member-cell team-member-cell--actions">
+                        ${currentGroupId === '__default__' ? '' : leadBtn}
+                        ${configBtn}
+                        ${currentGroupId === '__default__' ? '' : `<button onclick="deleteTeamMember('${id}')" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除成员">🗑️</button>`}
+                    </td>
+                </tr>`;
+        }).join('');
+    } catch (e) {
+        console.error('Failed to load team members:', e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败: ' + escapeHtml(e.message) + '</td></tr>';
+    }
+}
+
+// The team's lead speaks for it (and leads its team group); at most one per team.
+async function toggleTeamMemberPrimary(agentId, makeLead) {
+    if (!currentGroupId || !agentId) return;
+    try {
+        await agentApi('PATCH', `/v1/teams/${encodeURIComponent(currentGroupId)}/members/${encodeURIComponent(agentId)}`, {is_lead: !!makeLead});
+        if (typeof orchToast === 'function') orchToast(makeLead ? '✅ 已设为团队主 agent' : '✅ 已取消团队主 agent');
+        await loadTeamMembers();
+    } catch (e) {
+        if (typeof orchToast === 'function') orchToast('设置失败: ' + e.message);
+        else alert('设置失败: ' + e.message);
+    }
+}
+
+// Store preview data for export
+let _exportPreviewData = null;
+let _exportSelectedSkills = new Set(); // Store selected skill IDs: "managed_personal/skill" or "managed_team/skill"
+let _teamSkillCurrentName = '';
+let _teamSkillCurrentScope = 'team';
+
+/**
+ * Toggle all skills based on the "select all" checkbox
+ */
+function toggleAllSkills(checked) {
+    const checkboxes = document.querySelectorAll('.export-skill-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = checked;
+        const skillId = cb.getAttribute('data-skill-id');
+        if (checked) {
+            _exportSelectedSkills.add(skillId);
+        } else {
+            _exportSelectedSkills.delete(skillId);
+        }
+    });
+}
+
+/**
+ * Toggle a single skill selection
+ */
+function toggleSkill(skillId, checked) {
+    if (checked) {
+        _exportSelectedSkills.add(skillId);
+    } else {
+        _exportSelectedSkills.delete(skillId);
+    }
+    // Update "select all" checkbox state
+    updateSkillsSelectAllState();
+}
+
+/**
+ * Update the "select all" checkbox state based on individual selections
+ */
+function updateSkillsSelectAllState() {
+    const selectAllCheckbox = document.getElementById('export-skills-all');
+    const checkboxes = document.querySelectorAll('.export-skill-checkbox');
+    if (checkboxes.length === 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+        return;
+    }
+    const checkedCount = document.querySelectorAll('.export-skill-checkbox:checked').length;
+    if (checkedCount === 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    } else if (checkedCount === checkboxes.length) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    } else {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = true;
+    }
+}
+
+/**
+ * Open export preview modal and load preview data
+ * This function replaces the old direct download flow
+ */
+async function downloadTeam() {
+    if (!currentGroupId) {
+        alert('请先选择一个团队');
+        return;
+    }
+    await openExportPreviewModal();
+}
+
+/**
+ * Open the export preview modal (as dropdown from button)
+ */
+async function openExportPreviewModal() {
+    const modal = document.getElementById('export-preview-modal');
+    const dropdown = document.getElementById('export-preview-dropdown');
+    const loadingEl = document.getElementById('export-preview-loading');
+    const contentEl = document.getElementById('export-preview-content');
+    const errorEl = document.getElementById('export-preview-error');
+    const confirmBtn = document.getElementById('export-confirm-btn');
+    
+    // Position dropdown relative to export button
+    const btn = document.getElementById('team-download-btn');
+    if (btn && window.innerWidth > 480) {
+        const rect = btn.getBoundingClientRect();
+        // Position dropdown below the button, aligned to left
+        dropdown.style.top = (rect.bottom + 8) + 'px';
+        dropdown.style.left = rect.left + 'px';
+        // Ensure it doesn't go off-screen
+        const rightEdge = rect.left + 400; // min-width is 400px
+        if (rightEdge > window.innerWidth) {
+            dropdown.style.left = (rect.right - 400) + 'px';
+        }
+    }
+    
+    // Reset state
+    loadingEl.style.display = 'block';
+    contentEl.style.display = 'none';
+    errorEl.style.display = 'none';
+    errorEl.textContent = '';
+    confirmBtn.disabled = true;
+    _exportPreviewData = null;
+    
+    modal.style.display = 'block';
+    
+    // Load preview data
+    try {
+        const resp = await fetch('/teams/snapshot/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ team: currentGroupId })
+        });
+        
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.error || '加载预览失败');
+        }
+        
+        const data = await resp.json();
+        _exportPreviewData = data;
+        
+        renderExportPreview(data);
+        
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'block';
+        confirmBtn.disabled = false;
+    } catch (e) {
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'block';
+        errorEl.textContent = '❌ ' + e.message;
+    }
+}
+
+/**
+ * Close the export preview modal
+ */
+function closeExportPreviewModal() {
+    const modal = document.getElementById('export-preview-modal');
+    const dropdown = document.getElementById('export-preview-dropdown');
+    modal.style.display = 'none';
+    // Clear position styles
+    dropdown.style.top = '';
+    dropdown.style.left = '';
+    _exportPreviewData = null;
+}
+
+/**
+ * Render preview data in the modal
+ */
+function renderExportPreview(data) {
+    const sections = data.sections || {};
+    
+    // Agents
+    const agents = sections.agents || { count: 0, items: [] };
+    document.getElementById('export-agents-count').textContent = agents.count || 0;
+    const agentsListEl = document.getElementById('export-agents-list');
+    if (agents.items && agents.items.length > 0) {
+        agentsListEl.innerHTML = agents.items.map(a => 
+            `<div class="py-0.5">• ${escapeHtml(a.name)}${a.tag ? ` [${escapeHtml(a.tag)}]` : ''}</div>`
+        ).join('');
+    } else {
+        agentsListEl.innerHTML = '<div class="text-gray-400 italic">' + t('export_preview_empty') + '</div>';
+    }
+
+    // Agents on other platforms (external_agents.json)
+    const externalAgents = sections.external_agents || { count: 0, items: [] };
+    document.getElementById('export-external-agents-count').textContent = externalAgents.count || 0;
+    const externalAgentsListEl = document.getElementById('export-external-agents-list');
+    if (externalAgents.items && externalAgents.items.length > 0) {
+        externalAgentsListEl.innerHTML = externalAgents.items.map(a => {
+            const tagText = a.tag ? ` [${escapeHtml(a.tag)}]` : '';
+            const globalText = a.global_name ? ` <span class="text-gray-400">(${escapeHtml(a.global_name)})</span>` : '';
+            return `<div class="py-0.5">• ${escapeHtml(a.name)}${tagText}${globalText}</div>`;
+        }).join('');
+    } else {
+        externalAgentsListEl.innerHTML = '<div class="text-gray-400 italic">' + t('export_preview_empty') + '</div>';
+    }
+    
+    // Personas
+    const personas = sections.personas || { count: 0, items: [] };
+    document.getElementById('export-personas-count').textContent = personas.count || 0;
+    const personasListEl = document.getElementById('export-personas-list');
+    if (personas.items && personas.items.length > 0) {
+        personasListEl.innerHTML = personas.items.map(p => 
+            `<div class="py-0.5">• ${escapeHtml(p.name)}${p.tag !== p.name ? ` [${escapeHtml(p.tag)}]` : ''}</div>`
+        ).join('');
+    } else {
+        personasListEl.innerHTML = '<div class="text-gray-400 italic">' + t('export_preview_empty') + '</div>';
+    }
+    
+    // Skills - personal and team, each with its own checkbox
+    const skills = sections.skills || { clawcross_personal: [], clawcross_team: [] };
+    let totalSkills = 0;
+    const skillsListEl = document.getElementById('export-skills-list');
+    let skillsHtml = '';
+    
+    // ClawCross personal managed skills
+    if (skills.clawcross_personal && skills.clawcross_personal.length > 0) {
+        totalSkills += skills.clawcross_personal.length;
+        skillsHtml += `<div class="mt-3 mb-1 font-medium text-gray-700 text-xs uppercase tracking-wide border-b border-gray-200 pb-1">${t('export_managed_skills')} · Shared</div>`;
+        skills.clawcross_personal.forEach(s => {
+            const skillId = `managed_personal/${s.name}`;
+            const isChecked = _exportSelectedSkills.has(skillId);
+            skillsHtml += `
+                <div class="flex items-center gap-2 py-0.5 hover:bg-gray-100 rounded">
+                    <input type="checkbox" id="skill-${escapeHtml(skillId.replace(/\//g, '-'))}" 
+                        class="export-skill-checkbox" 
+                        data-skill-id="${escapeHtml(skillId)}"
+                        ${isChecked ? 'checked' : ''}
+                        onchange="toggleSkill('${escapeHtml(skillId)}', this.checked)">
+                    <label for="skill-${escapeHtml(skillId.replace(/\//g, '-'))}" class="text-gray-700 cursor-pointer select-none text-sm flex-1">
+                        ${escapeHtml(s.name)}
+                    </label>
+                </div>`;
+        });
+    }
+
+    // ClawCross team managed skills
+    if (skills.clawcross_team && skills.clawcross_team.length > 0) {
+        totalSkills += skills.clawcross_team.length;
+        skillsHtml += `<div class="mt-3 mb-1 font-medium text-gray-700 text-xs uppercase tracking-wide border-b border-gray-200 pb-1">${t('export_managed_skills')} · Team</div>`;
+        skills.clawcross_team.forEach(s => {
+            const skillId = `managed_team/${s.name}`;
+            const isChecked = _exportSelectedSkills.has(skillId);
+            skillsHtml += `
+                <div class="flex items-center gap-2 py-0.5 hover:bg-gray-100 rounded">
+                    <input type="checkbox" id="skill-${escapeHtml(skillId.replace(/\//g, '-'))}" 
+                        class="export-skill-checkbox" 
+                        data-skill-id="${escapeHtml(skillId)}"
+                        ${isChecked ? 'checked' : ''}
+                        onchange="toggleSkill('${escapeHtml(skillId)}', this.checked)">
+                    <label for="skill-${escapeHtml(skillId.replace(/\//g, '-'))}" class="text-gray-700 cursor-pointer select-none text-sm flex-1">
+                        ${escapeHtml(s.name)}
+                    </label>
+                </div>`;
+        });
+    }
+    
+    if (!skillsHtml) {
+        skillsHtml = '<div class="text-gray-400 italic p-2">' + t('export_preview_empty') + '</div>';
+    }
+    skillsListEl.innerHTML = skillsHtml;
+    document.getElementById('export-skills-count').textContent = totalSkills;
+    
+    // Setup "select all" checkbox for skills
+    const selectAllCheckbox = document.getElementById('export-skills-all');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.onchange = function() {
+            toggleAllSkills(this.checked);
+        };
+        // Initial state
+        updateSkillsSelectAllState();
+    }
+    
+    // Cron
+    const cron = sections.cron || {};
+    let totalCron = 0;
+    Object.values(cron).forEach(c => {
+        if (c.count) totalCron += c.count;
+    });
+    document.getElementById('export-cron-count').textContent = totalCron;
+    const cronListEl = document.getElementById('export-cron-list');
+    let cronHtml = '';
+    Object.entries(cron).forEach(([agent, info]) => {
+        if (info.count > 0 && info.items) {
+            cronHtml += `<div class="font-medium text-gray-700 mt-1">${escapeHtml(agent)}:</div>`;
+            info.items.forEach(c => {
+                cronHtml += `<div class="ml-3 py-0.5 text-xs">• ${escapeHtml(c.name)} <span class="text-gray-400">(${escapeHtml(c.schedule)})</span></div>`;
+            });
+        }
+    });
+    if (!cronHtml) {
+        cronHtml = '<div class="text-gray-400 italic">' + t('export_preview_empty') + '</div>';
+    }
+    cronListEl.innerHTML = cronHtml;
+    
+    // Workflows
+    const workflows = sections.workflows || { count: 0, items: [] };
+    document.getElementById('export-workflows-count').textContent = workflows.count || 0;
+    const workflowsListEl = document.getElementById('export-workflows-list');
+    if (workflows.items && workflows.items.length > 0) {
+        workflowsListEl.innerHTML = workflows.items.map(w => 
+            `<div class="py-0.5 truncate" title="${escapeHtml(w)}">• ${escapeHtml(w)}</div>`
+        ).join('');
+    } else {
+        workflowsListEl.innerHTML = '<div class="text-gray-400 italic">' + t('export_preview_empty') + '</div>';
+    }
+}
+
+/**
+ * Confirm export with selected options
+ */
+async function confirmExportTeam() {
+    if (!currentGroupId || !_exportPreviewData) return;
+    
+    // Get selected sections
+    const include = {
+        agents: document.getElementById('export-agents').checked,
+        external_agents: document.getElementById('export-external-agents').checked,
+        personas: document.getElementById('export-personas').checked,
+        skills: document.getElementById('export-skills-all').checked,
+        cron: document.getElementById('export-cron').checked,
+        workflows: document.getElementById('export-workflows').checked
+    };
+
+    // Skills / cron depend on external_agents.json metadata for restoration.
+    if (include.skills || include.cron) {
+        include.external_agents = true;
+    }
+    
+    // Handle granular skills selection - only if some skills are selected but not all
+    const skills = _exportPreviewData.sections?.skills || { clawcross_personal: [], clawcross_team: [] };
+    let allSkillsCount = 0;
+    if (skills.clawcross_personal) allSkillsCount += skills.clawcross_personal.length;
+    if (skills.clawcross_team) allSkillsCount += skills.clawcross_team.length;
+    
+    // If skills section is enabled but not all skills selected, use granular mode
+    if (include.skills && _exportSelectedSkills.size > 0 && _exportSelectedSkills.size < allSkillsCount) {
+        // Build granular skills selection map
+        const granularSkills = {};
+        _exportSelectedSkills.forEach(skillId => {
+            const [scope, ...skillParts] = skillId.split('/');
+            const skillName = skillParts.join('/'); // skill name might contain '/'
+            const targetKey = scope === 'managed_team' ? '_managed_team' : '_managed_personal';
+            if (!granularSkills[targetKey]) {
+                granularSkills[targetKey] = [];
+            }
+            granularSkills[targetKey].push(skillName);
+        });
+        include.skills = granularSkills;
+    }
+    
+    // Check if at least one is selected
+    const hasSelection = Object.values(include).some(v => {
+        if (typeof v === 'object') return Object.keys(v).length > 0;
+        return v;
+    });
+    if (!hasSelection) {
+        alert(t('export_none_selected'));
+        return;
+    }
+    
+    const confirmBtn = document.getElementById('export-confirm-btn');
+    const originalText = confirmBtn.textContent;
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '⏳ ' + t('export_downloading');
+    
+    try {
+        const resp = await fetch('/teams/snapshot/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ team: currentGroupId, include })
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            alert('导出失败: ' + (err.error || '未知错误'));
+            return;
+        }
+        const blob = await resp.blob();
+        if (!blob || !blob.size) {
+            throw new Error('empty snapshot zip');
+        }
+        const filename = getAttachmentFilename(resp, `team_${currentGroupId}_snapshot.zip`);
+        triggerBlobDownload(blob, filename);
+        
+        // Close modal after successful download
+        closeExportPreviewModal();
+        
+        // Show success toast if available
+        if (window.orchToast) {
+            window.orchToast(t('orch_toast_snapshot_downloaded'));
+        }
+    } catch (e) {
+        alert('导出失败: ' + (e && e.message ? e.message : String(e)));
+    } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = originalText;
+    }
+}
+
+/**
+ * Escape HTML special characters
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function uploadTeam(input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    const match = file.name.match(/^team_(.+?)(?:_snapshot|\.zip)/);
+    const zh = String(localStorage.getItem('clawcross_lang') || document.documentElement.lang || 'zh').startsWith('zh');
+    const teamName = (prompt(zh ? '导入并新建团队，请输入团队名称：' : 'Name the team to create from this import:', match ? match[1] : '') || '').trim();
+    if (!teamName) { input.value = ''; return; }
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('team', teamName);
+
+    try {
+        const resp = await teamSnapshotUploadZipWithProgress(file, formData);
+        if (!resp) { input.value = ''; return; }
+        if (!resp.ok) {
+            const err = await resp.json();
+            alert('上传失败: ' + (err.error || '未知错误'));
+            return;
+        }
+        alert('导入成功！');
+        await loadGroupList();
+        await openGroup(teamName);
+    } catch (e) {
+        alert('上传失败: ' + e.message);
+    }
+    input.value = '';
+}
+
+// ── Import team dropdown & Hub import ──
+const TEAM_HUB_SITE_URL = 'https://clawcross.net/';
+const CLAWHUB_URL = 'https://clawhub.ai';
+
+function _buildClawCrossHubReturnUrl() {
+    try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('hub_download_url');
+        url.searchParams.delete('team_name');
+        return url.toString();
+    } catch (_) {
+        return window.location.origin + window.location.pathname;
+    }
+}
+
+function _buildClawCrossHubUrl() {
+    const url = new URL(CLAWHUB_URL);
+    url.searchParams.set('return_url', _buildClawCrossHubReturnUrl());
+    url.searchParams.set('return_origin', window.location.origin);
+    return url.toString();
+}
+
+function openTeamHubSite() {
+    const popup = window.open(TEAM_HUB_SITE_URL, '_blank');
+    if (!popup) {
+        window.location.assign(TEAM_HUB_SITE_URL);
+    }
+}
+
+function toggleImportDropdown() {
+    const dd = document.getElementById('import-dropdown');
+    if (dd.style.display === 'none' || !dd.style.display) {
+        dd.style.display = 'block';
+        // Close when clicking outside
+        setTimeout(() => {
+            document.addEventListener('click', _closeImportDropdownOutside, { once: true, capture: true });
+        }, 0);
+    } else {
+        dd.style.display = 'none';
+    }
+}
+
+function closeImportDropdown() {
+    const dd = document.getElementById('import-dropdown');
+    if (dd) dd.style.display = 'none';
+}
+
+function _closeImportDropdownOutside(e) {
+    const dd = document.getElementById('import-dropdown');
+    const btn = document.getElementById('team-upload-btn');
+    if (dd && !dd.contains(e.target) && btn && !btn.contains(e.target)) {
+        dd.style.display = 'none';
+    }
+}
+
+function showHubImportModal() {
+    const modal = document.getElementById('hub-import-modal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function openClawcrossHub() {
+    const popup = window.open(_buildClawCrossHubUrl(), '_blank');
+    if (!popup) {
+        window.location.assign(_buildClawCrossHubUrl());
+    }
+}
+
+function closeHubImportModal() {
+    const modal = document.getElementById('hub-import-modal');
+    if (modal) modal.style.display = 'none';
+    const input = document.getElementById('hub-curl-input');
+    if (input) input.value = '';
+}
+
+let _builtinTeamPresets = [];
+
+function closeBuiltinPresetModal() {
+    const modal = document.getElementById('builtin-preset-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function _renderBuiltinPresetCards() {
+    const listEl = document.getElementById('builtin-preset-list');
+    if (!listEl) return;
+    if (!_builtinTeamPresets.length) {
+        listEl.innerHTML = '<div style="font-size:12px;color:#9ca3af;">暂无可用预设</div>';
+        return;
+    }
+    listEl.innerHTML = _builtinTeamPresets.map((preset) => {
+        const presetId = encodeURIComponent(String(preset.preset_id || ''));
+        const defaultTeam = String(preset.default_team_name || preset.name || preset.preset_id || '');
+        const meta = [
+            preset.role_count ? `${preset.role_count} roles` : '',
+            Array.isArray(preset.tags) ? preset.tags.slice(0, 3).join(' · ') : '',
+        ].filter(Boolean).join(' · ');
+        return `
+            <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff;">
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+                    <div style="min-width:0;flex:1;">
+                        <div style="font-size:14px;font-weight:700;color:#111827;">${escapeHtml(preset.name || preset.preset_id || 'preset')}</div>
+                        <div style="margin-top:4px;font-size:12px;line-height:1.55;color:#6b7280;">${escapeHtml(preset.description || '')}</div>
+                        ${meta ? `<div style="margin-top:6px;font-size:11px;color:#9ca3af;">${escapeHtml(meta)}</div>` : ''}
+                    </div>
+                    <button class="webot-subagent-btn" type="button" onclick="installBuiltinTeamPreset(decodeURIComponent('${presetId}'), '${escapeHtml(defaultTeam)}')">安装</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function loadBuiltinTeamPresets() {
+    const statusEl = document.getElementById('builtin-preset-status');
+    const listEl = document.getElementById('builtin-preset-list');
+    if (statusEl) statusEl.textContent = '正在加载预设...';
+    if (listEl) listEl.innerHTML = '<div style="font-size:12px;color:#9ca3af;">加载中...</div>';
+    try {
+        const resp = await fetch('/api/team-presets');
+        const data = await resp.json();
+        if (!resp.ok || data.ok === false) {
+            throw new Error(data.error || '加载失败');
+        }
+        _builtinTeamPresets = Array.isArray(data.presets) ? data.presets : [];
+        _renderBuiltinPresetCards();
+        if (statusEl) statusEl.textContent = `已加载 ${_builtinTeamPresets.length} 个内置制度团队预设`;
+    } catch (e) {
+        _builtinTeamPresets = [];
+        if (listEl) listEl.innerHTML = '';
+        if (statusEl) statusEl.textContent = `加载失败: ${e.message}`;
+    }
+}
+
+async function showBuiltinPresetModal() {
+    const modal = document.getElementById('builtin-preset-modal');
+    const input = document.getElementById('builtin-preset-team-name');
+    if (modal) modal.style.display = 'flex';
+    if (input && !input.value) {
+        input.value = currentGroupId || '';
+    }
+    await loadBuiltinTeamPresets();
+}
+
+async function installBuiltinTeamPreset(presetId, suggestedTeamName = '') {
+    const input = document.getElementById('builtin-preset-team-name');
+    const statusEl = document.getElementById('builtin-preset-status');
+    const teamName = String((input && input.value) || suggestedTeamName || '').trim();
+    if (!presetId) {
+        if (statusEl) statusEl.textContent = '缺少 preset_id';
+        return;
+    }
+    if (!teamName) {
+        if (statusEl) statusEl.textContent = '请先输入团队名称';
+        if (input) input.focus();
+        return;
+    }
+    if (statusEl) statusEl.textContent = `正在安装 ${presetId} 到团队 "${teamName}"...`;
+    try {
+        const resp = await fetch('/api/team-presets/install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ preset_id: presetId, team: teamName }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.ok === false) {
+            throw new Error(data.error || '安装失败');
+        }
+        if (statusEl) statusEl.textContent = `✅ 已安装 ${data.preset?.name || presetId}`;
+        closeBuiltinPresetModal();
+        await loadGroupList();
+        if (typeof openGroup === 'function') {
+            await openGroup(teamName);
+        }
+    } catch (e) {
+        if (statusEl) statusEl.textContent = `❌ ${e.message}`;
+    }
+}
+
+// Parse curl command or URL to extract download link and team name
+function _parseHubInput(raw) {
+    raw = raw.trim();
+    let url = '';
+    let teamName = '';
+
+    // Match URL in curl command: curl ... 'URL' or curl ... "URL" or curl ... URL
+    const curlMatch = raw.match(/curl\s+.*?(?:-[A-Za-z]\s+)*['"]?(https?:\/\/[^\s'"]+)['"]?/);
+    if (curlMatch) {
+        url = curlMatch[1];
+    } else if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        url = raw.split(/\s/)[0];
+    }
+
+    if (!url) return { url: '', teamName: '' };
+
+    // Infer team name from URL: /api/workflows/<name>/download → <name>
+    const wfMatch = url.match(/\/api\/workflows\/([^/]+)\/download/);
+    if (wfMatch) teamName = wfMatch[1];
+
+    // Also try from -o parameter: -o team_xxx.zip → xxx
+    const outMatch = raw.match(/-o\s+['"]?team_([^.\s'"]+)/);
+    if (outMatch && !teamName) teamName = outMatch[1];
+
+    return { url, teamName };
+}
+
+async function _performHubImportFromUrl(url, teamName, options = {}) {
+    const { silent = false, closeModal = false } = options;
+    const resp = await teamSnapshotImport(replace => fetch('/teams/snapshot/import_from_url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, team: teamName, replace })
+    }), teamName);
+    if (!resp) return false;
+    if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || resp.statusText || 'import failed');
+    }
+    if (closeModal) {
+        closeHubImportModal();
+    }
+    if (!silent) {
+        alert('✅ 导入成功！');
+    }
+    loadGroupList();
+}
+
+function _fillHubImportInput(raw) {
+    const input = document.getElementById('hub-curl-input');
+    if (input) input.value = raw;
+}
+
+function _handleHubImportMessage(data) {
+    if (!data || data.type !== 'clawcross_hub_import') return false;
+    const hubUrl = String(data.hub_download_url || '').trim();
+    if (!hubUrl) return false;
+    _fillHubImportInput(hubUrl);
+    showHubImportModal();
+    return true;
+}
+
+async function _consumeHubReturnParams() {
+    try {
+        const params = new URLSearchParams(window.location.search || '');
+        const hubUrl = (params.get('hub_download_url') || '').trim();
+        if (!hubUrl) return;
+
+        _fillHubImportInput(hubUrl);
+        showHubImportModal();
+
+        params.delete('hub_download_url');
+        params.delete('team_name');
+        const next = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '') + window.location.hash;
+        window.history.replaceState({}, '', next);
+    } catch (e) {
+        console.warn('Consume hub return params failed:', e && e.message);
+    }
+}
+
+async function importFromHub() {
+    const raw = document.getElementById('hub-curl-input').value;
+    if (!raw.trim()) {
+        alert('请粘贴下载命令或 URL');
+        return;
+    }
+
+    const { url, teamName } = _parseHubInput(raw);
+    if (!url) {
+        alert('无法解析出有效的下载链接，请检查格式');
+        return;
+    }
+
+    let finalTeam = teamName;
+    // Always prompt user to confirm/edit the team name
+    const defaultName = finalTeam || '';
+    finalTeam = prompt('请输入团队名称：', defaultName);
+    if (!finalTeam || !finalTeam.trim()) return;
+    finalTeam = finalTeam.trim();
+
+    if (!confirm(`将从 Hub 下载并导入团队 "${finalTeam}"，确定继续吗？`)) return;
+
+    try {
+        await _performHubImportFromUrl(url, finalTeam, { closeModal: true });
+    } catch (e) {
+        alert('导入失败: ' + e.message);
+    }
+}
+
+window.addEventListener('load', () => {
+    _consumeHubReturnParams().catch((e) => {
+        console.warn('Hub return import bootstrap failed:', e && e.message);
+    });
+    _resumePendingRestartNotice();
+    initRunModeUI();
+});
+
+window.addEventListener('message', (event) => {
+    try {
+        if (event.origin !== new URL(CLAWHUB_URL).origin) return;
+        if (_handleHubImportMessage(event.data)) {
+            try { window.focus(); } catch (_) {}
+        }
+    } catch (e) {
+        console.warn('Hub import message failed:', e && e.message);
+    }
+});
+
+// Track ongoing deletion to prevent double-clicks
+let _deletingTeamMember = false;
+
+function acpxToolFromPlatform(platform) {
+    const raw = String(platform || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (raw === 'claudecode' || raw === 'claude-code') return 'claude-code';
+    if (raw === 'gemini-cli') return 'gemini-cli';
+    return raw;
+}
+
+function platformNeedsApiUrl(platform) {
+    const raw = String(platform || '').trim().toLowerCase();
+    if (!raw) return true;
+    return !ADD_EXT_PLATFORM_FALLBACK.includes(raw);
+}
+
+function shouldShowExternalApiFields(platform) {
+    return platformNeedsApiUrl(platform);
+}
+
+// Take an agent out of a team. One that belongs to no other team is deleted outright
+// (see deleteAgent). Returns whether anything changed.
+async function removeAgentFromTeam(team, agent, name) {
+    let otherTeams = [];
+    try {
+        const teams = await agentApi('GET', '/v1/teams');
+        otherTeams = (teams.data || []).filter(t => t.team !== team
+            && (t.members || []).some(m => m.agent.agent_id === agent.agent_id)).map(t => t.team);
+    } catch (e) { /* treat as only here */ }
+    if (!otherTeams.length) return deleteAgent(agent, name);
+    if (!confirm(`将 "${name}" 移出本团队？它仍属于：${otherTeams.join('、')}。`)) return false;
+    await agentApi('DELETE', `/v1/teams/${encodeURIComponent(team)}/members/${encodeURIComponent(agent.agent_id)}`);
+    return true;
+}
+
+// Delete an agent: it leaves every team and conversation. Returns whether it was deleted.
+async function deleteAgent(agent, name) {
+    const question=window.ClawCrossLocale?.text('删除 Agent','Delete Agent') || 'Delete Agent';
+    const detail=document.documentElement.lang.startsWith('zh')?'它会离开所有团队和群聊。':'It will leave all teams and groups.';
+    if (!confirm(`${question} “${name}”? ${detail}`)) return false;
+    await deleteSessionAgent(agent.agent_id);
+    return true;
+}
+
+async function deleteTeamMember(agentId) {
+    if (!currentGroupId || _deletingTeamMember) return;
+    const member = _teamMember(agentId);
+    if (!member) return;
+    const name = member.role || member.agent.name;
+    _deletingTeamMember = true;
+    try {
+        if (!await removeAgentFromTeam(currentGroupId, member.agent, name)) return;
+        if (typeof orchToast === 'function') orchToast(`成员 "${name}" 已移除`);
+        await loadTeamMembers();
+        const membersOverlay = document.getElementById('team-members-overlay');
+        if (membersOverlay) membersOverlay.style.display = 'flex';
+    } catch (e) {
+        if (typeof orchToast === 'function') orchToast('删除失败: ' + e.message);
+        else alert('删除失败: ' + e.message);
+    } finally {
+        _deletingTeamMember = false;
+    }
+}
+
+function addExtOnPlatformChange() {
+    const platform = document.getElementById('add-ext-platform').value;
+    AcpLaunchSettings.mount('add-ext-acp-launch', platform);
+    const component = AcpLaunchSettings.component(platform);
+    const host = document.getElementById('add-ext-component');
+    if (host) { host.innerHTML = component ? componentControlMarkup(component) : ''; initComponentControls(host); }
+}
+
+const ADD_EXT_PLATFORM_FALLBACK = [
+    'codebuddy', 'zcode', 'deepseek-harness', 'acp',
+    'openclaw',
+    'codex',
+    'claude',
+    'claude-code',
+    'gemini',
+    'gemini-cli',
+    'aider',
+    'cursor',
+    'copilot',
+    'droid',
+    'iflow',
+    'kilocode',
+    'kimi',
+    'kiro',
+    'opencode',
+    'pi',
+    'qoder',
+    'qwen',
+    'trae',
+];
+let _addExtPlatformOptionsCache = null;
+
+function addExtPlatformLabel(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (!v) return '';
+    const map = {
+        codebuddy: 'CodeBuddy', zcode: 'ZCode', 'deepseek-harness': 'DeepSeek Harness', acp: '自定义 ACP / Custom ACP',
+        openclaw: 'OpenClaw',
+        codex: 'Codex',
+        claude: 'Claude',
+        'claude-code': 'Claude Code',
+        gemini: 'Gemini',
+        'gemini-cli': 'Gemini CLI',
+        aider: 'Aider',
+        cursor: 'Cursor',
+        copilot: 'Copilot',
+        droid: 'Droid',
+        iflow: 'iFlow',
+        kilocode: 'KiloCode',
+        kimi: 'Kimi',
+        kiro: 'Kiro',
+        opencode: 'OpenCode',
+        pi: 'Pi',
+        qoder: 'Qoder',
+        qwen: 'Qwen',
+        trae: 'Trae',
+    };
+    return map[v] || v;
+}
+
+function renderAddExtPlatformOptions(options, selected = '') {
+    const seen = new Set();
+    const rows = ['<option value="">请选择平台</option>'];
+    const selectedValue = String(selected || '').trim().toLowerCase();
+    if (selectedValue === 'http') {
+        seen.add('http');
+        rows.push('<option value="http" selected>HTTP</option>');
+    }
+    for (const raw of (Array.isArray(options) ? options : [])) {
+        const value = String(raw || '').trim().toLowerCase();
+        if (!value || value === 'http' || value === 'api' || seen.has(value)) continue;
+        seen.add(value);
+        rows.push(`<option value="${escapeHtml(value)}"${value === selectedValue ? ' selected' : ''}>${escapeHtml(addExtPlatformLabel(value))}</option>`);
+    }
+    return rows.join('');
+}
+
+async function fetchAddExtPlatformOptions() {
+    if (Array.isArray(_addExtPlatformOptionsCache) && _addExtPlatformOptionsCache.length) {
+        return _addExtPlatformOptionsCache;
+    }
+    let tools = [];
+    try {
+        const resp = await fetch('/proxy_acpx_status');
+        const data = await resp.json();
+        tools = Array.isArray(data && data.tools)
+            ? data.tools.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean)
+            : [];
+    } catch (_) {
+        tools = [];
+    }
+    const merged = tools.filter((t) => t && t !== 'http' && t !== 'api');
+    const fallback = ADD_EXT_PLATFORM_FALLBACK.filter((t) => !merged.includes(t));
+    _addExtPlatformOptionsCache = merged.concat(fallback);
+    return _addExtPlatformOptionsCache;
+}
+
+async function populateAddExtPlatformOptions(selected = '') {
+    const sel = document.getElementById('add-ext-platform');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">加载中...</option>';
+    const options = await fetchAddExtPlatformOptions();
+    sel.innerHTML = renderAddExtPlatformOptions(options, selected);
+    addExtOnPlatformChange();
+}
+
+async function populateAddExtTagSelectOptions() {
+    const sel = document.getElementById('add-ext-tag-select');
+    if (!sel) return;
+    let experts = [];
+    try {
+        const teamExpertsUrl = currentGroupId
+            ? `/proxy_visual/experts?team=${encodeURIComponent(currentGroupId)}`
+            : '/proxy_visual/experts';
+        const r = await fetch(teamExpertsUrl);
+        experts = await r.json();
+    } catch (e) {
+        /* ignore */
+    }
+    const seen = new Set();
+    sel.innerHTML = '';
+    const addOpt = (v, text = v) => {
+        if (seen.has(v)) return;
+        seen.add(v);
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = text;
+        sel.appendChild(o);
+    };
+    addOpt('', t('group_ext_tag_none'));
+    for (const exp of (Array.isArray(experts) ? experts : [])) {
+        const tag = String((exp && exp.tag) || '').trim();
+        if (tag) addOpt(tag, tag);
+    }
+    addOpt('custom', t('group_ext_tag_custom'));
+}
+
+function showAddTeamMemberModal() {
+    if (!currentGroupId) {
+        alert('请先选择一个团队');
+        return;
+    }
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'orch-modal-overlay';
+    overlay.id = 'add-team-member-overlay';
+    overlay.innerHTML = `
+        <div class="orch-modal" style="width:min(560px, 92vw);max-width:92vw;max-height:min(88vh, 820px);overflow:auto;">
+            <h3>➕ 添加成员</h3>
+            
+            <div style="display:flex;gap:6px;margin-bottom:12px;">
+                <button id="tab-oasis" onclick="switchAddMemberTab('oasis')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#2563eb;color:white;font-size:11px;cursor:pointer;">🤖 WeBot</button>
+                <button id="tab-external" onclick="switchAddMemberTab('external')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;color:#374151;font-size:11px;cursor:pointer;">🔌 ACP</button>
+            </div>
+            
+            <!-- WeBot agent form -->
+            <div id="form-oasis">
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <label style="font-size:11px;font-weight:600;color:#374151;">名称
+                        <input id="add-oasis-name" type="text" placeholder="输入Agent名称" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
+                    </label>
+                    <label style="font-size:11px;font-weight:600;color:#374151;">标签 (Tag)
+                        <input id="add-oasis-tag" type="hidden" value="">
+                        <button type="button" id="add-oasis-tag-toggle" class="add-oasis-tag-toggle" onclick="toggleAddOasisTagList()">
+                            <span id="add-oasis-tag-summary" class="add-oasis-tag-summary">加载中...</span>
+                            <span id="add-oasis-tag-arrow" class="add-oasis-tag-arrow">▾</span>
+                        </button>
+                        <div id="add-oasis-tag-list" class="add-oasis-tag-list" style="margin-top:6px;display:none;">
+                            <div class="add-oasis-tag-empty">加载中...</div>
+                        </div>
+                    </label>
+                    <label style="font-size:11px;font-weight:600;color:#374151;">工具 (Tools)
+                        <div class="add-oasis-tools-actions" style="margin:4px 0;">
+                            <button type="button" onclick="document.querySelectorAll('.add-oasis-tool-cb').forEach(c=>c.checked=true)" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;background:#f0fdf4;color:#16a34a;cursor:pointer;">全选</button>
+                            <button type="button" onclick="document.querySelectorAll('.add-oasis-tool-cb').forEach(c=>c.checked=false)" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;background:#fef2f2;color:#dc2626;cursor:pointer;">全不选</button>
+                        </div>
+                        <div id="add-oasis-tools-container" class="add-oasis-tools-container" style="max-height:120px;overflow-y:auto;border:1px solid #d1d5db;border-radius:6px;padding:6px;margin-top:2px;">
+                            <span style="color:#9ca3af;font-size:11px;">加载中...</span>
+                        </div>
+                    </label>
+                    <div id="add-oasis-drop-zone" style="border:2px dashed #d1d5db;border-radius:8px;padding:12px;text-align:center;font-size:11px;color:#9ca3af;cursor:default;transition:all .15s;">
+                        📦 拖入专家设置标签
+                    </div>
+                </div>
+                <div class="orch-modal-btns" style="margin-top:12px;">
+                    <button onclick="document.getElementById('add-team-member-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
+                    <button onclick="showImportAgentModal()" style="padding:6px 14px;border-radius:6px;border:1px solid #2563eb;background:#eff6ff;color:#2563eb;cursor:pointer;font-size:12px;">📥 导入已有</button>
+                    <button onclick="addOasisMember(event)" style="padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:white;cursor:pointer;font-size:12px;">新建</button>
+                </div>
+            </div>
+            
+            <!-- ACP agent form (codex, claude, gemini, …) -->
+            <div id="form-external" style="display:none;">
+                <div id="add-ext-component"></div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <label style="font-size:11px;font-weight:600;color:#374151;">名称
+                        <input id="add-ext-name" type="text" placeholder="输入Agent名称" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
+                    </label>
+                    <label style="font-size:11px;font-weight:600;color:#374151;">运行编号（可留空，自动生成）
+                        <input id="add-ext-global-name" type="text" placeholder="留空自动生成" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
+                    </label>
+                    <label style="font-size:11px;font-weight:600;color:#374151;">标签 (Tag)
+                        <div style="display:flex;gap:4px;margin-top:2px;">
+                            <select id="add-ext-tag-select" onchange="document.getElementById('add-ext-tag-custom').value=this.value" style="flex:1;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;background:white;">
+                                <option value="" data-i18n="group_ext_tag_none">（无标签）</option>
+                            </select>
+                            <input id="add-ext-tag-custom" type="text" placeholder="或输入自定义 tag" style="flex:1;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+                        </div>
+                    </label>
+                    <label style="font-size:11px;font-weight:600;color:#374151;">
+                        <span data-i18n="group_ext_platform">连接方式</span>
+                        <select id="add-ext-platform" onchange="addExtOnPlatformChange()" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;background:white;margin-top:2px;">
+                            <option value="">加载中...</option>
+                        </select>
+                    </label>
+                    <div id="add-ext-acp-launch"></div>
+                </div>
+                <div class="orch-modal-btns" style="margin-top:12px;">
+                    <button onclick="document.getElementById('add-team-member-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
+                    <button onclick="addExternalMember(event)" style="padding:6px 14px;border-radius:6px;border:none;background:#10b981;color:white;cursor:pointer;font-size:12px;">添加</button>
+                </div>
+            </div>
+
+        </div>
+    `;
+    
+    document.body.appendChild(overlay);
+    applyTranslations();
+    addExtOnPlatformChange();
+    void populateAddExtPlatformOptions();
+    void populateAddExtTagSelectOptions();
+
+    // Load persona tags for the WeBot form
+    (async () => {
+        try {
+            const teamExpertsUrl = currentGroupId
+                ? `/proxy_visual/experts?team=${encodeURIComponent(currentGroupId)}`
+                : '/proxy_visual/experts';
+            const r = await fetch(teamExpertsUrl);
+            const experts = await r.json();
+            renderAddOasisTagOptions(Array.isArray(experts) ? experts : [], '');
+        } catch (e) {
+            console.warn('Failed to load expert tags', e);
+            renderAddOasisTagOptions([], '');
+        }
+
+        // Populate tools checkboxes for the WeBot form
+        const toolsContainer = document.getElementById('add-oasis-tools-container');
+        if (toolsContainer && allTools.length > 0) {
+            toolsContainer.innerHTML = allTools.map(t =>
+                `<label class="add-oasis-tool-chip" title="${escapeHtml(t.description || '')}">
+                    <input type="checkbox" class="add-oasis-tool-cb" value="${escapeHtml(t.name)}" checked>
+                    <span class="add-oasis-tool-name">${escapeHtml(t.name)}</span>
+                </label>`
+            ).join('');
+        } else if (toolsContainer) {
+            toolsContainer.innerHTML = '<span style="color:#9ca3af;font-size:11px;">无可用工具</span>';
+        }
+    })();
+    
+    // Setup drop zone for the WeBot form
+    const dropZone = document.getElementById('add-oasis-drop-zone');
+    if (dropZone) {
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            dropZone.style.borderColor = '#2563eb';
+            dropZone.style.background = '#eff6ff';
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = '#d1d5db';
+            dropZone.style.background = '';
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#d1d5db';
+            dropZone.style.background = '';
+            try {
+                const data = JSON.parse(e.dataTransfer.getData('application/json'));
+                if (data.tag && data.tag !== 'manual' && data.tag !== 'conditional') {
+                    selectAddOasisTag(data.tag);
+                    dropZone.innerHTML = '✅ Tag: <b>' + escapeHtml(data.tag) + '</b> (' + escapeHtml(data.name || '') + ')';
+                    dropZone.style.borderColor = '#2563eb';
+                    dropZone.style.color = '#374151';
+                }
+            } catch(err) {}
+        });
+    }
+
+    // Click outside to close
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+        }
+    });
+}
+
+let addOasisTagOptions = [];
+
+function renderAddOasisTagOptions(experts, selectedTag) {
+    const list = document.getElementById('add-oasis-tag-list');
+    const input = document.getElementById('add-oasis-tag');
+    if (!list || !input) return;
+
+    const seen = new Set();
+    addOasisTagOptions = (Array.isArray(experts) ? experts : [])
+        .filter(exp => exp && exp.tag)
+        .filter(exp => {
+            if (seen.has(exp.tag)) return false;
+            seen.add(exp.tag);
+            return true;
+        })
+        .map(exp => {
+            const displayName = exp.name_zh || exp.name_en || exp.name || exp.tag;
+            const avatar = exp.emoji || getExpertAvatar(displayName || exp.tag).icon || '🤖';
+            return {
+                tag: exp.tag,
+                avatar,
+                title: exp.tag,
+                meta: displayName
+            };
+        });
+
+    const activeTag = addOasisTagOptions.some(opt => opt.tag === selectedTag)
+        ? selectedTag
+        : '';
+    input.value = activeTag;
+
+    if (!addOasisTagOptions.length) {
+        updateAddOasisTagSummary('');
+        list.innerHTML = '<div class="add-oasis-tag-empty">当前 team 没有可用标签</div>';
+        return;
+    }
+
+    updateAddOasisTagSummary(activeTag);
+    list.innerHTML = addOasisTagOptions.map(opt => {
+        const safeTag = String(opt.tag || '').replace(/'/g, "\\'");
+        const selected = activeTag === opt.tag ? ' selected' : '';
+        return `
+            <button type="button" class="add-oasis-tag-option${selected}" data-tag="${escapeHtml(opt.tag)}" onclick="selectAddOasisTag('${safeTag}')">
+                <span class="add-oasis-tag-avatar">${escapeHtml(opt.avatar)}</span>
+                <span class="add-oasis-tag-content">
+                    <span class="add-oasis-tag-name">${escapeHtml(opt.title)}</span>
+                    <span class="add-oasis-tag-meta">${escapeHtml(opt.meta)}</span>
+                </span>
+            </button>
+        `;
+    }).join('');
+}
+
+function selectAddOasisTag(tag) {
+    const input = document.getElementById('add-oasis-tag');
+    const list = document.getElementById('add-oasis-tag-list');
+    if (!input || !list) return;
+    input.value = input.value === tag ? '' : tag;
+    const selectedTag = input.value;
+    updateAddOasisTagSummary(selectedTag);
+    list.querySelectorAll('.add-oasis-tag-option').forEach((el) => {
+        el.classList.toggle('selected', (el.dataset.tag || '') === selectedTag && selectedTag !== '');
+    });
+    toggleAddOasisTagList(false);
+}
+
+function updateAddOasisTagSummary(selectedTag) {
+    const summary = document.getElementById('add-oasis-tag-summary');
+    if (!summary) return;
+    if (!addOasisTagOptions.length) {
+        summary.textContent = '当前 team 没有可用标签';
+        return;
+    }
+    const picked = addOasisTagOptions.find(opt => opt.tag === selectedTag);
+    summary.textContent = picked
+        ? `${picked.avatar} ${picked.title} · ${picked.meta}`
+        : '选择 team 内额外人设标签';
+}
+
+function toggleAddOasisTagList(forceOpen) {
+    const list = document.getElementById('add-oasis-tag-list');
+    const arrow = document.getElementById('add-oasis-tag-arrow');
+    if (!list || !arrow) return;
+    const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : list.style.display === 'none';
+    list.style.display = shouldOpen ? 'flex' : 'none';
+    arrow.classList.toggle('open', shouldOpen);
+}
+
+function switchAddMemberTab(tab) {
+    if (tab === 'external' && typeof initComponentControls === 'function') initComponentControls(document.getElementById('form-external'));
+    document.getElementById('form-oasis').style.display = tab === 'oasis' ? 'block' : 'none';
+    document.getElementById('form-external').style.display = tab === 'external' ? 'block' : 'none';
+    
+    document.getElementById('tab-oasis').style.background = tab === 'oasis' ? '#2563eb' : '#f9fafb';
+    document.getElementById('tab-oasis').style.color = tab === 'oasis' ? 'white' : '#374151';
+    document.getElementById('tab-external').style.background = tab === 'external' ? '#10b981' : '#f9fafb';
+    document.getElementById('tab-external').style.color = tab === 'external' ? 'white' : '#374151';
+}
+
+// A new agent of any platform, joining the open team in *role*.
+// A library persona's text (the team's own personas first), to copy into an agent.
+async function personaTextFor(tag, team = '') {
+    if (!tag) return '';
+    const params = new URLSearchParams({ full: '1' });
+    if (team) params.set('team', team);
+    const experts = await (await fetch('/proxy_visual/experts?' + params)).json();
+    return (experts.find(e => e.tag === tag) || {}).persona || '';
+}
+
+// A new agent in this team, wearing the team persona *tag*: its text is copied into the agent.
+async function createTeamAgent(fields, role, tag = '') {
+    const persona = await personaTextFor(tag, currentGroupId);
+    const agent = await agentApi('POST', '/v1/agents', {...fields, persona});
+    if (currentGroupId) await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, {agent: agent.agent_id, role: role || agent.name, tag});
+    return agent;
+}
+
+async function addOasisMember(event) {
+    const btn = event ? event.target : null;
+    if (btn && btn.disabled) return;
+    
+    const name = document.getElementById('add-oasis-name').value.trim();
+    const tag = document.getElementById('add-oasis-tag').value.trim();
+    
+    if (!name) {
+        if (typeof orchToast === 'function') {
+            orchToast('请输入Agent名称');
+        } else {
+            alert('请输入Agent名称');
+        }
+        return;
+    }
+
+    // The agent's own tools: all of them (null), or the ones checked.
+    const toolCbs = [...document.querySelectorAll('.add-oasis-tool-cb')];
+    const checked = toolCbs.filter(cb => cb.checked).map(cb => cb.value);
+    const tools = toolCbs.length && checked.length < allTools.length ? checked : null;
+    
+    // Disable button and show loading
+    if (btn) {
+        btn.disabled = true;
+        btn.dataset.originalText = btn.textContent;
+        btn.textContent = '⏳ 创建中...';
+    }
+    
+    try {
+        await createTeamAgent({ name, platform: 'webot', tools }, name, tag);
+
+        if (typeof orchToast === 'function') {
+            orchToast('成员添加成功');
+        }
+        document.getElementById('add-team-member-overlay').remove();
+        await loadTeamMembers();
+        // Ensure members overlay stays visible after refresh
+        const membersOverlay = document.getElementById('team-members-overlay');
+        if (membersOverlay) membersOverlay.style.display = 'flex';
+    } catch (e) {
+        console.error('Failed to add team member:', e);
+        if (typeof orchToast === 'function') {
+            orchToast('添加失败: ' + e.message);
+        } else {
+            alert('添加失败: ' + e.message);
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            if (btn.dataset.originalText) {
+                btn.textContent = btn.dataset.originalText;
+            }
+        }
+    }
+}
+
+async function addExternalMember(event) {
+    const btn = event ? event.target : null;
+    if (btn && btn.disabled) return;
+    
+    const name = document.getElementById('add-ext-name').value.trim();
+    const globalName = document.getElementById('add-ext-global-name').value.trim();
+    const platform = (document.getElementById('add-ext-platform') || {}).value || '';
+
+    // Collect tag: custom input takes priority, then select
+    const tagCustom = document.getElementById('add-ext-tag-custom').value.trim();
+    const tagSelect = document.getElementById('add-ext-tag-select').value;
+    const tag = tagCustom || (tagSelect !== 'custom' ? tagSelect : '');
+    
+    if (!name) {
+        if (typeof orchToast === 'function') {
+            orchToast('请输入名称');
+        } else {
+            alert('请输入名称');
+        }
+        return;
+    }
+    if (!platform) {
+        if (typeof orchToast === 'function') {
+            orchToast('请选择平台');
+        } else {
+            alert('请选择平台');
+        }
+        return;
+    }
+
+    // Disable button and show loading
+    if (btn) {
+        btn.disabled = true;
+        btn.dataset.originalText = btn.textContent;
+        btn.textContent = '⏳ 添加中...';
+    }
+    
+    try {
+        // The new agent's number (its session), when given
+        const launch = AcpLaunchSettings.value('add-ext-acp-launch', platform);
+        await createTeamAgent({ name, platform, meta:{acp:launch}, ...(globalName ? { agent_id: globalName } : {}) }, name, tag);
+
+        if (typeof orchToast === 'function') {
+            orchToast('成员添加成功');
+        }
+        document.getElementById('add-team-member-overlay').remove();
+        await loadTeamMembers();
+        // Ensure members overlay stays visible after refresh
+        const membersOverlay = document.getElementById('team-members-overlay');
+        if (membersOverlay) membersOverlay.style.display = 'flex';
+    } catch (e) {
+        console.error('Failed to add external team member:', e);
+        if (typeof orchToast === 'function') {
+            orchToast('添加失败: ' + e.message);
+        } else {
+            alert('添加失败: ' + e.message);
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            if (btn.dataset.originalText) {
+                btn.textContent = btn.dataset.originalText;
+            }
+        }
+    }
+}
+
+// ===== Orchestration Mobile Toggle Functions =====
+function orchToggleMobileSidebar() {
+    const sidebar = document.querySelector('.orch-sidebar');
+    const backdrop = document.getElementById('orch-mobile-backdrop');
+    const rightPanel = document.querySelector('.orch-right-panel');
+    if (rightPanel) rightPanel.classList.remove('mobile-open');
+    sidebar.classList.toggle('mobile-open');
+    backdrop.classList.toggle('active', sidebar.classList.contains('mobile-open'));
+}
+
+function orchToggleMobilePanel() {
+    const panel = document.querySelector('.orch-right-panel');
+    const backdrop = document.getElementById('orch-mobile-backdrop');
+    const sidebar = document.querySelector('.orch-sidebar');
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    panel.classList.toggle('mobile-open');
+    backdrop.classList.toggle('active', panel.classList.contains('mobile-open'));
+}
+
+function orchCloseMobilePanels() {
+    const sidebar = document.querySelector('.orch-sidebar');
+    const panel = document.querySelector('.orch-right-panel');
+    const backdrop = document.getElementById('orch-mobile-backdrop');
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    if (panel) panel.classList.remove('mobile-open');
+    if (backdrop) backdrop.classList.remove('active');
+}
+
+function toggleOrchExpertList() {
+    // No-op: collapse feature removed
+}
+
+function toggleOrchFocusMode() {
+    const sidebar = document.querySelector('.orch-sidebar');
+    const panel = document.querySelector('.orch-right-panel');
+    const btn = document.getElementById('orch-focus-btn');
+    const isFocused = sidebar.classList.contains('focus-hidden');
+    sidebar.classList.toggle('focus-hidden', !isFocused);
+    panel.classList.toggle('focus-hidden', !isFocused);
+    if (btn) btn.classList.toggle('focus-active', !isFocused);
+}
+
+let currentOrchMode = 'yaml'; // 'yaml' or 'python'
+
+function orchDefaultPythonScaffold() {
+    const teamName = (typeof orch !== 'undefined' && orch && orch.teamName) ? orch.teamName : '';
+    const teamHint = teamName || '<team-or-empty>';
+    return `import asyncio
+
+from oasis.workflow import Context, workflow
+
+
+@workflow
+async def main(ctx: Context):
+    # This script can be launched directly:
+    #   python my_workflow.py --question "Do the work" --user-id xinyuan --team "${teamHint}"
+    # oasis.workflow handles venv re-exec, sys.path, and .env at import time.
+    # No bootstrap code needed in this file.
+    #
+    # By default, the runtime auto-creates one OASIS topic before main(ctx) starts.
+    #   ctx.topic_id is usually already available
+    #   await ctx.publish(...) is async and writes both local logs and topic posts
+    #
+    # Available through ctx:
+    #   ctx.question, ctx.user_id, ctx.team, ctx.topic_id, ctx.run_id
+    #   ctx.list_agents(), ctx.get_agent(), ctx.send_agent(...)
+    #   await ctx.publish(...), ctx.set_result(...), ctx.set_conclusion(...)
+    #   ctx.create_empty_topic(...), ctx.publish_to_topic(...), ctx.conclude_topic(...)
+    # Notes:
+    #   ctx.list_agents() is synchronous: do not write await ctx.list_agents()
+    #   prefer unique agent ids over broad tags like "creative"
+    #   store reply.content in results, not the raw reply object
+    agents = [a for a in ctx.list_agents() if a.get("id")]
+    await ctx.publish(
+        f"python workflow started with {len(agents)} available agents in team '{ctx.team or 'default'}'",
+        author="workflowpy",
+    )
+
+    if not agents:
+        ctx.set_conclusion("No agents available.")
+        ctx.set_result({
+            "ok": False,
+            "question": ctx.question,
+            "team": ctx.team,
+            "error": "no agents available",
+        })
+        return
+
+    ordered_agents = sorted(
+        agents,
+        key=lambda a: (
+            str(a.get("kind", "")),
+            str(a.get("tag", "")),
+            str(a.get("name", "")),
+            str(a.get("id", "")),
+        ),
+    )
+    fanout_agents = ordered_agents[: min(4, len(ordered_agents))]
+
+    async def ask_agent(agent, prompt):
+        reply = await ctx.send_agent(agent["id"], prompt)
+        return {
+            "agent_id": agent["id"],
+            "agent_name": agent.get("name", agent["id"]),
+            "agent_tag": agent.get("tag", ""),
+            "ok": reply.ok,
+            "content": (reply.content or "").strip(),
+            "error": reply.error,
+        }
+
+    parallel_prompt = (
+        f"Task:\\n{ctx.question}\\n\\n"
+        "Please provide one concise, high-value response from your perspective."
+    )
+    parallel_results = await asyncio.gather(
+        *[ask_agent(agent, parallel_prompt) for agent in fanout_agents],
+        return_exceptions=True,
+    )
+
+    normalized_parallel = []
+    successful_parallel = []
+    for agent, item in zip(fanout_agents, parallel_results):
+        if isinstance(item, Exception):
+            entry = {
+                "agent_id": agent["id"],
+                "agent_name": agent.get("name", agent["id"]),
+                "agent_tag": agent.get("tag", ""),
+                "ok": False,
+                "content": "",
+                "error": str(item),
+            }
+        else:
+            entry = item
+        normalized_parallel.append(entry)
+        if entry["ok"]:
+            successful_parallel.append(entry)
+            await ctx.publish(entry["content"] or "(empty reply)", author=entry["agent_name"][:80])
+        else:
+            await ctx.publish(
+                f"FAILED: {entry['error'] or 'unknown error'}",
+                author=entry["agent_name"][:80],
+            )
+
+    transcript_lines = [
+        f"{item['agent_name']}: {item['content']}"
+        for item in successful_parallel
+        if item.get("content")
+    ]
+    synthesis = None
+    remaining_agents = ordered_agents[len(fanout_agents):]
+    if remaining_agents and transcript_lines:
+        synthesizer = remaining_agents[0]
+        sequential_prompt = (
+            f"Original task:\\n{ctx.question}\\n\\n"
+            "Earlier agent outputs:\\n"
+            + "\\n\\n".join(transcript_lines)
+            + "\\n\\nPlease synthesize the strongest points into one concise conclusion."
+        )
+        synthesis = await ask_agent(synthesizer, sequential_prompt)
+        if synthesis["ok"]:
+            await ctx.publish(
+                synthesis["content"] or "(empty synthesis)",
+                author=synthesis["agent_name"][:80],
+            )
+        else:
+            await ctx.publish(
+                f"SYNTHESIS FAILED: {synthesis['error'] or 'unknown error'}",
+                author=synthesis["agent_name"][:80],
+            )
+
+    success_count = sum(1 for item in normalized_parallel if item["ok"])
+    if synthesis and synthesis.get("ok") and synthesis.get("content"):
+        ctx.set_conclusion(synthesis["content"])
+    else:
+        ctx.set_conclusion(
+            f"Hybrid workflow completed: {success_count}/{len(fanout_agents)} parallel agents succeeded."
+        )
+
+    ctx.set_result({
+        "ok": True,
+        "question": ctx.question,
+        "team": ctx.team,
+        "parallel_agent_count": len(fanout_agents),
+        "parallel_results": normalized_parallel,
+        "synthesis": synthesis,
+    })
+`;
+}
+
+function orchSetWorkflowMode(mode) {
+    currentOrchMode = mode;
+    const yamlBtn = document.getElementById('orch-mode-yaml-btn');
+    const pythonBtn = document.getElementById('orch-mode-python-btn');
+    const yamlPanel = document.getElementById('orch-yaml-panel');
+    const canvasArea = document.getElementById('orch-canvas-area');
+    const pythonCanvasPanel = document.getElementById('orch-python-canvas-panel');
+    const codeTitle = document.getElementById('orch-code-panel-title');
+    const aiBtn = document.getElementById('orch-ai-btn');
+    const exportLabel = document.getElementById('orch-export-btn-label');
+    const downloadLabel = document.getElementById('orch-download-btn-label');
+    const uploadLabel = document.getElementById('orch-upload-btn-label');
+    const runLabel = document.getElementById('orch-run-btn-label');
+    const runBtn = document.getElementById('orch-run-btn');
+    const settingsSection = document.getElementById('orch-settings-section');
+    const aiTitle = document.getElementById('orch-ai-section-title');
+    const guidanceLabel = document.getElementById('orch-guidance-label');
+    const guidanceInput = document.getElementById('orch-guidance-input');
+    const statusEl = document.getElementById('orch-agent-status');
+    const promptLabel = document.getElementById('orch-prompt-label');
+    const outputLabel = document.getElementById('orch-agent-output-label');
+    const promptContent = document.getElementById('orch-prompt-content');
+    const outputContent = document.getElementById('orch-agent-yaml');
+    const pythonEditor = document.getElementById('orch-python-editor');
+    const zh = currentLang === 'zh-CN';
+    const isMobile = typeof window !== 'undefined'
+        && typeof window.matchMedia === 'function'
+        && window.matchMedia('(max-width: 768px)').matches;
+
+    if (mode === 'python') {
+        yamlBtn.classList.remove('active');
+        pythonBtn.classList.add('active');
+        yamlPanel.style.display = 'none';
+        if (canvasArea) canvasArea.style.display = 'none';
+        if (pythonCanvasPanel) pythonCanvasPanel.style.display = 'flex';
+        if (aiBtn) aiBtn.style.display = '';
+        if (settingsSection) settingsSection.style.display = 'none';
+        if (aiTitle) aiTitle.textContent = zh ? '🤖 AI 写 Python 工作流' : '🤖 AI Write Python Workflow';
+        if (guidanceLabel) guidanceLabel.textContent = zh ? '🧭 写代码指引' : '🧭 Coding Guidance';
+        if (guidanceInput) guidanceInput.placeholder = zh
+            ? '例如：写成 async workflowpy；优先调用 send_agent；把 review / retry 流程写清楚。'
+            : 'Example: write async workflowpy; prefer send_agent; include explicit review/retry flow.';
+        if (statusEl) statusEl.textContent = zh ? '点击「🤖 AI优化工作流」自动生成 Python workflow' : 'Click "AI Optimize Workflow" to generate Python workflow';
+        if (promptLabel) promptLabel.textContent = zh ? '📨 发送的代码指令' : '📨 Coding Prompt Sent';
+        if (outputLabel) outputLabel.textContent = zh ? '🤖 Agent Explain' : '🤖 Agent Explain';
+        if (promptContent) promptContent.textContent = zh ? '点击 AI 后显示发送给 Agent 的 Python 指令' : 'Shows the Python prompt after AI generation';
+        if (outputContent) outputContent.textContent = zh ? '等待 Agent 输出工作流说明' : 'Waiting for workflow explanation';
+        if (exportLabel) exportLabel.textContent = zh ? '📋 复制 Python' : '📋 Copy Python';
+        if (downloadLabel) downloadLabel.textContent = zh ? '⬇️ 导出 Python' : '⬇️ Export Python';
+        if (uploadLabel) uploadLabel.textContent = zh ? '⬆️ 导入 Python' : '⬆️ Import Python';
+        if (runLabel) runLabel.textContent = zh ? '▶️ 运行工作流' : '▶️ Run Workflow';
+        if (runBtn) runBtn.title = zh ? '运行当前编辑器里的工作流' : 'Run the workflow in the current editor';
+        if (codeTitle) codeTitle.innerHTML = '🐍 Python 脚本';
+        if (pythonEditor && !String(pythonEditor.value || '').trim()) {
+            pythonEditor.value = orchDefaultPythonScaffold();
+        }
+        if (isMobile) {
+            orchCloseMobilePanels();
+        }
+    } else {
+        pythonBtn.classList.remove('active');
+        yamlBtn.classList.add('active');
+        yamlPanel.style.display = 'flex';
+        if (pythonCanvasPanel) pythonCanvasPanel.style.display = 'none';
+        if (canvasArea) canvasArea.style.display = 'block';
+        if (aiBtn) aiBtn.style.display = '';
+        if (settingsSection) settingsSection.style.display = '';
+        if (aiTitle) aiTitle.textContent = zh ? '🤖 AI 生成' : '🤖 AI Generate';
+        if (guidanceLabel) guidanceLabel.textContent = zh ? '🧭 优化指引' : '🧭 Optimization Guidance';
+        if (guidanceInput) guidanceInput.placeholder = zh
+            ? '例如：减少节点数；保留 reviewer 回环；让 planner 先出计划再并行执行。'
+            : 'Example: reduce node count; keep reviewer loop; let planner draft first, then parallel execution.';
+        if (statusEl) statusEl.textContent = zh ? '点击「🤖 AI编排」自动生成 YAML' : 'Click "AI Optimize Workflow" to generate YAML';
+        if (promptLabel) promptLabel.textContent = zh ? '📨 发送的 Prompt' : '📨 Prompt Sent';
+        if (outputLabel) outputLabel.textContent = zh ? '🤖 Agent Explain' : '🤖 Agent Explain';
+        if (promptContent) promptContent.textContent = zh ? '点击 AI编排 后显示' : 'Shown after AI Orch';
+        if (outputContent) outputContent.textContent = zh ? '等待 Agent 输出工作流说明' : 'Waiting for workflow explanation';
+        if (exportLabel) exportLabel.textContent = zh ? '📋 复制工作流到粘贴板' : '📋 Copy Workflow to Clipboard';
+        if (downloadLabel) downloadLabel.textContent = zh ? '⬇️ 导出工作流' : '⬇️ Export Workflow';
+        if (uploadLabel) uploadLabel.textContent = zh ? '⬆️ 导入工作流' : '⬆️ Import Workflow';
+        if (runLabel) runLabel.textContent = zh ? '▶️ 运行工作流' : '▶️ Run Workflow';
+        if (runBtn) runBtn.title = zh ? '运行当前画布里的工作流' : 'Run the workflow from the current canvas';
+        if (codeTitle) codeTitle.innerHTML = '📄 规则 YAML';
+        if (isMobile) {
+            orchCloseMobilePanels();
+        }
+    }
+}
+
+// Agent 配置模态框
+let currentConfigAgent = null;
+
+async function showAgentConfigModal(agentId) {
+    const member = _teamMember(agentId);
+    if (!member) return;
+    const agent = member.agent;
+    const settings = agent.settings || {};
+    const webot = agent.platform === 'webot';
+    const name = member.role || agent.name;
+    const tag = member.tag || '';  // the team persona it wears
+    const { api_url, model, headers } = settings;
+    const platform = agent.platform;
+    currentConfigAgent = { agentId, name, tag, platform };
+    const platformValue = String(platform || '').trim().toLowerCase();
+    let platformOptionsHtml = '';
+    if (!webot) {
+        const options = await fetchAddExtPlatformOptions();
+        const normalized = Array.isArray(options) ? options.slice() : [];
+        if (platformValue && !normalized.includes(platformValue) && platformValue !== 'http') {
+            normalized.push(platformValue);
+        }
+        platformOptionsHtml = renderAddExtPlatformOptions(normalized, platformValue);
+    }
+    
+    // Create modal dynamically like orchestration page
+    const overlay = document.createElement('div');
+    overlay.className = 'orch-modal-overlay';
+    overlay.id = 'agent-config-overlay';
+    
+    const typeLabel = webot ? 'WeBot' : addExtPlatformLabel(platform);
+    
+    // Endpoint settings of platforms reached over HTTP
+    const externalForm = !webot ? `
+        <div id="config-ext-api-fields" style="display:${shouldShowExternalApiFields(platformValue) ? 'block' : 'none'};">
+        <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">API URL *</label>
+        <input id="config-ext-url" type="text" value="${escapeHtml(api_url || '')}" placeholder="https://api.example.com/v1" style="font-family:monospace;font-size:12px;width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">API Key</label>
+        <input id="config-ext-key" type="text" value="" placeholder="${settings.has_api_key ? '已保存（留空则不变）' : 'sk-xxx (optional)'}" style="font-family:monospace;font-size:12px;width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">Model</label>
+        <input id="config-ext-model" type="text" value="${escapeHtml(model || '')}" placeholder="gpt-4 / deepseek-chat (optional)" style="font-family:monospace;font-size:12px;width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">Headers (JSON)</label>
+        <textarea id="config-ext-headers" placeholder='{"X-Custom": "value"}' style="font-family:monospace;font-size:11px;min-height:60px;width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;resize:vertical;box-sizing:border-box;">${escapeHtml(typeof headers === 'object' ? JSON.stringify(headers, null, 2) : headers || '')}</textarea>
+        </div>
+    ` : '';
+    
+    // Agent persona tag section
+    const tagSection = `
+        <label style="font-size:11px;font-weight:600;color:#374151;">标签 (Tag)</label>
+        <select id="config-agent-tag" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:white;">
+            <option value="">(无标签)</option>
+        </select>
+        ${webot ? `<div id="config-tag-drop-zone" style="border:2px dashed #d1d5db;border-radius:8px;padding:12px;text-align:center;font-size:11px;color:#9ca3af;cursor:default;transition:all .15s;margin-top:8px;">
+            📦 拖入专家设置标签
+        </div>` : ''}
+    `;
+    
+    // Platform selector for external agents
+    const platformSection = !webot ? `
+        <label style="font-size:11px;font-weight:600;color:#374151;">平台 (Platform)</label>
+        <select id="config-agent-platform" disabled style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:#f3f4f6;">
+            ${platformOptionsHtml}
+        </select>
+    ` : '';
+
+    overlay.innerHTML = `
+        <div class="orch-modal" style="width:min(560px, 92vw);max-width:92vw;max-height:min(88vh, 820px);overflow:auto;">
+            <h3>⚙️ 配置成员 — ${escapeHtml(typeLabel)}</h3>
+            <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0;">
+                                ${platformSection}
+
+                <label style="font-size:11px;font-weight:600;color:#374151;">名称</label>
+                <input id="config-agent-name" type="text" placeholder="输入成员名称" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
+
+                ${tagSection}
+                ${externalForm}
+
+                <label style="font-size:11px;font-weight:600;color:#374151;">地址</label>
+                <input id="config-agent-global-name" type="text" value="${escapeHtml(agent.agent_id)}" disabled style="width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:#f3f4f6;cursor:not-allowed;color:#9ca3af;box-sizing:border-box;">
+            </div>
+            <div class="orch-modal-btns">
+                <button id="config-cancel" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
+                <button id="config-save" style="padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:white;cursor:pointer;font-size:12px;">保存</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(overlay);
+    
+    // Set initial values
+    document.getElementById('config-agent-name').value = name;
+    const configPlatformSelect = document.getElementById('config-agent-platform');
+    const configApiFields = document.getElementById('config-ext-api-fields');
+    function syncConfigExternalFields() {
+        if (!configApiFields || !configPlatformSelect) return;
+        configApiFields.style.display = shouldShowExternalApiFields(configPlatformSelect.value) ? 'block' : 'none';
+    }
+    if (configPlatformSelect) {
+        configPlatformSelect.addEventListener('change', syncConfigExternalFields);
+        syncConfigExternalFields();
+    }
+    
+    // Setup event handlers
+    overlay.querySelector('#config-cancel').addEventListener('click', () => {
+        overlay.remove();
+        currentConfigAgent = null;
+    });
+    
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+            currentConfigAgent = null;
+        }
+    });
+    
+    overlay.querySelector('#config-save').addEventListener('click', async () => {
+        const newName = document.getElementById('config-agent-name').value.trim();
+        
+        if (!newName) {
+            alert('名称不能为空');
+            return;
+        }
+        
+        const meta = { name: newName };
+        
+        const tagInput = document.getElementById('config-agent-tag');
+        const newTag = tagInput ? tagInput.value.trim() : '';
+
+        // Platforms reached over HTTP also carry their endpoint settings
+        if (!webot) {
+            const platformValue = document.getElementById('config-agent-platform')?.value || '';
+            const extUrl = document.getElementById('config-ext-url').value.trim();
+            if (platformNeedsApiUrl(platformValue) && !extUrl) {
+                alert('API URL 不能为空');
+                return;
+            }
+            meta.api_url = extUrl;
+            meta.api_key = document.getElementById('config-ext-key').value.trim();
+            meta.model = document.getElementById('config-ext-model').value.trim();
+            
+            const hdrsStr = document.getElementById('config-ext-headers').value.trim();
+            if (hdrsStr) {
+                try {
+                    meta.headers = JSON.parse(hdrsStr);
+                } catch (e) {
+                    alert('Headers JSON 解析错误: ' + e.message);
+                    return;
+                }
+            } else {
+                meta.headers = {};
+            }
+        }
+        
+        try {
+            const settingsPatch = {};
+            if (newTag !== tag) settingsPatch.persona = await personaTextFor(newTag, currentGroupId);
+            if (!webot) {
+                Object.assign(settingsPatch, { api_url: meta.api_url, model: meta.model, headers: meta.headers });
+                if (meta.api_key) settingsPatch.api_key = meta.api_key;  // empty keeps the saved key
+            }
+            await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agentId)}`, { settings: settingsPatch });
+            if (newName !== name || newTag !== tag) {
+                await agentApi('PATCH', `/v1/teams/${encodeURIComponent(currentGroupId)}/members/${encodeURIComponent(agentId)}`, { role: newName, tag: newTag });
+            }
+
+            alert('保存成功！');
+            overlay.remove();
+            currentConfigAgent = null;
+            loadTeamMembers();
+        } catch (e) {
+            alert('保存失败: ' + e.message);
+        }
+    });
+    
+    // Load expert tags for agent persona binding
+    {
+        try {
+            const expertsUrl = currentGroupId
+                ? `/proxy_visual/experts?team=${encodeURIComponent(currentGroupId)}`
+                : '/proxy_visual/experts';
+            const r = await fetch(expertsUrl);
+            const experts = await r.json();
+            const tagSelect = document.getElementById('config-agent-tag');
+            const rows = ['<option value="">(无标签)</option>'];
+            const selectedTag = String(tag || '').trim();
+            const entries = Array.isArray(experts) ? experts : [];
+            for (const exp of entries) {
+                const tagValue = String((exp && exp.tag) || '').trim();
+                if (!tagValue) continue;
+                const displayName = String(exp.name_zh || exp.name_en || exp.name || '').trim();
+                const source = String(exp.source || '').trim();
+                const metaParts = [displayName, source].filter(Boolean);
+                const label = metaParts.length ? `${tagValue} · ${metaParts.join(' · ')}` : tagValue;
+                rows.push(`<option value="${escapeHtml(tagValue)}"${tagValue === selectedTag ? ' selected' : ''}>${escapeHtml(label)}</option>`);
+            }
+            if (selectedTag && !entries.some(exp => String((exp && exp.tag) || '').trim() === selectedTag)) {
+                rows.push(`<option value="${escapeHtml(selectedTag)}" selected>${escapeHtml(selectedTag)}</option>`);
+            }
+            tagSelect.innerHTML = rows.join('');
+            tagSelect.value = selectedTag;
+        } catch (e) {
+            console.warn('Failed to load expert tags', e);
+        }
+
+        if (webot) {
+            // Setup drop zone for expert tags
+            const dropZone = document.getElementById('config-tag-drop-zone');
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+                dropZone.style.borderColor = '#2563eb';
+                dropZone.style.background = '#eff6ff';
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.style.borderColor = '#d1d5db';
+                dropZone.style.background = '';
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.style.borderColor = '#d1d5db';
+                dropZone.style.background = '';
+                try {
+                    const data = JSON.parse(e.dataTransfer.getData('application/json'));
+                    if (data.tag && data.tag !== 'manual' && data.tag !== 'conditional') {
+                        const tagSelect = document.getElementById('config-agent-tag');
+                        tagSelect.value = data.tag;
+                        dropZone.innerHTML = '✅ Tag: <b>' + escapeHtml(data.tag) + '</b> (' + escapeHtml(data.name || '') + ')';
+                        dropZone.style.borderColor = '#2563eb';
+                        dropZone.style.color = '#374151';
+                    }
+                } catch(err) {}
+            });
+        }
+    }
+}
+
+// ── Expert Picker for Team Page ──
+async function showExpertPickerForTeam(onSelect) {
+    const overlay = document.createElement('div');
+    overlay.className = 'orch-modal-overlay';
+    overlay.id = 'team-expert-picker-overlay';
+    overlay.style.zIndex = '10001';
+    overlay.innerHTML = `
+        <div class="orch-modal" style="min-width:360px;max-width:520px;width:85vw;max-height:75vh;display:flex;flex-direction:column;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <h3 style="margin:0;font-size:14px;">📥 选择专家</h3>
+                <button id="team-ep-close" style="background:none;border:none;font-size:18px;cursor:pointer;padding:2px 6px;color:#6b7280;">✕</button>
+            </div>
+            <input id="team-ep-search" type="text" placeholder="搜索专家..." style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;margin-bottom:8px;">
+            <div id="team-ep-list" style="flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:4px;">
+                <div style="text-align:center;color:#9ca3af;padding:20px;font-size:11px;">⏳ 加载中...</div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#team-ep-close').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    const listEl = overlay.querySelector('#team-ep-list');
+    const searchInput = overlay.querySelector('#team-ep-search');
+    let allExperts = [];
+
+    try {
+        const expertsUrl = currentGroupId
+            ? `/proxy_visual/experts?team=${encodeURIComponent(currentGroupId)}`
+            : '/proxy_visual/experts';
+        const r = await fetch(expertsUrl);
+        allExperts = await r.json();
+    } catch(e) {
+        listEl.innerHTML = '<div style="color:#ef4444;padding:20px;text-align:center;font-size:11px;">❌ 网络错误</div>';
+        return;
+    }
+
+    function renderList(filter) {
+        listEl.innerHTML = '';
+        const keyword = (filter || '').toLowerCase();
+        const filtered = keyword ? allExperts.filter(ex =>
+            (ex.name||'').toLowerCase().includes(keyword) ||
+            (ex.tag||'').toLowerCase().includes(keyword) ||
+            (ex.persona||'').toLowerCase().includes(keyword) ||
+            (ex.category||'').toLowerCase().includes(keyword)
+        ) : allExperts;
+
+        if (filtered.length === 0) {
+            listEl.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:20px;font-size:11px;">无结果</div>';
+            return;
+        }
+
+        const groups = { public: [], agency: [], custom: [] };
+        filtered.forEach(ex => {
+            const src = ex.source || 'public';
+            if (groups[src]) groups[src].push(ex); else groups.public.push(ex);
+        });
+        const groupLabels = {
+            public: { icon: '🌟', label: '公共专家' },
+            agency: { icon: '🏢', label: '机构专家' },
+            custom: { icon: '🛠️', label: '自定义' },
+        };
+
+        for (const [src, items] of Object.entries(groups)) {
+            if (items.length === 0) continue;
+            const info = groupLabels[src] || { icon: '📂', label: src };
+            const header = document.createElement('div');
+            header.style.cssText = 'font-size:10px;font-weight:600;color:#6b7280;padding:4px 0;margin-top:4px;';
+            header.textContent = info.icon + ' ' + info.label + ' (' + items.length + ')';
+            listEl.appendChild(header);
+
+            for (const ex of items) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;transition:all .15s;background:#fff;';
+                row.addEventListener('mouseenter', () => { row.style.background = '#f5f3ff'; row.style.borderColor = '#c4b5fd'; });
+                row.addEventListener('mouseleave', () => { row.style.background = '#fff'; row.style.borderColor = '#e5e7eb'; });
+                const personaPreview = (ex.persona || '').length > 80 ? (ex.persona.slice(0, 80) + '…') : (ex.persona || '-');
+                row.innerHTML = `
+                    <span style="font-size:18px;flex-shrink:0;">${ex.emoji || '⭐'}</span>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:12px;font-weight:600;color:#1f2937;">${escapeHtml(ex.name)}</div>
+                        <div style="font-size:10px;color:#6b7280;margin-top:1px;">${escapeHtml(ex.tag)}${ex.category ? ' · ' + escapeHtml(ex.category) : ''}</div>
+                        <div style="font-size:10px;color:#9ca3af;margin-top:3px;line-height:1.4;white-space:pre-wrap;word-break:break-all;">${escapeHtml(personaPreview)}</div>
+                    </div>
+                    <span style="font-size:14px;color:#7c3aed;flex-shrink:0;margin-top:2px;">→</span>
+                `;
+                row.addEventListener('click', () => {
+                    if (typeof onSelect === 'function') onSelect(ex);
+                    overlay.remove();
+                });
+                listEl.appendChild(row);
+            }
+        }
+    }
+
+    renderList('');
+    searchInput.addEventListener('input', () => renderList(searchInput.value));
+    setTimeout(() => searchInput.focus(), 100);
+}
+
+// ── Team Tab Switching (Members / Experts / Workflows) ──
+function switchTeamTab(tab) {
+    const btnMembers = document.getElementById('team-tab-members');
+    const btnExperts = document.getElementById('team-tab-experts');
+    const btnWorkflows = document.getElementById('team-tab-workflows');
+    const btnAlarms = document.getElementById('team-tab-alarms');
+    const btnSkills = document.getElementById('team-tab-skills');
+    const panelMembers = document.getElementById('team-panel-members');
+    const panelExperts = document.getElementById('team-panel-experts');
+    const panelWorkflows = document.getElementById('team-panel-workflows');
+    const panelAlarms = document.getElementById('team-panel-alarms');
+    const panelSkills = document.getElementById('team-panel-skills');
+    const actionsMembers = document.getElementById('team-tab-actions-members');
+    const actionsExperts = document.getElementById('team-tab-actions-experts');
+    const actionsWorkflows = document.getElementById('team-tab-actions-workflows');
+    const actionsAlarms = document.getElementById('team-tab-actions-alarms');
+    const actionsSkills = document.getElementById('team-tab-actions-skills');
+    if (!btnMembers || !btnExperts) return;
+
+    // Reset all tabs to inactive
+    const inactiveStyle = {background: '#f9fafb', color: '#374151', borderColor: '#d1d5db'};
+    [btnMembers, btnExperts, btnWorkflows, btnAlarms, btnSkills].forEach(btn => {
+        if (btn) { btn.setAttribute('aria-pressed', 'false'); btn.style.background = inactiveStyle.background; btn.style.color = inactiveStyle.color; btn.style.borderColor = inactiveStyle.borderColor; }
+    });
+    document.getElementById('team-tab-' + tab)?.setAttribute('aria-pressed', 'true');
+    if (panelMembers) panelMembers.style.display = 'none';
+    if (panelExperts) panelExperts.style.display = 'none';
+    if (panelWorkflows) panelWorkflows.style.display = 'none';
+    if (panelAlarms) panelAlarms.style.display = 'none';
+    if (panelSkills) panelSkills.style.display = 'none';
+    if (actionsMembers) actionsMembers.style.display = 'none';
+    if (actionsExperts) actionsExperts.style.display = 'none';
+    if (actionsWorkflows) actionsWorkflows.style.display = 'none';
+    if (actionsAlarms) actionsAlarms.style.display = 'none';
+    if (actionsSkills) actionsSkills.style.display = 'none';
+
+    if (tab === 'experts') {
+        btnExperts.style.background = '#7c3aed'; btnExperts.style.color = 'white'; btnExperts.style.borderColor = '#7c3aed';
+        if (panelExperts) panelExperts.style.display = '';
+        if (actionsExperts) actionsExperts.style.display = '';
+        loadTeamExperts();
+    } else if (tab === 'workflows') {
+        if (btnWorkflows) { btnWorkflows.style.background = '#059669'; btnWorkflows.style.color = 'white'; btnWorkflows.style.borderColor = '#059669'; }
+        if (panelWorkflows) panelWorkflows.style.display = '';
+        if (actionsWorkflows) actionsWorkflows.style.display = '';
+        loadTeamWorkflows();
+    } else if (tab === 'alarms') {
+        if (btnAlarms) { btnAlarms.style.background = '#dc2626'; btnAlarms.style.color = 'white'; btnAlarms.style.borderColor = '#dc2626'; }
+        if (panelAlarms) panelAlarms.style.display = '';
+        if (actionsAlarms) actionsAlarms.style.display = '';
+        loadTeamAlarms();
+    } else if (tab === 'skills') {
+        if (btnSkills) { btnSkills.style.background = '#f59e0b'; btnSkills.style.color = 'white'; btnSkills.style.borderColor = '#f59e0b'; }
+        if (panelSkills) panelSkills.style.display = '';
+        if (actionsSkills) actionsSkills.style.display = '';
+        loadTeamSkills();
+    } else {
+        btnMembers.style.background = '#2563eb'; btnMembers.style.color = 'white'; btnMembers.style.borderColor = '#2563eb';
+        if (panelMembers) panelMembers.style.display = '';
+        if (actionsMembers) actionsMembers.style.display = '';
+        loadTeamMembers();
+    }
+}
+
+// ── Team Alarms ──
+let _teamAlarmTargets = [];
+
+function _teamAlarmPad2(value) {
+    return String(value).padStart(2, '0');
+}
+
+function _teamAlarmTimeParts() {
+    const timeInput = document.getElementById('team-alarm-time');
+    const raw = (timeInput?.value || '09:00').trim();
+    const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return { hour: '9', minute: '0', label: '09:00' };
+    const hourNum = Math.max(0, Math.min(23, parseInt(match[1], 10) || 0));
+    const minuteNum = Math.max(0, Math.min(59, parseInt(match[2], 10) || 0));
+    return {
+        hour: String(hourNum),
+        minute: String(minuteNum),
+        label: `${_teamAlarmPad2(hourNum)}:${_teamAlarmPad2(minuteNum)}`,
+    };
+}
+
+function buildTeamAlarmCronFromControls() {
+    const repeat = document.getElementById('team-alarm-repeat')?.value || 'daily';
+    if (repeat === 'once') {
+        return '';
+    }
+    if (repeat === 'custom') {
+        return (document.getElementById('team-alarm-custom-cron')?.value || '').trim();
+    }
+    const { hour, minute } = _teamAlarmTimeParts();
+    if (repeat === 'weekdays') return `${minute} ${hour} * * 1-5`;
+    if (repeat === 'weekends') return `${minute} ${hour} * * 0,6`;
+    if (repeat === 'weekly') {
+        const dow = document.getElementById('team-alarm-weekday')?.value || '1';
+        return `${minute} ${hour} * * ${dow}`;
+    }
+    if (repeat === 'monthly') {
+        const dom = document.getElementById('team-alarm-monthday')?.value || '1';
+        return `${minute} ${hour} ${dom} * *`;
+    }
+    return `${minute} ${hour} * * *`;
+}
+
+function buildTeamAlarmScheduleFromControls() {
+    const repeat = document.getElementById('team-alarm-repeat')?.value || 'daily';
+    if (repeat === 'once') {
+        return {
+            schedule_type: 'once',
+            run_at: (document.getElementById('team-alarm-once-at')?.value || '').trim(),
+            cron: '',
+        };
+    }
+    return {
+        schedule_type: 'cron',
+        run_at: '',
+        cron: buildTeamAlarmCronFromControls(),
+    };
+}
+
+function teamAlarmOnceToHuman(runAt) {
+    const value = String(runAt || '').trim();
+    if (!value) return '只响一次';
+    const [datePart, timePart = ''] = value.split('T');
+    return `只响一次 ${datePart} ${timePart.slice(0, 5)}`.trim();
+}
+
+function teamAlarmCronToHuman(cron) {
+    const parts = String(cron || '').trim().split(/\s+/);
+    if (parts.length !== 5) return cron || '-';
+    const [minute, hour, day, month, weekday] = parts;
+    const simpleTime = /^\d+$/.test(hour) && /^\d+$/.test(minute)
+        ? `${_teamAlarmPad2(parseInt(hour, 10))}:${_teamAlarmPad2(parseInt(minute, 10))}`
+        : `${hour}:${minute}`;
+    if (day === '*' && month === '*' && weekday === '*') return `每天 ${simpleTime}`;
+    if (day === '*' && month === '*' && weekday === '1-5') return `工作日 ${simpleTime}`;
+    if (day === '*' && month === '*' && (weekday === '0,6' || weekday === '6,0')) return `周末 ${simpleTime}`;
+    const weekdayNames = { '0': '周日', '1': '周一', '2': '周二', '3': '周三', '4': '周四', '5': '周五', '6': '周六', '7': '周日' };
+    if (day === '*' && month === '*' && weekdayNames[weekday]) return `每周${weekdayNames[weekday].replace('周', '')} ${simpleTime}`;
+    if (/^\d+$/.test(day) && month === '*' && weekday === '*') return `每月 ${day} 日 ${simpleTime}`;
+    return cron || '-';
+}
+
+function updateTeamAlarmScheduleControls() {
+    const repeat = document.getElementById('team-alarm-repeat')?.value || 'daily';
+    const onceInput = document.getElementById('team-alarm-once-at');
+    const timeInput = document.getElementById('team-alarm-time');
+    const weekdaySelect = document.getElementById('team-alarm-weekday');
+    const monthdaySelect = document.getElementById('team-alarm-monthday');
+    const customCronInput = document.getElementById('team-alarm-custom-cron');
+    const preview = document.getElementById('team-alarm-schedule-preview');
+
+    if (onceInput) {
+        onceInput.style.display = repeat === 'once' ? '' : 'none';
+        if (repeat === 'once' && !onceInput.value) {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() + 30);
+            now.setSeconds(0, 0);
+            onceInput.value = `${now.getFullYear()}-${_teamAlarmPad2(now.getMonth() + 1)}-${_teamAlarmPad2(now.getDate())}T${_teamAlarmPad2(now.getHours())}:${_teamAlarmPad2(now.getMinutes())}`;
+        }
+    }
+    if (timeInput) timeInput.style.display = repeat === 'custom' || repeat === 'once' ? 'none' : '';
+    if (weekdaySelect) weekdaySelect.style.display = repeat === 'weekly' ? '' : 'none';
+    if (monthdaySelect) monthdaySelect.style.display = repeat === 'monthly' ? '' : 'none';
+    if (customCronInput) customCronInput.style.display = repeat === 'custom' ? '' : 'none';
+
+    const schedule = buildTeamAlarmScheduleFromControls();
+    if (preview) {
+        const label = repeat === 'custom'
+            ? (schedule.cron ? `自定义：${schedule.cron}` : '自定义 cron')
+            : (repeat === 'once' ? teamAlarmOnceToHuman(schedule.run_at) : teamAlarmCronToHuman(schedule.cron));
+        preview.textContent = label;
+    }
+}
+
+async function loadTeamAlarms() {
+    if (!currentGroupId) return;
+    const tbody = document.getElementById('team-alarms-table-body');
+    const targetSelect = document.getElementById('team-alarm-target');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-400 py-8">加载中...</td></tr>';
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/alarms`, { cache: 'no-store' });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || '加载失败');
+
+        _teamAlarmTargets = data.targets || [];
+        if (targetSelect) {
+            targetSelect.innerHTML = _teamAlarmTargets.length
+                ? _teamAlarmTargets.map((t, index) => `<option value="${index}">${escapeHtml(t.label || t.target_name)}</option>`).join('')
+                : '<option value="">暂无可用目标</option>';
+        }
+        updateTeamAlarmScheduleControls();
+
+        const alarms = data.alarms || [];
+        if (!alarms.length) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-400 py-8">暂无定时任务</td></tr>';
+            return;
+        }
+        tbody.innerHTML = alarms.map(a => {
+            const taskId = escapeHtml(a.task_id || '');
+            const targetName = escapeHtml(a.target_name || a.agent || '-');
+            const cron = escapeHtml(a.cron || '');
+            const scheduleType = a.schedule_type || 'cron';
+            const runAt = a.run_at || '';
+            const scheduleLabel = escapeHtml(scheduleType === 'once' ? teamAlarmOnceToHuman(a.run_at || '') : teamAlarmCronToHuman(a.cron || ''));
+            const scheduleRaw = escapeHtml(scheduleType === 'once' ? runAt : (a.cron || ''));
+            const text = escapeHtml(a.text || '');
+            return `
+                <tr>
+                    <td class="font-medium text-gray-800">${targetName}</td>
+                    <td><div class="text-xs text-gray-800">${scheduleLabel}</div><div class="font-mono text-[11px] text-gray-400">${scheduleRaw}</div></td>
+                    <td style="max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${text}">${text}</td>
+                    <td style="text-align:right;white-space:nowrap;">
+                        <button onclick="deleteTeamAlarm('${taskId}')" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除">🗑️ 删除</button>
+                    </td>
+                </tr>`;
+        }).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center text-red-400 py-8">加载失败: ${escapeHtml(e.message || String(e))}</td></tr>`;
+    }
+}
+
+async function createTeamAlarm(event) {
+    if (event) event.preventDefault();
+    if (!currentGroupId) return;
+    const targetSelect = document.getElementById('team-alarm-target');
+    const textInput = document.getElementById('team-alarm-text');
+    const targetIndex = Number(targetSelect?.value ?? -1);
+    const target = Number.isInteger(targetIndex) ? _teamAlarmTargets[targetIndex] : null;
+    const agent = target?.agent || '';
+    const schedule = buildTeamAlarmScheduleFromControls();
+    const text = (textInput?.value || '').trim();
+    if (!agent || !text || (schedule.schedule_type === 'cron' && !schedule.cron) || (schedule.schedule_type === 'once' && !schedule.run_at)) {
+        alert('请选择目标，并设置时间和任务内容');
+        return;
+    }
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/alarms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agent, ...schedule, text }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || data.detail || '创建失败');
+        if (textInput) textInput.value = '';
+        await loadTeamAlarms();
+    } catch (e) {
+        alert('创建失败: ' + (e.message || String(e)));
+    }
+}
+
+async function deleteTeamAlarm(taskId) {
+    if (!currentGroupId || !taskId) return;
+    if (!confirm(`删除定时任务 ${taskId}？`)) return;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/alarms/${encodeURIComponent(taskId)}`, {
+            method: 'DELETE',
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || data.detail || '删除失败');
+        await loadTeamAlarms();
+    } catch (e) {
+        alert('删除失败: ' + (e.message || String(e)));
+    }
+}
+
+// ── Load Team Experts ──
+async function loadTeamExperts() {
+    if (!currentGroupId) return;
+    const tbody = document.getElementById('team-experts-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">加载中...</td></tr>';
+
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/experts`, { cache: 'no-store' });
+        if (!resp.ok) {
+            const failure = await resp.json().catch(() => ({}));
+            throw new Error(failure.error || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        const experts = data.experts || [];
+        if (experts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">暂无专家，点击 ➕ 添加</td></tr>';
+            return;
+        }
+        tbody.innerHTML = experts.map(e => {
+            const personaPreview = (e.persona || '').length > 80 ? (e.persona.slice(0, 80) + '…') : (e.persona || '-');
+            return `
+                <tr>
+                    <td class="font-medium text-gray-800">${escapeHtml(e.name)}</td>
+                    <td class="font-mono text-xs text-gray-500">${escapeHtml(e.tag)}</td>
+                    <td style="max-width:300px;white-space:pre-wrap;word-break:break-all;font-size:11px;color:#6b7280;">${escapeHtml(personaPreview)}</td>
+                    <td class="text-center text-xs text-gray-500">${e.temperature ?? 0.7}</td>
+                    <td style="text-align:right;white-space:nowrap;">
+                        ${e.deletable === false ? '<span class="user-space-badge">预设 · 只读</span>' : `
+                        <button onclick="editTeamExpert(decodeURIComponent('${encodeURIComponent(e.tag).replace(/'/g, '%27')}'))" class="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-50" title="编辑">✏️</button>
+                        <button onclick="deleteTeamExpert(decodeURIComponent('${encodeURIComponent(e.tag).replace(/'/g, '%27')}'), decodeURIComponent('${encodeURIComponent(e.name).replace(/'/g, '%27')}'))" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除">🗑️</button>`}
+                    </td>
+                </tr>`;
+        }).join('');
+    } catch (err) {
+        console.error('Failed to load team experts:', err);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败: ' + escapeHtml(err.message) + '</td></tr>';
+    }
+}
+
+// ── Team Skills ──
+function openTeamSkillHub() {
+    const popup = window.open(_buildClawCrossHubUrl(), '_blank');
+    if (!popup) {
+        window.location.assign(_buildClawCrossHubUrl());
+    }
+}
+
+async function importTeamSkillZip(input) {
+    if (!currentGroupId || !input?.files?.[0]) return;
+    const file = input.files[0];
+    if (!confirm(`导入 Skill ZIP 到团队「${currentGroupId}」？`)) {
+        input.value = '';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/skills/import-zip`, {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) throw new Error(data.error || '导入失败');
+        const imported = data.direct?.imported?.length || 0;
+        const restored = (data.restored?.restored_team_skill_dirs || 0) + (data.restored?.restored_user_skill_dirs || 0);
+        alert(`导入成功：${imported + restored} 个 Skill`);
+        await loadTeamSkills();
+    } catch (e) {
+        alert('导入失败: ' + String(e.message || e));
+    } finally {
+        input.value = '';
+    }
+}
+
+async function loadTeamSkills() {
+    if (!currentGroupId) return;
+    const listEl = document.getElementById('team-skills-list');
+    const emptyEl = document.getElementById('team-skill-view-empty');
+    const viewEl = document.getElementById('team-skill-view');
+    if (!listEl) return;
+    listEl.innerHTML = '<div class="text-gray-400 text-xs">加载中...</div>';
+    if (emptyEl) emptyEl.style.display = '';
+    if (viewEl) viewEl.style.display = 'none';
+
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/skills`, { cache: 'no-store' });
+        if (!resp.ok) {
+            listEl.innerHTML = '<div class="text-red-400 text-xs">加载失败</div>';
+            return;
+        }
+        const data = await resp.json();
+        const sections = data.skills || {};
+        const teamSkills = sections.team || [];
+        const personalSkills = sections.personal || [];
+        let html = '';
+        const renderSection = (title, items, scope, badgeColor) => {
+            if (!items.length) return;
+            html += `<div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin:6px 0 4px;">${escapeHtml(title)}</div>`;
+            items.forEach(skill => {
+                const name = skill.name || '';
+                const key = skill.id || name;
+                const category = skill.category ? ` · ${skill.category}` : '';
+                html += `
+                    <button onclick="loadTeamSkillDetail(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'),'${scope}')" style="width:100%;text-align:left;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:white;cursor:pointer;margin-bottom:6px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <span style="font-size:13px;font-weight:600;color:#111827;">${escapeHtml(name)}</span>
+                            <span style="font-size:10px;padding:2px 6px;border-radius:999px;background:${badgeColor};color:white;">${scope}</span>
+                        </div>
+                        <div style="font-size:11px;color:#6b7280;margin-top:4px;">${escapeHtml((skill.description || '') + category)}</div>
+                    </button>`;
+            });
+        };
+        renderSection('团队 Skill', teamSkills, 'team', '#f59e0b');
+        renderSection('用户空间 Skill', personalSkills, 'personal', '#6b7280');
+        listEl.innerHTML = html || '<div class="text-gray-400 text-xs">暂无 Skill</div>';
+    } catch (e) {
+        listEl.innerHTML = '<div class="text-red-400 text-xs">加载失败: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+async function loadTeamSkillDetail(skillName, scope) {
+    if (!currentGroupId) return;
+    const emptyEl = document.getElementById('team-skill-view-empty');
+    const viewEl = document.getElementById('team-skill-view');
+    const nameEl = document.getElementById('team-skill-view-name');
+    const metaEl = document.getElementById('team-skill-view-meta');
+    const contentEl = document.getElementById('team-skill-view-content');
+    const statusEl = document.getElementById('team-skill-view-status');
+    if (!contentEl) return;
+    _teamSkillCurrentName = skillName;
+    _teamSkillCurrentScope = scope || 'team';
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (viewEl) viewEl.style.display = '';
+    if (nameEl) nameEl.textContent = skillName;
+    if (metaEl) metaEl.textContent = '加载中...';
+    if (statusEl) statusEl.textContent = '';
+    contentEl.value = '';
+
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/skills/${encodeURIComponent(skillName)}?scope=${encodeURIComponent(scope)}`, { cache: 'no-store' });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || '加载失败');
+        }
+        const data = await resp.json();
+        const skill = data.skill || {};
+        if (nameEl) nameEl.textContent = skill.name || skillName;
+        if (metaEl) metaEl.textContent = `${scope === 'team' ? '团队' : '共享'} · ${skill.category || 'uncategorized'} · ${skill.path || ''}`;
+        contentEl.value = skill.content || '';
+    } catch (e) {
+        if (metaEl) metaEl.textContent = '加载失败';
+        contentEl.value = String(e.message || e);
+    }
+}
+
+async function saveTeamSkillDetail() {
+    if (!currentGroupId || !_teamSkillCurrentName) return;
+    const contentEl = document.getElementById('team-skill-view-content');
+    const statusEl = document.getElementById('team-skill-view-status');
+    const saveBtn = document.getElementById('team-skill-save-btn');
+    if (!contentEl) return;
+
+    if (statusEl) statusEl.textContent = '保存中...';
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/skills/${encodeURIComponent(_teamSkillCurrentName)}?scope=${encodeURIComponent(_teamSkillCurrentScope)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: contentEl.value }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || '保存失败');
+        if (statusEl) statusEl.textContent = '✅ 已保存';
+        await loadTeamSkills();
+        await loadTeamSkillDetail(_teamSkillCurrentName, _teamSkillCurrentScope);
+    } catch (e) {
+        if (statusEl) statusEl.textContent = '❌ 保存失败: ' + String(e.message || e);
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+    }
+}
+
+async function deleteTeamSkillDetail() {
+    if (!currentGroupId || !_teamSkillCurrentName) return;
+    const statusEl = document.getElementById('team-skill-view-status');
+    const scopeLabel = _teamSkillCurrentScope === 'team' ? '团队' : '共享';
+    if (!confirm(`删除${scopeLabel} Skill「${_teamSkillCurrentName}」？`)) return;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/skills/${encodeURIComponent(_teamSkillCurrentName)}?scope=${encodeURIComponent(_teamSkillCurrentScope)}`, {
+            method: 'DELETE',
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || '删除失败');
+        if (statusEl) statusEl.textContent = '✅ 已删除';
+        _teamSkillCurrentName = '';
+        const emptyEl = document.getElementById('team-skill-view-empty');
+        const viewEl = document.getElementById('team-skill-view');
+        if (emptyEl) emptyEl.style.display = '';
+        if (viewEl) viewEl.style.display = 'none';
+        await loadTeamSkills();
+    } catch (e) {
+        if (statusEl) statusEl.textContent = '❌ 删除失败: ' + String(e.message || e);
+    }
+}
+
+// ── Load Team Workflows ──
+async function loadTeamWorkflows() {
+    if (!currentGroupId) return;
+    const tbody = document.getElementById('team-workflows-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-gray-400 py-8">加载中...</td></tr>';
+
+    try {
+        const [yamlResp, pyResp] = await Promise.all([
+            fetch(`/proxy_visual/load-layouts?team=${encodeURIComponent(currentGroupId)}&mode=yaml`, { cache: 'no-store' }),
+            fetch(`/proxy_visual/load-layouts?team=${encodeURIComponent(currentGroupId)}&mode=python`, { cache: 'no-store' }),
+        ]);
+        if (!yamlResp.ok || !pyResp.ok) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-red-400 py-8">加载失败</td></tr>';
+            return;
+        }
+        const [yamlWorkflows, pythonWorkflows] = await Promise.all([yamlResp.json(), pyResp.json()]);
+        const workflows = [
+            ...(Array.isArray(yamlWorkflows) ? yamlWorkflows : []).map(name => ({ name, mode: 'yaml' })),
+            ...(Array.isArray(pythonWorkflows) ? pythonWorkflows : []).map(name => ({ name, mode: 'python' })),
+        ];
+        if (!workflows || workflows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-gray-400 py-8">暂无工作流（在编排页面保存后会出现在这里）</td></tr>';
+            return;
+        }
+        tbody.innerHTML = workflows.map(item => {
+            const safeName = escapeHtml(item.name);
+            const mode = item.mode === 'python' ? 'python' : 'yaml';
+            const badge = mode === 'python'
+                ? '<span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#ecfeff;color:#0f766e;font-size:10px;font-weight:700;margin-left:8px;">PY</span>'
+                : '<span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:700;margin-left:8px;">YAML</span>';
+            const fileName = mode === 'python' ? `${safeName}.py` : `${safeName}.yaml`;
+            return `
+                <tr>
+                    <td class="font-medium text-gray-800">📂 ${safeName} ${badge}</td>
+                    <td class="font-mono text-xs text-gray-500">${fileName}</td>
+                    <td style="text-align:right;white-space:nowrap;">
+                        <button onclick="viewTeamWorkflow('${safeName}', '${mode}')" class="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-50" title="打开工作流">👁️ 查看</button>
+                        <button onclick="deleteTeamWorkflow('${safeName}', '${mode}')" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除">🗑️</button>
+                    </td>
+                </tr>`;
+        }).join('');
+    } catch (err) {
+        console.error('Failed to load team workflows:', err);
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-red-400 py-8">加载失败: ' + err.message + '</td></tr>';
+    }
+}
+
+// ── View Team Workflow on Canvas ──
+async function viewTeamWorkflow(name, mode = 'yaml') {
+    if (!currentGroupId) return;
+    try {
+        // Switch to orchestrate page
+        switchPage('orchestrate');
+        // Ensure orchestration is initialized
+        if (!window._orchInitialized) { orchInit(); window._orchInitialized = true; }
+        // Load team list and set team context
+        await orchLoadTeamList();
+        orch.teamName = currentGroupId;
+        orch.teamEnabled = true;
+        orchShowTeamButtons(true);
+        const sel = document.getElementById('orch-team-select');
+        if (sel) sel.value = currentGroupId;
+        // Refresh sidebar agents/experts for the team
+        orchLoadExperts();
+        orchLoadAgents();
+        if (typeof orchSetWorkflowMode === 'function') orchSetWorkflowMode(mode);
+        await orchDoLoadLayout(name, mode);
+    } catch (err) {
+        alert('加载失败: ' + err.message);
+    }
+}
+
+// ── Delete Team Workflow ──
+async function deleteTeamWorkflow(name, mode = 'yaml') {
+    if (!currentGroupId) return;
+    if (!confirm(`确定删除工作流 "${name}" 吗？此操作不可撤销。`)) return;
+    try {
+        const resp = await fetch(`/proxy_visual/delete-layout/${encodeURIComponent(name)}?team=${encodeURIComponent(currentGroupId)}&mode=${encodeURIComponent(mode)}`, { method: 'DELETE' });
+        if (resp.ok) {
+            loadTeamWorkflows();
+        } else {
+            alert('删除失败');
+        }
+    } catch (err) {
+        alert('删除失败: ' + err.message);
+    }
+}
+
+function showImportTeamWorkflowTemplateModal() {
+    if (!currentGroupId) {
+        alert('请先选择一个团队');
+        return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'orch-modal-overlay';
+    overlay.id = 'team-workflow-template-overlay';
+    overlay.innerHTML = `
+        <div class="orch-modal" style="width:min(720px, 92vw);max-width:92vw;">
+            <h3>📥 导入 Python 工作流模板</h3>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:12px;">将通用 Python workflow 直接保存到当前 team，可稍后在编排页查看、运行或继续修改。</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
+                <div style="border:1px solid #dbeafe;border-radius:10px;padding:14px;background:#f8fbff;">
+                    <div style="font-size:14px;font-weight:700;color:#1d4ed8;">全串行</div>
+                    <div style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.6;">按当前 team/scope 下所有可用 agent 稳定排序，逐个串行执行。后一个 agent 会显式看到前面 agent 的输出。</div>
+                    <div style="margin-top:10px;font-size:11px;color:#374151;">文件名：<code>team_all_agents_sequential</code></div>
+                    <button onclick="importTeamWorkflowTemplate('sequential')" style="margin-top:12px;padding:7px 12px;border:none;border-radius:7px;background:#2563eb;color:white;cursor:pointer;font-size:12px;">导入全串行模板</button>
+                </div>
+                <div style="border:1px solid #d1fae5;border-radius:10px;padding:14px;background:#f7fffb;">
+                    <div style="font-size:14px;font-weight:700;color:#059669;">全并行</div>
+                    <div style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.6;">按当前 team/scope 下所有可用 agent 稳定排序，并行 fan-out，同步收集全部结果，再统一发到 topic。</div>
+                    <div style="margin-top:10px;font-size:11px;color:#374151;">文件名：<code>team_all_agents_parallel</code></div>
+                    <button onclick="importTeamWorkflowTemplate('parallel')" style="margin-top:12px;padding:7px 12px;border:none;border-radius:7px;background:#10b981;color:white;cursor:pointer;font-size:12px;">导入全并行模板</button>
+                </div>
+            </div>
+            <div class="orch-modal-btns" style="margin-top:14px;">
+                <button onclick="document.getElementById('team-workflow-template-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">关闭</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+}
+
+async function importTeamWorkflowTemplate(kind) {
+    if (!currentGroupId) return;
+    const normalized = kind === 'parallel' ? 'parallel' : 'sequential';
+    try {
+        const resp = await fetch('/proxy_visual/import-python-template', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                template: normalized,
+                team: currentGroupId,
+            }),
+        });
+        const result = await resp.json().catch(() => ({}));
+        if (!resp.ok || !result.saved) {
+            throw new Error(result.error || '导入模板失败');
+        }
+        if (typeof orchToast === 'function') {
+            orchToast(`已导入 Python 模板：${result.file || normalized + '.py'}`);
+        }
+        const overlay = document.getElementById('team-workflow-template-overlay');
+        if (overlay) overlay.remove();
+        await loadTeamWorkflows();
+    } catch (err) {
+        alert('导入失败: ' + err.message);
+    }
+}
+
+// ── New Team Workflow on Canvas ──
+function newTeamWorkflowOnCanvas() {
+    if (!currentGroupId) { alert('请先选择一个团队'); return; }
+    // Switch to orchestrate page
+    switchPage('orchestrate');
+    // Ensure orchestration is initialized
+    if (!window._orchInitialized) { orchInit(); window._orchInitialized = true; }
+    // Load team list and set team context
+    orchLoadTeamList().then(() => {
+        orch.teamName = currentGroupId;
+        orch.teamEnabled = true;
+        orchShowTeamButtons(true);
+        const sel = document.getElementById('orch-team-select');
+        if (sel) sel.value = currentGroupId;
+        // Refresh sidebar agents/experts for the team
+        orchLoadExperts();
+        orchLoadAgents();
+        // Clear canvas for a fresh new workflow
+        orchClearCanvas();
+    });
+}
+
+// ── Show Add/Edit Team Expert Modal ──
+function showAddTeamExpertModal(editData) {
+    if (!currentGroupId) { alert('请先选择一个团队'); return; }
+    const isEdit = !!editData;
+    const title = isEdit ? '✏️ 编辑团队专家' : '➕ 添加团队专家';
+    const btnLabel = isEdit ? '保存' : '添加';
+    const btnColor = isEdit ? '#2563eb' : '#7c3aed';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'orch-modal-overlay';
+    overlay.id = 'team-expert-modal-overlay';
+    overlay.innerHTML = `
+        <div class="orch-modal" style="min-width:400px;max-width:520px;width:85vw;">
+            <h3 style="margin:0 0 12px;font-size:14px;">${title}</h3>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <label style="font-size:11px;font-weight:600;color:#374151;">名称
+                    <input id="te-name" type="text" placeholder="专家名称" value="${escapeHtml((editData && editData.name) || '')}" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
+                </label>
+                <label style="font-size:11px;font-weight:600;color:#374151;">标签 (Tag)
+                    <input id="te-tag" type="text" placeholder="唯一标识符，如 creative, analyst" value="${escapeHtml((editData && editData.tag) || '')}" ${isEdit ? 'disabled style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:#f3f4f6;color:#6b7280;"' : 'style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;"'}>
+                </label>
+                <label style="font-size:11px;font-weight:600;color:#374151;">人设 (Persona)
+                    <textarea id="te-persona" placeholder="描述这个专家的角色、性格和专长..." style="width:100%;min-height:120px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;resize:vertical;font-family:inherit;line-height:1.5;">${escapeHtml((editData && editData.persona) || '')}</textarea>
+                </label>
+                <label style="font-size:11px;font-weight:600;color:#374151;">温度 (Temperature)
+                    <input id="te-temperature" type="number" min="0" max="2" step="0.1" value="${(editData && editData.temperature) ?? 0.7}" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
+                </label>
+                ${!isEdit ? '<div style="border:1px dashed #c4b5fd;border-radius:8px;padding:10px;background:#faf5ff;"><div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:11px;font-weight:600;color:#7c3aed;">📥 从全局专家库导入 (可选)</span><button id="te-import-btn" type="button" style="padding:3px 10px;border-radius:4px;border:1px solid #8b5cf6;background:#f5f3ff;color:#7c3aed;cursor:pointer;font-size:10px;font-weight:500;">选择专家</button></div><div id="te-import-preview" style="display:none;margin-top:8px;padding:6px 8px;background:white;border-radius:6px;border:1px solid #e5e7eb;font-size:11px;color:#374151;"></div></div>' : ''}
+            </div>
+            <div class="orch-modal-btns" style="margin-top:12px;">
+                <button onclick="document.getElementById('team-expert-modal-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
+                <button id="te-submit-btn" style="padding:6px 14px;border-radius:6px;border:none;background:${btnColor};color:white;cursor:pointer;font-size:12px;">${btnLabel}</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    // Import from global expert pool (only for add mode)
+    if (!isEdit) {
+        const importBtn = overlay.querySelector('#te-import-btn');
+        if (importBtn) {
+            importBtn.addEventListener('click', () => {
+                showExpertPickerForTeam((expert) => {
+                    document.getElementById('te-name').value = expert.name || '';
+                    document.getElementById('te-tag').value = expert.tag || '';
+                    document.getElementById('te-persona').value = expert.persona || '';
+                    document.getElementById('te-temperature').value = expert.temperature ?? 0.7;
+                    const preview = overlay.querySelector('#te-import-preview');
+                    if (preview) {
+                        preview.style.display = 'block';
+                        preview.innerHTML = '✅ 已导入: <b>' + escapeHtml(expert.name) + '</b> (' + escapeHtml(expert.tag) + ')';
+                    }
+                });
+            });
+        }
+    }
+
+    // Submit handler
+    overlay.querySelector('#te-submit-btn').addEventListener('click', async () => {
+        const name = document.getElementById('te-name').value.trim();
+        const tag = document.getElementById('te-tag').value.trim();
+        const persona = document.getElementById('te-persona').value.trim();
+        const temperature = parseFloat(document.getElementById('te-temperature').value) || 0.7;
+
+        if (!name || !tag || !persona) {
+            alert('名称、标签和人设都不能为空');
+            return;
+        }
+
+        try {
+            const url = isEdit
+                ? `/teams/${encodeURIComponent(currentGroupId)}/experts/${encodeURIComponent(tag)}`
+                : `/teams/${encodeURIComponent(currentGroupId)}/experts`;
+            const method = isEdit ? 'PUT' : 'POST';
+            const resp = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, tag, persona, temperature })
+            });
+            const result = await resp.json();
+            if (!resp.ok) {
+                alert(result.error || '操作失败');
+                return;
+            }
+            overlay.remove();
+            loadTeamExperts();
+        } catch (err) {
+            alert('网络错误: ' + err.message);
+        }
+    });
+}
+
+// ── Edit Team Expert ──
+async function editTeamExpert(tag) {
+    if (!currentGroupId) return;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/experts`);
+        if (!resp.ok) { alert('加载失败'); return; }
+        const data = await resp.json();
+        const expert = (data.experts || []).find(e => e.tag === tag);
+        if (!expert) { alert('未找到专家 tag=' + tag); return; }
+        showAddTeamExpertModal(expert);
+    } catch (err) {
+        alert('网络错误: ' + err.message);
+    }
+}
+
+// ── Delete Team Expert ──
+async function deleteTeamExpert(tag, name) {
+    if (!confirm(`删除团队专家 "${name}" (${tag})？`)) return;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/experts/${encodeURIComponent(tag)}`, {
+            method: 'DELETE'
+        });
+        const result = await resp.json();
+        if (!resp.ok) {
+            alert(result.error || '删除失败');
+            return;
+        }
+        loadTeamExperts();
+    } catch (err) {
+        alert('网络错误: ' + err.message);
+    }
+}
+
+// ─── Add one of the user's agents to the team ───
+let _importSelectedAgent = null;
+
+function showImportAgentModal() {
+    // Close the add-member modal
+    const addOverlay = document.getElementById('add-team-member-overlay');
+    if (addOverlay) addOverlay.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'orch-modal-overlay';
+    overlay.id = 'import-agent-overlay';
+    overlay.innerHTML = `
+        <div class="orch-modal" style="min-width:380px;max-width:500px;">
+            <h3>📥 导入已有 Agent</h3>
+            <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">从你的 Agent 中选择，加入当前团队：</div>
+            <div id="import-agent-list" style="max-height:300px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:4px;">
+                <div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">⏳ 加载中...</div>
+            </div>
+            <div class="orch-modal-btns" style="margin-top:12px;">
+                <button onclick="document.getElementById('import-agent-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
+                <button id="import-agent-join-btn" onclick="_doImportAgent()" disabled style="padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:white;cursor:pointer;font-size:12px;opacity:0.5;">加入团队</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    _importSelectedAgent = null;
+    _loadImportAgentList();
+}
+
+async function _loadImportAgentList() {
+    const listEl = document.getElementById('import-agent-list');
+    if (!listEl) return;
+    try {
+        const [agents, team] = await Promise.all([
+            agentApi('GET', '/v1/agents'),
+            agentApi('GET', `/v1/teams/${encodeURIComponent(currentGroupId)}`),
+        ]);
+        const inside = new Set((team.members || []).map(m => m.agent.agent_id));
+        const candidates = (agents.data || []).filter(a => !inside.has(a.agent_id))
+            .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+        if (candidates.length === 0) {
+            listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">没有可加入的 Agent</div>';
+            return;
+        }
+        listEl.innerHTML = candidates.map(a => {
+            return `<div class="import-item" data-agent="${escapeHtml(a.agent_id)}" data-name="${escapeHtml(a.name)}"
+                         onclick="_selectImportAgent(this)"
+                         style="padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .15s;border:2px solid transparent;">
+                <div style="width:32px;height:32px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:14px;">${a.platform === 'webot' ? '🤖' : '◈'}</div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:12px;font-weight:600;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(a.name)}</div>
+                    <div style="font-size:10px;color:#9ca3af;font-family:monospace;">${escapeHtml(a.agent_id)} \u00b7 ${escapeHtml(a.platform)}</div>
+                </div>
+            </div>`;
+        }).join('');
+    } catch(e) {
+        listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#ef4444;">加载失败: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+function _selectImportAgent(el) {
+    el.parentElement.querySelectorAll('.import-item').forEach(item => {
+        item.style.borderColor = 'transparent';
+        item.style.background = '';
+    });
+    el.style.borderColor = '#2563eb';
+    el.style.background = '#eff6ff';
+    _importSelectedAgent = { agent: el.dataset.agent, name: el.dataset.name };
+    const btn = document.getElementById('import-agent-join-btn');
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+}
+
+async function _doImportAgent() {
+    if (!_importSelectedAgent) { alert('请先选择一个 Agent'); return; }
+    const { agent, name } = _importSelectedAgent;
+    try {
+        await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, { agent, role: name });
+        alert('✅ Agent 已加入团队');
+        document.getElementById('import-agent-overlay').remove();
+        loadTeamMembers();
+        const membersOverlay = document.getElementById('team-members-overlay');
+        if (membersOverlay) membersOverlay.style.display = 'flex';
+    } catch (e) {
+        console.error('Failed to add the agent to the team:', e);
+        alert('导入失败: ' + e.message);
+    }
+}
+
+// ================================================================
+// ===== Studio chat switcher: WeBot or an ACP tool =====
+// ================================================================
+
+function acpSanitizeSessionSlug(s) {
+    let t = String(s || '').trim();
+    if (!t) return '';
+    t = t.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^[_-]+|[_-]+$/g, '');
+    return t.length > 64 ? t.slice(0, 64) : t;
+}
+
+function acpGetSessionPickValue() {
+    const sel = document.getElementById('oc-acp-session-pick');
+    return sel && String(sel.value || '').trim();
+}
+
+function acpSetSessionStatus(message = '', kind = '') {
+    const el = document.getElementById('oc-acp-session-status');
+    if (!el) return;
+    el.textContent = message || '';
+    el.className = 'oc-acp-session-status' + (kind ? ' ' + kind : '');
+}
+
+function acpComputeSessionNameFromInputs() {
+    const tool = _acpTool || '';
+    const pick = acpGetSessionPickValue();
+    if (pick) return pick;
+    const sid = (typeof currentSessionId !== 'undefined' && currentSessionId) ? String(currentSessionId).trim() : 'main';
+    const inp = document.getElementById('oc-acp-session-name');
+    const raw = inp ? String(inp.value || '').trim() : '';
+    return acpSanitizeSessionSlug(raw) || acpSanitizeSessionSlug(`${tool}-${sid}`);
+}
+
+function acpResolvedSessionStorageKey(cacheKey) {
+    return 'clawcross_acp_resolved_session_' + String(cacheKey || '');
+}
+
+function acpRememberResolvedSessionName(name, cacheKey = null) {
+    const resolved = String(name || '').trim();
+    const key = String(cacheKey || _acpTranscriptKey() || '').trim();
+    if (!resolved || !key) return;
+    _acpResolvedSessionNameByKey[key] = resolved;
+    try {
+        localStorage.setItem(acpResolvedSessionStorageKey(key), resolved);
+    } catch (e) {
+        /* ignore */
+    }
+}
+
+function acpResolveSessionName() {
+    const key = _acpTranscriptKey();
+    const remembered = _acpResolvedSessionNameByKey[key]
+        || localStorage.getItem(acpResolvedSessionStorageKey(key))
+        || '';
+    if (remembered) return remembered;
+    const computed = acpComputeSessionNameFromInputs();
+    if (computed) acpRememberResolvedSessionName(computed, key);
+    return computed;
+}
+
+/** Transcript + backend session: tool + list pick, custom slug, or Clawcross session id. */
+function acpComputeTranscriptKey() {
+    const tool = _acpTool || '';
+    const pick = acpGetSessionPickValue();
+    if (pick) return tool + '|__pick__|' + pick;
+    const sid = (typeof currentSessionId !== 'undefined' && currentSessionId) ? String(currentSessionId) : 'default';
+    const inp = document.getElementById('oc-acp-session-name');
+    const raw = inp ? String(inp.value || '').trim() : '';
+    const slug = acpSanitizeSessionSlug(raw);
+    const suffix = slug || ('__sid__' + sid);
+    return tool + '|' + suffix;
+}
+
+function _acpTranscriptKey() {
+    return acpComputeTranscriptKey();
+}
+
+function acpSyncSessionInputFromStorage() {
+    const inp = document.getElementById('oc-acp-session-name');
+    if (!inp || !_acpTool) return;
+    inp.value = localStorage.getItem('clawcross_acp_session_name_' + _acpTool) || '';
+}
+
+function acpUpdateSessionInputsDisabledState() {
+    const pick = acpGetSessionPickValue();
+    const inp = document.getElementById('oc-acp-session-name');
+    if (inp) inp.disabled = !!pick;
+}
+
+function acpNotifySessionContextChanged() {
+    if (_ocChatMode !== 'acp' || !_acpTool) return;
+    const newKey = acpComputeTranscriptKey();
+    const agentId=acpResolveSessionName();
+    if(agentId)document.dispatchEvent(new CustomEvent('clawcross:agent-selected',{detail:{agentId}}));
+    if (window.ExternalAgentSettings) ExternalAgentSettings.syncMenu();
+    if (newKey === _acpLastTranscriptKey) return;
+    _acpLastTranscriptKey = newKey;
+    acpRememberResolvedSessionName(acpComputeSessionNameFromInputs(), newKey);
+    acpPaintTranscript();
+    renderStudioConversations();
+}
+
+function acpOnSessionPickChange() {
+    if (!_acpTool) return;
+    const v = acpGetSessionPickValue();
+    if(v)document.dispatchEvent(new CustomEvent('clawcross:agent-selected',{detail:{agentId:v}}));
+    if (v) localStorage.setItem('clawcross_acp_session_pick_' + _acpTool, v);
+    else localStorage.removeItem('clawcross_acp_session_pick_' + _acpTool);
+    acpSetSessionStatus('');
+    acpUpdateSessionInputsDisabledState();
+    acpNotifySessionContextChanged();
+}
+
+async function acpLoadSessionsList() {
+    if (!_acpTool) return;
+    const sel = document.getElementById('oc-acp-session-pick');
+    if (!sel) return;
+    const revision = _agentListRevision;
+    const tool = _acpTool;
+    const prev = sel.value;
+    sel.disabled = true;
+    acpSetSessionStatus('');
+    try {
+        // The sessions of this tool are its agents.
+        const j = await agentApi('GET', '/v1/agents');
+        if (revision !== _agentListRevision || tool !== _acpTool) return;
+        const sessions = (j.data || []).filter((a) => a.platform === tool).sort((a,b)=>_timeValue(b.updated_at)-_timeValue(a.updated_at));
+        const stored = localStorage.getItem('clawcross_acp_session_pick_' + tool);
+        const missing = new Set([prev, stored].filter(id => id && !(j.data || []).some(a => a.agent_id === id)));
+        for (const id of missing) forgetDeletedAgent(id);
+        sel.innerHTML = '';
+        const o0 = document.createElement('option');
+        o0.value = '';
+        o0.textContent = t('oc_acp_session_pick_none');
+        sel.appendChild(o0);
+        for (const a of sessions) {
+            const opt = document.createElement('option');
+            opt.value = a.agent_id;
+            opt.textContent = a.settings?.title || a.name;
+            opt.dataset.conversationTitle = a.settings?.title || a.status?.title || '';
+            opt.dataset.agentName = a.name;
+            sel.appendChild(opt);
+        }
+        if (stored && Array.from(sel.options).some((o) => o.value === stored)) sel.value = stored;
+        else if (prev && Array.from(sel.options).some((o) => o.value === prev)) sel.value = prev;
+        else sel.value = '';
+        acpUpdateSessionInputsDisabledState();
+    } catch (e) {
+        if (revision !== _agentListRevision || tool !== _acpTool) return;
+        console.error('acpLoadSessionsList', e);
+        alert(t('error') + ': ' + (e && e.message ? e.message : e));
+    } finally {
+        sel.disabled = false;
+        renderStudioConversations();
+    }
+}
+
+// The visible external agent's conversation: its history, then the turn it is
+// running, followed through GET /v1/agents/{id}/events. A turn does not depend on
+// the page that sent it, so any page that opens the agent shows it the same way.
+async function acpLoadSessionHistory(options = {}) {
+    const chatBox = document.getElementById('chat-box');
+    if (!chatBox || !_acpTool) return false;
+    const sessionName = acpResolveSessionName();
+    if (!sessionName) return false;
+    const contextKey = chatRunContextKey();
+    if (options.showLoading !== false) {
+        chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
+    }
+    const html = await studioAgentHistoryHtml(sessionName);
+    if (chatRunContextKey() !== contextKey) return true;  // another conversation is showing
+    if (!html) return false;
+    chatBox.innerHTML = html;
+    ClawcrossNativeSessions.attachHistoryPager({agentId:sessionName,container:chatBox,nextBefore:studioHistoryCursors.get(sessionName),render:studioHistoryHtml});
+    ocRefreshTtsButtonsIn(chatBox);
+    if (_acpFollower && _acpFollower.agentId === sessionName && _acpFollower.view) chatBox.appendChild(_acpFollower.view.el);
+    scrollChatToBottom(chatBox, { force: options.keepScroll !== true });
+    return true;
+}
+
+async function acpPaintTranscript() {
+    const chatBox = document.getElementById('chat-box');
+    if (!chatBox || !_acpTool) return;
+    _acpLastTranscriptKey = acpComputeTranscriptKey();
+    if (!await acpLoadSessionHistory()) {
+        chatBox.innerHTML = ConversationStart.welcome({label: _acpDisplayLabel(_acpTool || '')});
+        scrollChatToBottom(chatBox, { force: true });
+    }
+    acpFollow(acpResolveSessionName());
+}
+
+let _acpFollower = null;
+
+function acpUnfollow() {
+    const follower = _acpFollower;
+    _acpFollower = null;
+    if (!follower) return;
+    follower.controller.abort();
+    follower.view?.stop();
+    follower.view?.el.remove();
+}
+
+function acpFollow(agentId) {
+    if (_acpFollower && _acpFollower.agentId === agentId) return;
+    acpUnfollow();
+    if (!agentId) return;
+    const follower = {agentId, controller: new AbortController(), cursor: 0, turnId: null, view: null};
+    _acpFollower = follower;
+    void acpFollowLoop(follower);
+}
+
+async function acpFollowLoop(follower) {
+    const following = () => _acpFollower === follower;
+    let attaching = true;
+    while (following()) {
+        let data;
+        try {
+            const response = await fetch(`/v1/agents/${encodeURIComponent(follower.agentId)}/events?after=${follower.cursor}&wait=${attaching ? 0 : 25}`,
+                {signal: follower.controller.signal});
+            if (response.status === 404) {  // not made yet: the first message makes it and follows again
+                if (following()) _acpFollower = null;
+                return;
+            }
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            data = await response.json();
+        } catch (e) {
+            if (!following()) return;
+            await new Promise((resolve) => setTimeout(resolve, 2000));  // the connection dropped: retry
+            continue;
+        }
+        if (!following()) return;
+        await acpShowTurn(follower, data, attaching);
+        follower.cursor = data.cursor;
+        attaching = false;
+    }
+}
+
+async function acpShowTurn(follower, data, attaching) {
+    const chatBox = document.getElementById('chat-box');
+    const turn = data.turn;
+    const fresh = !!turn && turn.id !== follower.turnId;
+    if (fresh) {
+        follower.view?.stop();
+        follower.view?.el.remove();
+        follower.view = null;
+        follower.turnId = turn.id;
+        // Its prompt (and, if it is already over, all of it) is in the history now.
+        if (!attaching) await acpLoadSessionHistory({showLoading: false, keepScroll: true});
+        if (_acpFollower !== follower) return;
+    }
+    if (turn && turn.running) {
+        if (!follower.view) {
+            document.getElementById('typing-indicator')?.remove();
+            follower.view = AgentTurns.live(turn);
+            chatBox.appendChild(follower.view.el);
+        }
+        follower.view.update(data.items);
+        setSystemBusyUI(true);
+        scrollChatToBottom(chatBox, { settle: false });
+    } else if (follower.view) {
+        follower.view.stop();
+        await acpLoadSessionHistory({showLoading: false, keepScroll: true});
+        follower.view.el.remove();
+        follower.view = null;
+        if (_acpFollower === follower) setSystemBusyUI(false);
+    } else if (fresh && !attaching) {
+        setSystemBusyUI(false);
+    }
+}
+
+// Start a turn of the visible external agent. It runs on its own, so the stream
+// is not read: the follower shows the turn like any other page would.
+async function acpSendTurn(msgContent) {
+    const agentId = acpResolveSessionName();
+    const payload = { model: _acpTool, messages: [{ role: 'user', content: msgContent }], stream: true, session_id: agentId };
+    applyRunModeToPayload(payload);
+    setSystemBusyUI(true);
+    try {
+        const response = await fetch('/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (response.status === 401) {
+            document.getElementById('typing-indicator')?.remove();
+            appendMessage(t('login_expired'), false);
+            showLoginScreen();
+            return;
+        }
+        if (!response.ok) throw new Error(await extractErrorMessageFromResponse(response, 'Agent error'));
+        response.body?.cancel().catch(() => {});
+        acpFollow(agentId);  // a new agent exists now
+        void acpLoadSessionsList();
+    } catch (error) {
+        document.getElementById('typing-indicator')?.remove();
+        appendMessage(t('agent_error') + ': ' + (error && error.message ? error.message : formatApiErrorField(error)), false);
+        if (!_acpFollower?.view) setSystemBusyUI(false);
+    }
+}
+
+function ocRefreshTtsButtonsIn(chatBox) {
+    if (!chatBox) return;
+    chatBox.querySelectorAll('.message-agent .tts-btn').forEach((btn) => btn.remove());
+    chatBox.querySelectorAll('.message-agent.tc-markdown').forEach((div) => {
+        const text = extractTtsTextFromElement(div);
+        if (text && String(text).trim()) {
+            div.appendChild(createTtsButton(() => extractTtsTextFromElement(div)));
+        }
+    });
+    highlightMarkdownIn(chatBox);
+}
+
+async function studioEnsureAgent(agentId, fields) {
+    try {
+        await agentApi('POST', '/v1/agents', { agent_id: agentId, ...fields });
+    } catch (e) {
+        if (e.status !== 409) throw e;  // already there
+    }
+}
+
+const studioHistoryCursors = new Map();
+
+async function studioAgentHistoryHtml(agentId) {
+    try {
+        const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(agentId)}/history?limit=40`);
+        studioHistoryCursors.set(agentId, data.next_before);
+        return studioHistoryHtml(data.messages || []) || null;
+    } catch (e) {
+        return null;  // not made yet
+    }
+}
+
+function studioHistoryHtml(messages) {
+    return AgentTurns.historyHtml(messages);
+}
+
+/**
+ * Switch between WeBot (internal) and an ACP tool (codex / claude / openclaw / … via acpx).
+ */
+async function ocSwitchTo(mode, acpTool, options = {}) {
+    const nextAcp = (mode === 'acp' && acpTool) ? String(acpTool).toLowerCase() : null;
+    if (nextAcp && !_acpToolsCache.includes(nextAcp)) {
+        return;
+    }
+    const prevMode = _ocChatMode;
+    const prevAcpTool = _acpTool;
+    const modeChanged = prevMode !== mode;
+    const acpToolChanged = mode === 'acp' && prevAcpTool !== nextAcp;
+
+    if (mode !== 'acp') acpUnfollow();
+
+    _ocChatMode = mode;
+    _acpTool = nextAcp;
+    window.StudioSidebar?.updatePlatform();
+    if (mode !== 'acp' || acpToolChanged) {
+        acpSetSessionStatus('');
+    }
+
+    const tabInternal = document.getElementById('oc-tab-internal');
+    const acpTabs = document.getElementById('oc-acp-tabs');
+
+    if (tabInternal) tabInternal.classList.toggle('active', mode === 'internal');
+    if (acpTabs) {
+        acpTabs.querySelectorAll('.oc-switcher-tab[data-acp-tool]').forEach((btn) => {
+            btn.classList.toggle('active', mode === 'acp' && btn.dataset.acpTool === _acpTool);
+        });
+    }
+
+    if (mode === 'acp') {
+        acpSyncSessionInputFromStorage();
+        if(options.agent){
+            const select=document.getElementById('oc-acp-session-pick');
+            let option=[...select.options].find(item=>item.value===options.agent.agent_id);
+            if(!option){option=document.createElement('option');option.value=options.agent.agent_id;select.append(option);}
+            option.textContent=options.agent.name;option.dataset.agentName=options.agent.name;option.dataset.conversationTitle=options.agent.settings?.title||'';select.value=option.value;
+            document.dispatchEvent(new CustomEvent('clawcross:agent-selected',{detail:{agentId:option.value}}));
+        }else if (modeChanged || acpToolChanged) {
+            await acpLoadSessionsList();
+        }
+        await acpPaintTranscript();
+    } else {
+        await switchToSession(currentSessionId, modeChanged, { quiet: true });
+    }
+
+    restoreActiveChatRunForCurrentContext();
+    void syncCurrentChatRunUI();
+
+    ocSyncSessionSubrowsVisibility();
+    if (window.ExternalAgentSettings) void ExternalAgentSettings.syncMenu();
+    if (_ocChatMode === 'internal') {
+        ocInternalRepaintSessionPick();
+    }
+}
+
+/**
+ * Initialize the chat backend switcher (WeBot / ACP tools). Shown when acpx is available.
+ */
+async function ocInitSwitcher() {
+    const switcher = document.getElementById('studio-chat-switcher');
+    if (!switcher) return;
+    const unavailable = document.getElementById('studio-acpx-unavailable');
+    if (unavailable) initComponentControls(unavailable);
+
+    const acpTabs = document.getElementById('oc-acp-tabs');
+
+    try {
+        const acpResp = await fetch('/proxy_acpx_status');
+        let acpData = { available: false };
+        try {
+            acpData = await acpResp.json();
+        } catch (_) {
+            /* ignore */
+        }
+
+        _acpToolsCache = Array.isArray(acpData && acpData.tools)
+            ? acpData.tools.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean)
+            : [];
+        const remoteAgents=await agentApi('GET','/v1/agents').catch(()=>({data:[]}));
+        const remotePlatforms=(remoteAgents.data||[]).filter(agent=>agent.location?.kind==='ssh').map(agent=>agent.platform);
+        _acpToolsCache=[...new Set([..._acpToolsCache,...remotePlatforms])];
+        _acpAvailable = !!((acpData?.available || remotePlatforms.length) && _acpToolsCache.length > 0);
+        if (_acpAvailable) {
+            ocRenderAcpTabs(_acpToolsCache);
+            if (_acpTool && !_acpToolsCache.includes(_acpTool)) _acpTool = null;
+            if (!_acpTool) _acpTool = _acpToolsCache[0] || null;
+        } else {
+            _acpTool = null;
+            ocRenderAcpTabs([]);
+        }
+        if (unavailable) unavailable.hidden = _acpAvailable;
+        if (_acpAvailable) {
+            switcher.style.display = '';
+            if (acpTabs) {
+                acpTabs.style.display = _acpAvailable ? 'inline-flex' : 'none';
+            }
+        } else {
+            switcher.style.display = 'none';
+            if (acpTabs) acpTabs.style.display = 'none';
+        }
+        ocSyncSessionSubrowsVisibility();
+    } catch (e) {
+        _acpAvailable = false;
+        _acpToolsCache = [];
+        _acpTool = null;
+        ocRenderAcpTabs([]);
+        switcher.style.display = 'none';
+        if (unavailable) unavailable.hidden = false;
+        if (unavailable) initComponentControls(unavailable);
+        if (acpTabs) acpTabs.style.display = 'none';
+        console.log('Chat switcher init failed:', e && e.message);
+        ocSyncSessionSubrowsVisibility();
+    }
+}
+
+window.addEventListener("clawcross:agent-imported", () => { void refreshAgentCenter(); });

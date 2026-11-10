@@ -1,0 +1,12 @@
+.device-connections-dialog { width:min(650px,calc(100vw - 24px)); max-height:calc(100dvh - 32px); box-sizing:border-box; overflow:auto; padding:22px; border:1px solid var(--ui-hairline); border-radius:20px; color:var(--ui-text); background:var(--ui-surface); font:14px/1.5 var(--ui-font); }
+.device-connections-dialog::backdrop { background:#0005; backdrop-filter:blur(5px); }
+.device-connections-dialog header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.device-connections-dialog h2 { font-size:20px; margin:0; }
+.device-connections-dialog p,.device-connections-dialog small { color:var(--ui-text-2); }
+.device-connections-dialog button { border:1px solid var(--ui-hairline); background:var(--ui-surface-2); color:var(--ui-text); border-radius:9px; padding:8px 12px; font:inherit; cursor:pointer; }
+.device-connection-row { display:grid; gap:5px; border:1px solid var(--ui-hairline); border-radius:12px; padding:14px; margin:10px 0; overflow-wrap:anywhere; }
+.device-connection-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:5px; }
+.device-connection-form { display:grid; gap:12px; margin-top:18px; }
+.device-connection-form label { display:grid; gap:5px; }
+.device-connection-form input,.device-connection-form select { min-width:0; width:100%; box-sizing:border-box; padding:9px 10px; border:1px solid var(--ui-hairline); border-radius:9px; background:var(--ui-surface); color:var(--ui-text); font:inherit; }
+.device-connection-form details { display:grid; gap:10px; }

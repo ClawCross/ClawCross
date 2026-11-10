@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261108041351745486",
+  "candidate_id": "verification-loop-3",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-08T04:13:51.745445+00:00"
+  },
+  "commands": [
+    {
+      "command": "ACP shutdown and dependency architecture regression",
+      "ok": false,
+      "stdout": "201 regression tests passed; real Codex initialize, prompt and same-ID resume succeeded. Shutdown reproducer passed after repair.",
+      "stderr": "During shutdown, closing a peer first can let queued operations start replacement processes. Mark manager closed, reject new acquisition, cancel and join tracked operations, then retire peers and stop the actor loop. The official ACP SDK is now a pinned core dependency; adapter programs remain explicit optional installs. Update the prior optional-SDK assertion accordingly."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-08T04:13:51.745528+00:00",
+  "asset_id": "sha256:f0f81ecf5e0420b51cb4fe2696ecb82d7a1fcaeb96eb39b10dba683e8d44cc1a"
+}

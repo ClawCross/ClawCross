@@ -1,0 +1,207 @@
+"""
+Cost Tracker – OpenClaw style real-time cost monitoring.
+
+Features:
+- Per-session and per-user cost tracking
+- Model-specific pricing (input/output/cache rates)
+- Cost limit enforcement with configurable thresholds
+- Session cost breakdown by model and tool usage
+- Historical cost analytics
+
+Ported from openclaw-claude-code's cost tracking system.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+# Explicit overrides are exact model keys; pricing otherwise comes from the fixed catalog.
+_MODEL_PRICING: dict[str, dict[str, float]] = {}
+
+
+def _get_model_pricing(model: str) -> dict:
+    from common.model_capabilities import catalog_model
+    if model in _MODEL_PRICING:
+        return {**_MODEL_PRICING[model], "status": "custom"}
+    raw = catalog_model(model).get("pricing", {})
+    known = raw.get("status") == "known" and raw.get("currency") == "USD"
+    return {"input": float(raw.get("input", 0) or 0), "output": float(raw.get("output", 0) or 0),
+            "cache_read": float(raw.get("cacheRead", 0) or 0),
+            "cache_write": float(raw.get("cacheWrite", 0) or 0),
+            "status": "snapshot_estimate" if known else "unavailable", "tiers": raw.get("tieredPricing", [])}
+
+
+@dataclass
+class CostEntry:
+    """A single cost entry from one LLM call."""
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cost_usd: float = 0.0
+    pricing_status: str = "unavailable"
+    timestamp: float = field(default_factory=time.time)
+
+    def calculate_cost(self) -> float:
+        """Calculate cost based on token counts and model pricing."""
+        pricing = _get_model_pricing(self.model)
+        self.pricing_status = pricing["status"]
+        # Select the applicable long-context tier, including cached input.
+        for tier in pricing.get("tiers", []):
+            bounds = tier.get("range", [0])
+            if bounds and self.input_tokens + self.cache_read_tokens >= bounds[0]:
+                pricing = {**pricing, **{k: tier[k] for k in ("input", "output") if k in tier},
+                           "cache_read": tier.get("cacheRead", pricing["cache_read"]),
+                           "cache_write": tier.get("cacheWrite", pricing["cache_write"])}
+        cost = (
+            (self.input_tokens / 1_000_000) * pricing["input"]
+            + (self.output_tokens / 1_000_000) * pricing["output"]
+            + (self.cache_read_tokens / 1_000_000) * pricing["cache_read"]
+            + (self.cache_write_tokens / 1_000_000) * pricing["cache_write"]
+        )
+        self.cost_usd = round(cost, 6)
+        return self.cost_usd
+
+
+@dataclass
+class SessionCostTracker:
+    """Tracks costs for a single session."""
+    user_id: str
+    session_id: str
+    entries: list[CostEntry] = field(default_factory=list)
+    cost_limit_usd: float = 10.0  # Default $10 limit per session
+    _created_at: float = field(default_factory=time.time)
+
+    @property
+    def total_cost(self) -> float:
+        return sum(e.cost_usd for e in self.entries)
+
+    @property
+    def total_input_tokens(self) -> int:
+        return sum(e.input_tokens for e in self.entries)
+
+    @property
+    def total_output_tokens(self) -> int:
+        return sum(e.output_tokens for e in self.entries)
+
+    @property
+    def is_over_limit(self) -> bool:
+        return self.total_cost >= self.cost_limit_usd
+
+    @property
+    def remaining_budget(self) -> float:
+        return max(0.0, self.cost_limit_usd - self.total_cost)
+
+    def record(
+        self,
+        model: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+    ) -> CostEntry:
+        """Record a new cost entry."""
+        entry = CostEntry(
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+        )
+        entry.calculate_cost()
+        self.entries.append(entry)
+        return entry
+
+    def get_breakdown(self) -> dict[str, Any]:
+        """Get cost breakdown by model."""
+        by_model: dict[str, dict[str, Any]] = {}
+        for entry in self.entries:
+            if entry.model not in by_model:
+                by_model[entry.model] = {
+                    "calls": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                    "pricing_status": entry.pricing_status,
+                }
+            by_model[entry.model]["calls"] += 1
+            by_model[entry.model]["input_tokens"] += entry.input_tokens
+            by_model[entry.model]["output_tokens"] += entry.output_tokens
+            by_model[entry.model]["cost_usd"] += entry.cost_usd
+
+        return {
+            "total_cost_usd": round(self.total_cost, 4),
+            "pricing_status": "partial_unavailable" if any(e.pricing_status == "unavailable" for e in self.entries) else "snapshot_estimate",
+            "total_calls": len(self.entries),
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "cost_limit_usd": self.cost_limit_usd,
+            "remaining_budget_usd": round(self.remaining_budget, 4),
+            "is_over_limit": self.is_over_limit,
+            "by_model": by_model,
+        }
+
+    def format_cost_notice(self) -> str:
+        """Format a cost notice for injection into the per-turn context block.
+
+        Reported as a bucketed share of the limit, not an exact dollar figure.
+        The block is sent but never written back to history, so it is only
+        re-sent when it changes; a running total to four decimals differs on
+        every call, which would re-send the block every tool round and leave
+        each request's cache entry ending in content the next request no
+        longer has. The bucket and the limit are what the model acts on.
+        """
+        total = self.total_cost
+        if total < 0.01:
+            return ""
+        limit_pct = int((total / self.cost_limit_usd) * 100) if self.cost_limit_usd > 0 else 0
+        bucket = limit_pct // 10 * 10
+        if limit_pct >= 90:
+            return (
+                f"⚠️ 会话成本已用掉 ${self.cost_limit_usd} 上限的 >{bucket}%。"
+                "请立即完成当前任务。"
+            )
+        if limit_pct >= 70:
+            return (
+                f"💰 会话成本已用掉 ${self.cost_limit_usd} 上限的 >{bucket}%。"
+                "请注意控制成本。"
+            )
+        return ""
+
+
+# Global tracker store
+_trackers: dict[str, SessionCostTracker] = {}
+
+
+def get_cost_tracker(user_id: str, session_id: str) -> SessionCostTracker:
+    """Get or create cost tracker for a session."""
+    key = f"{user_id}#{session_id}"
+    if key not in _trackers:
+        _trackers[key] = SessionCostTracker(user_id=user_id, session_id=session_id)
+    return _trackers[key]
+
+
+def set_session_cost_limit(user_id: str, session_id: str, limit_usd: float) -> None:
+    """Set cost limit for a session."""
+    tracker = get_cost_tracker(user_id, session_id)
+    tracker.cost_limit_usd = max(0.01, limit_usd)
+
+
+def get_user_total_cost(user_id: str) -> float:
+    """Get total cost across all sessions for a user."""
+    return sum(
+        t.total_cost for key, t in _trackers.items()
+        if key.startswith(f"{user_id}#")
+    )
+
+
+def update_model_pricing(model: str, pricing: dict[str, float]) -> None:
+    """Update pricing for a model at runtime."""
+    _MODEL_PRICING[model] = pricing

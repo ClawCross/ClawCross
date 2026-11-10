@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const helperPath = path.resolve(__dirname, '../frontend/js/tinyfish-live-shared.js');
+const helperPath = path.resolve(__dirname, '../src/frontend/static/js/tinyfish-live-shared.js');
 const code = fs.readFileSync(helperPath, 'utf8');
 
 const context = {

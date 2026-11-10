@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261103170337358277",
+  "candidate_id": "blended-verification-loop-approval-auth",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-03T17:03:37.358243+00:00"
+  },
+  "commands": [
+    {
+      "command": "Playwright Agent settings checks (local mock frontend)",
+      "ok": false,
+      "stdout": "",
+      "stderr": "The tool execution sandbox denied socket.socket while Flask bound 127.0.0.1:51219: PermissionError [Errno 1] Operation not permitted. Run the same local-only browser verification with approved execution permissions; all model API requests remain mocked. This is a test runner environment limitation, not a frontend failure."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-03T17:03:37.358302+00:00",
+  "asset_id": "sha256:49c6d6e38deee8e724ba4b8bb94d07e4fdb5b48aaa353bcb2d8661375badd84c"
+}

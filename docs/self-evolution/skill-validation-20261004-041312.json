@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261004041312673353",
+  "candidate_id": "blended-verification-loop-structured-output",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-04T04:13:12.673324+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "",
+      "stderr": "======================================================================\nFAIL: test_strict_tool_array_stays_within_budget (test.test_tool_schemas.McpToolInventory.test_strict_tool_array_stays_within_budget)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/ubuntu/work2/ClawCross/test/test_tool_schemas.py\", line 307, in test_strict_tool_array_stays_within_budget\n    self.assertLessEqual(\nAssertionError: 43584 not less than or equal to 42000 : strict tool array is 43584 chars; raise the budget only on purpose\n\n----------------------------------------------------------------------\nRan 43 tests in 2.775s\n\nFAILED (failures=1)"
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-04T04:13:12.673398+00:00",
+  "asset_id": "sha256:0c4a56b8ed92c8b03d08cdc66ce293227813d9476d6a2ed2aaf9c03222091412"
+}

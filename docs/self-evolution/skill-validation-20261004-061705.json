@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261004061705174034",
+  "candidate_id": "blended-verification-loop-workspace-preflight-bounded-execution",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-04T06:17:05.173990+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": ".............F............................................. [ 88%]\n........                                                          [100%]\n=================================== FAILURES ===================================\n_ TestGateway.test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records _\n\nself = <test.test_agents.TestGateway testMethod=test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records>\n\n    def test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records(self):\n        svc = self.store.create(\"alice\", name=\"Svc\", driver=HTTP, config={\"platform\": \"svc\", \"api_url\": \"http://svc\"})\n        self.ask(svc)\n        url, body, _headers = _Http.posts[0]\n        self.assertEqual((url, body[\"session_id\"]), (\"http://svc/v1/chat/completions\", f\"clawcross-alice-{svc.agent_id}\"))\n        told = body[\"messages\"][0][\"content\"]\n        self.assertIn(\"PERSONA\", told)\n        self.assertTrue(told.endswith(\"\\n\\nhi\"))  # the identity comes before the message\n        self.assertIn(\"PERSONA\", self.store.get(\"alice\", svc.agent_id).runtime[\"dynamic_context\"][\"identity_persona\"])\n        self.store.patch_runtime(\"alice\", svc.agent_id, {\"other_runtime_field\": \"keep\"})\n        self.ask(svc)  # keep using the original object, as a queued caller may do\n>       self.assertEqual(_Http.posts[1][1][\"messages\"][0][\"content\"], \"hi\")  # already told\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       AssertionError: '【本轮 workspace】\\n{\"cwd\": \"/tmp/clawcross-a[409 chars]\\nhi' != 'hi'\nE       - 【本轮 workspace】\nE       - {\"cwd\": \"/tmp/clawcross-agent-profiles-tests/workspace/users/alice\", \"files\": {\"directories\": [\"skills\"], \"files\": [], \"limited\": false, \"observed_entries\": 1, \"recent_changes\": {\"added\": [\"skills\"], \"modified\": [], \"removed\": []}, \"revision\": \"66a317f74e659c4f\", \"scope\": \"文件名与元数据的有界观察，不读取正文；跳过依赖及缓存目录，非完整文件清单。\"}, \"mode\": \"shared\", \"root\": \"/tmp/clawcross-agent-profiles-tests/workspace/users/alice\", \"session_id\": \"ag_7vpn942c2j\"}\nE       - \nE         hi\n\ntest/test_agents.py:277: AssertionError\n=========================== short test summary info ============================\nFAILED test/test_agents.py::TestGateway::test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records\n1 failed, 66 passed, 20 subtests passed in 5.03s",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-04T06:17:05.174060+00:00",
+  "asset_id": "sha256:7c2d156a83807eb0a4376be830037f1ceb2b6546b24e1f52a8e1c1d1e941671d"
+}

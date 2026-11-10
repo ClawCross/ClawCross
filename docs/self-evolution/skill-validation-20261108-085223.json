@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261108085223230195",
+  "candidate_id": "verification-loop-4",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-08T08:52:23.230164+00:00"
+  },
+  "commands": [
+    {
+      "command": "npx playwright test test/browser/conversation-workspace.spec.js --config playwright.config.mjs --workers=1",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Footer regression: 5 tests passed; one expected the separate footer avatar on mobile after the user required preserving the original Profile navigation position. Corrected the mobile assertion to keep Profile visible and hide desktop-only footer controls. Live cached template also lacked the new controls wrapper: keep JS compatible with older markup and reload template workers together with versioned static assets. Verify nested control bounds, not only outer gallery bounds."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-08T08:52:23.230219+00:00",
+  "asset_id": "sha256:79a574503386ceaf65af9ac48f1ecebc8151b20ca94a9ff7867e373a151ec650"
+}

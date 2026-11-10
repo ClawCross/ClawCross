@@ -1,0 +1,364 @@
+"""Validated, atomic user/session settings for context and approval review."""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from functools import wraps
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from common.runtime_paths import USER_FILES_DIR
+
+
+class ContextSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    auto_compact: bool = True
+    context_window_tokens: int = Field(default=0, ge=0, le=4_000_000)
+    history_tokens: int = Field(default=0, ge=0, le=4_000_000)
+    trigger_tokens: int = Field(default=0, ge=0, le=4_000_000)
+    target_tokens: int = Field(default=0, ge=0, le=4_000_000)
+    preserve_recent_turns: int = Field(default=4, ge=1, le=100)
+    summary_tokens: int = Field(default=8000, ge=128, le=32000)
+    summarizer_input_tokens: int = Field(default=32000, ge=1024, le=128000)
+    summarizer_model: str = Field(default="", max_length=200)
+    preserve_instructions: str = Field(default="", max_length=4000)
+
+    @model_validator(mode="after")
+    def validate_budgets(self):
+        from webot.context_compressor import _approx_tokens
+        if 0 < self.context_window_tokens < 4096:
+            raise ValueError("context_window_tokens must be 0 (automatic) or at least 4096")
+        if self.trigger_tokens and self.target_tokens >= self.trigger_tokens:
+            raise ValueError("target_tokens must be smaller than trigger_tokens")
+        if self.history_tokens and self.trigger_tokens > self.history_tokens:
+            raise ValueError("trigger_tokens must not exceed history_tokens")
+        input_summary_cap = min(self.summary_tokens, self.summarizer_input_tokens // 2)
+        if self.summarizer_input_tokens <= input_summary_cap + _approx_tokens(self.preserve_instructions) + 512:
+            raise ValueError("summarizer_input_tokens must leave room for the previous summary and instructions")
+        return self
+
+
+class SandboxGrant(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    access: Literal['network', 'read_path', 'write_path']
+    target: str = Field(min_length=1, max_length=4096)
+
+
+def default_command_sandbox() -> str:
+    """Require isolation by default; a missing backend must never mean host execution."""
+    return 'auto'
+
+
+class ApprovalSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    mode: Literal["chat", "readonly", "manual", "auto", "bypass"] = "auto"
+    approvals_reviewer: Literal["user", "auto_review"] = "user"
+    reviewer_model: str = Field(default="", max_length=200)
+    reviewer_policy: str = Field(default="", max_length=4000)
+    reviewer_timeout_seconds: int = Field(default=120, ge=5, le=120)
+    reviewer_max_tokens: int = Field(default=16384, ge=1024, le=16384)
+    command_sandbox: Literal["off", "srt", "auto", "landlock"] = Field(default_factory=default_command_sandbox)
+    sandbox_security: Literal["standard", "strict"] = "standard"
+    sandbox_allowed_domains: list[str] = Field(default_factory=list, max_length=64)
+    sandbox_grants: list[SandboxGrant] = Field(default_factory=list, max_length=64)
+
+    @model_validator(mode='after')
+    def validate_domains(self):
+        from webot.command_sandbox import normalize_escalation, SandboxUnavailable
+        from pathlib import Path
+        try:
+            self.sandbox_allowed_domains = list(dict.fromkeys(normalize_escalation('network', value, Path.cwd()) for value in self.sandbox_allowed_domains))
+        except SandboxUnavailable as exc:
+            # Pydantic/API validation must return a field error rather than HTTP 500.
+            raise ValueError(str(exc)) from exc
+        return self
+
+    @model_validator(mode='after')
+    def enforce_strict_sandbox(self):
+        if self.sandbox_security == 'strict' and self.command_sandbox == 'off':
+            self.command_sandbox = 'auto'
+        return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_container_setting(cls, value):
+        if isinstance(value, dict) and value.get("command_sandbox") == "container":
+            return {**value, "command_sandbox": "srt"}
+        return value
+
+
+def resolve_context_window(settings: ContextSettings, model: str | None = None) -> int:
+    """Explicit capacity wins; 0 follows local model data without network access."""
+    from webot.context_limits import infer_model_context_window
+    return settings.context_window_tokens or infer_model_context_window(model)
+
+
+def resolve_context_history_budget(settings: ContextSettings, *, is_subagent: bool = False,
+                                   model: str | None = None, prefix_tokens: int = 0,
+                                   output_reserve: int = 2048) -> int:
+    from webot.context_limits import resolve_history_token_budget
+    window = resolve_context_window(settings, model)
+    available = window - prefix_tokens - output_reserve
+    if available < 512:
+        raise ValueError("System prompt and tools leave insufficient history space in the configured context window")
+    history = settings.history_tokens or resolve_history_token_budget(
+        is_subagent=is_subagent, model=model, context_window=window,
+    )
+    return min(history, available)
+
+
+def resolve_compaction_target(settings: ContextSettings | None, history_token_budget: int) -> int:
+    """Keep automatic summaries and their raw tail small, even in large windows."""
+    return (settings.target_tokens if settings else 0) or max(1, min(10_000, history_token_budget // 10))
+
+
+def resolve_compaction_summary_budget(settings: ContextSettings, target_tokens: int) -> int:
+    """Prioritize the summary, leaving space for the latest complete exchange.
+
+    A smaller input budget also leaves room for new transcript chunks beside
+    the previous summary, including legacy 8,000-token input configurations.
+    """
+    return min(settings.summary_tokens, max(1, target_tokens * 4 // 5),
+               max(1, settings.summarizer_input_tokens // 2))
+
+
+def context_usage_with_window(usage: dict, window: int) -> dict:
+    """Refresh the denominator without replacing measured tokens or breakdown."""
+    tokens = int(usage.get("tokens", 0) or 0)
+    percent = min(100, round(tokens / window * 100)) if window else 0
+    return {**usage, "budget": window, "percent": max(1, percent) if tokens else 0,
+            "remaining": max(0, window - tokens)}
+
+
+class InferenceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    reasoning_level: int = Field(default=0, ge=0, le=7)
+    reasoning_effort: Literal["", "none", "off", "minimal", "low", "medium", "high", "xhigh", "max"] = ""
+
+
+class RuntimeSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    context: ContextSettings = Field(default_factory=ContextSettings)
+    approval: ApprovalSettings = Field(default_factory=ApprovalSettings)
+    inference: InferenceSettings = Field(default_factory=InferenceSettings)
+
+
+def settings_path(user_id: str) -> Path:
+    from webot.control_storage import control_path
+    return control_path(USER_FILES_DIR, user_id, 'webot_runtime_settings.json')
+
+
+def _load(user_id: str) -> dict:
+    path = settings_path(user_id)
+    from webot.control_storage import migrate_control_file
+    migrate_control_file(USER_FILES_DIR / user_id / 'webot_runtime_settings.json', path)
+    if not path.exists():
+        return {"user": {}, "sessions": {}}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or not isinstance(raw.get("user", {}), dict) or not isinstance(raw.get("sessions", {}), dict):
+        raise ValueError("Invalid runtime settings file")
+    if set(raw) - {"user", "sessions"} or any(not isinstance(value, dict) for value in raw.get("sessions", {}).values()):
+        raise ValueError("Invalid runtime settings file")
+    return raw
+
+
+def _merge(base: dict, override: dict) -> dict:
+    if any(key not in {"context", "approval", "inference"} or not isinstance(value, dict) for key, value in base.items()):
+        raise ValueError("Invalid runtime settings section")
+    result = {k: dict(v) for k, v in base.items()}
+    for section, values in override.items():
+        if section not in {"context", "approval", "inference"} or not isinstance(values, dict):
+            raise ValueError("Invalid runtime settings section")
+        result.setdefault(section, {}).update(values)
+    return result
+
+
+def _env_defaults() -> dict:
+    context = {}
+    for key, env in (
+        ("summary_tokens", "WEBOT_COMPRESSION_SUMMARY_TOKENS"),
+    ):
+        try:
+            value = int(os.getenv(env, "0"))
+            if value > 0:
+                context[key] = value
+        except ValueError:
+            pass
+    context["auto_compact"] = os.getenv("WEBOT_COMPRESSION_DISABLED", "0").lower() in {"", "0", "false", "off", "no"}
+    context["summarizer_model"] = os.getenv("WEBOT_SUMMARIZER_MODEL", "")
+    return {"context": context, "approval": {}}
+
+
+def get_runtime_settings(user_id: str, session_id: str = "") -> RuntimeSettings:
+    data = _load(user_id)
+    defaults = _merge(_env_defaults(), data.get("user", {}))
+    from webot.subagent_permissions import parent_sessions, intersect_domains
+    from webot.runtime_store import get_session_mode
+    chain = [session_id, *parent_sessions(user_id, session_id)] if session_id else [""]
+    parent = None
+    for current in reversed(chain):
+        override = data.get("sessions", {}).get(current, {})
+        settings = RuntimeSettings.model_validate(_merge(defaults, override))
+        # A legacy explicit mode is another restriction, not a way to
+        # overwrite an inherited reviewer farther up the chain.
+        if current != session_id:
+            stored = get_session_mode(user_id, current).get("mode")
+            if stored in {"chat", "readonly", "manual", "auto", "bypass"}:
+                settings.approval.mode = stored
+            elif stored == "yolo":
+                settings.approval.mode = "bypass"
+        if parent is not None:
+            # Approval and sandbox policy follow the live parent. The child's
+            # own stricter restrictions remain; KEEP Y never crosses Agents.
+            inherited = parent.approval.model_dump()
+            own = settings.approval
+            inherited["sandbox_grants"] = [grant.model_dump() for grant in own.sandbox_grants]
+            if own.sandbox_security == "strict":
+                inherited["sandbox_security"] = "strict"
+            if parent.approval.command_sandbox == "off" and own.command_sandbox != "off":
+                inherited["command_sandbox"] = own.command_sandbox
+            if own.mode == "chat" or (own.mode == "readonly" and inherited["mode"] != "chat"):
+                inherited["mode"] = own.mode
+            if "sandbox_allowed_domains" in override.get("approval", {}):
+                inherited["sandbox_allowed_domains"] = intersect_domains(
+                    parent.approval.sandbox_allowed_domains, own.sandbox_allowed_domains)
+            if inherited["sandbox_security"] == "strict":
+                inherited["sandbox_grants"] = []
+            settings.approval = ApprovalSettings.model_validate(inherited)
+        parent = settings
+    return parent
+
+
+def runtime_settings_payload(user_id: str, session_id: str = "") -> dict:
+    data = _load(user_id)
+    from common.llm_factory import infer_provider
+    from common.model_capabilities import model_capabilities
+    from webot.command_sandbox import escalation_ceiling
+    from agents.model_profiles import agent_model_override, platform_default
+    llm = {**platform_default(), **{key: value for key, value in agent_model_override(user_id, session_id).items() if value}}
+    model = llm.get('model', '')
+    provider = infer_provider(model=model, provider=llm.get('provider', ''), base_url=llm.get('base_url', ''))
+    return {
+        "settings": get_runtime_settings(user_id, session_id).model_dump(),
+        "user_overrides": data.get("user", {}),
+        "session_overrides": data.get("sessions", {}).get(session_id, {}) if session_id else {},
+        "model_capabilities": model_capabilities(model, provider),
+        "sandbox_network_maximum": escalation_ceiling()["network"],
+    }
+
+
+def _serialize_settings(fn):
+    @wraps(fn)
+    def locked(user_id: str, **kwargs):
+        path = settings_path(user_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.with_suffix(".lock").open("a") as lock:
+            if os.name == "nt":
+                import msvcrt
+                lock.write(" ")
+                lock.flush()
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                return fn(user_id, **kwargs)
+            finally:
+                if os.name == "nt":
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+    return locked
+
+
+def _save_runtime_settings(user_id: str, *, settings: dict, session_id: str = "", reset: bool = False) -> dict:
+    # A user update also validates every existing session against the new defaults.
+    data = _load(user_id)
+    data.setdefault("user", {})
+    data.setdefault("sessions", {})
+    if session_id:
+        if reset:
+            data["sessions"].pop(session_id, None)
+        else:
+            existing = data["sessions"].get(session_id, {})
+            data["sessions"][session_id] = _merge(existing, settings)
+    else:
+        data["user"] = {} if reset else _merge(data["user"], settings)
+    defaults = _merge(_env_defaults(), data["user"])
+    RuntimeSettings.model_validate(defaults)
+    for override in data["sessions"].values():
+        RuntimeSettings.model_validate(_merge(defaults, override))
+    _write_settings(user_id, data)
+    return runtime_settings_payload(user_id, session_id)
+
+
+def _write_settings(user_id: str, data: dict) -> None:
+    path = settings_path(user_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".runtime-settings-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+@_serialize_settings
+def forget_runtime_settings(user_id: str, *, session_id: str) -> bool:
+    """Remove only the deleted Agent's overrides and remembered sandbox grants."""
+    data = _load(user_id)
+    if not session_id or session_id not in data.get("sessions", {}):
+        return False
+    data["sessions"].pop(session_id)
+    _write_settings(user_id, data)
+    return True
+
+
+@_serialize_settings
+def save_runtime_settings(user_id: str, *, settings: dict, session_id: str = "", reset: bool = False) -> dict:
+    return _save_runtime_settings(user_id, settings=settings, session_id=session_id, reset=reset)
+
+
+@_serialize_settings
+def remember_sandbox_grant(user_id: str, *, session_id: str, access: str, target: str) -> dict:
+    """Atomically save an approved exact capability only in this session."""
+    if not session_id:
+        raise ValueError('记住沙盒权限需要当前 Agent。')
+    if get_runtime_settings(user_id, session_id).approval.sandbox_security == 'strict':
+        raise ValueError('严格安全模式不允许保存提权授权。')
+    from webot.command_sandbox import bounded_escalation
+    from webot.workspace import resolve_session_workspace
+    target = bounded_escalation(access, target, resolve_session_workspace(user_id, session_id).root)
+    grants = [grant.model_dump() for grant in get_runtime_settings(user_id, session_id).approval.sandbox_grants]
+    grant = SandboxGrant(access=access, target=target).model_dump()
+    if grant not in grants:
+        grants.append(grant)
+    return _save_runtime_settings(user_id, settings={'approval': {'sandbox_grants': grants}}, session_id=session_id)
+
+
+def stored_sandbox_grants(user_id: str, session_id: str) -> list[dict]:
+    """Include inactive grants so the owner can remove them in strict mode."""
+    data = _load(user_id)
+    defaults = _merge(_env_defaults(), data.get('user', {}))
+    own = RuntimeSettings.model_validate(_merge(defaults, data.get('sessions', {}).get(session_id, {})))
+    return [grant.model_dump() for grant in own.approval.sandbox_grants]
+
+
+@_serialize_settings
+def forget_sandbox_grant(user_id: str, *, session_id: str, access: str, target: str) -> bool:
+    if not session_id:
+        raise ValueError('移除沙盒权限需要当前 Agent。')
+    grants = stored_sandbox_grants(user_id, session_id)
+    remaining = [grant for grant in grants if grant != {'access': access, 'target': target}]
+    if len(remaining) == len(grants):
+        return False
+    _save_runtime_settings(user_id, settings={'approval': {'sandbox_grants': remaining}}, session_id=session_id)
+    return True

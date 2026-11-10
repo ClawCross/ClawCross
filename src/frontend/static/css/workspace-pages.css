@@ -1,0 +1,149 @@
+/* Contacts, project resources and workflow tools share the same quiet surfaces. */
+#tab-contacts .contacts-area { padding: 16px 18px 30px; }
+#tab-contacts .contacts-search-bar { padding: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 13px; display: flex; align-items: center; gap: 8px; padding-left: 13px; margin-bottom: 10px; }
+#tab-contacts .contacts-search-bar > .ui-icon { color: var(--text-hint); width: 17px; height: 17px; }
+#tab-contacts .contacts-search-input { min-width: 0; border-radius: 13px; border: 0; background: transparent; padding: 12px 12px 12px 0; font-size: 13px; }
+#tab-contacts .contacts-search-input:focus { box-shadow: none; background: transparent; }
+#tab-contacts .contacts-search-bar:focus-within { outline: 3px solid var(--ui-accent-ring); }
+#tab-contacts .contacts-team-switcher { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; padding: 0; border: 0; background: transparent; margin: 0 0 12px; }
+#tab-contacts .contacts-team-label { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
+#tab-contacts .contacts-team-label .ui-icon { width: 14px; height: 14px; }
+#tab-contacts .contacts-team-switcher select { flex: 1; min-width: 0; width: 0; max-width: 100%; height: 36px; border: 1px solid var(--border); border-radius: 9px; padding: 0 9px; font-size: 12px; background: var(--bg-card); color: var(--text); text-overflow: ellipsis; }
+#tab-contacts .contacts-team-switcher[data-user-space="true"] select { border-style: dashed; border-color: var(--ui-accent-ring); color: var(--primary); }
+#tab-contacts .contacts-team-switcher .gn-team-info { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; min-height: 36px; padding: 6px 8px; font-size: 11px; }
+#tab-contacts .contacts-team-switcher .gn-team-info[hidden] { display: none; }
+#tab-contacts .contacts-team-switcher .gn-team-info .ui-icon { width: 15px; height: 15px; }
+.contacts-library-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 2px 14px; color: var(--text-secondary); font-size: 12px; }
+.contacts-library-heading button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; padding: 6px 0; font: inherit; font-size: 11px; cursor: pointer; }
+.contacts-library-heading .ui-icon { width: 14px; height: 14px; }
+#tab-contacts .contact-section-title { position: static; top: auto; z-index: auto; margin: 22px 0 10px; padding: 0 3px; border: 0; background: transparent; font-size: 13px; font-weight: 600; color: var(--text); }
+#tab-contacts .contact-section-title:first-child { margin-top: 0; }
+#tab-contacts .contact-external-nested { padding: 0; }
+#tab-contacts .contacts-cat-group { margin-bottom: 10px; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--bg-card); }
+#tab-contacts .contacts-cat-header { position: static; top: auto; z-index: auto; margin: 0; padding: 13px 15px; background: transparent; font-size: 12px; font-weight: 550; color: var(--text-secondary); border: 0; }
+#tab-contacts .contacts-cat-header .cat-count { min-width: 22px; padding: 2px 6px; text-align: center; font-size: 10px; background: var(--ui-surface-2); color: var(--text-secondary); }
+#tab-contacts .cat-icon { opacity: .8; }
+#tab-contacts .cat-arrow { font-size: 8px; color: var(--text-hint); }
+#tab-contacts .contact-item { width: 100%; min-height: 78px; padding: 15px; background: var(--bg-card); box-sizing: border-box; text-align: left; gap: 12px; border: 0; }
+#tab-contacts .contact-item + .contact-item::before { left: 67px; right: 15px; background: var(--border); }
+#tab-contacts .contact-item:hover { background: var(--bg-hover); }
+#tab-contacts .contact-avatar { width: 40px; height: 40px; border-radius: 13px; font-size: 16px; }
+#tab-contacts .contact-main { margin: 0; gap: 5px; flex: 1; min-width: 0; }
+#tab-contacts .contact-main .contact-name { display: block; margin: 0; max-width: 100%; font-size: 14px; font-weight: 600; line-height: 1.55; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+#tab-contacts .contact-meta-line { display: flex; flex-wrap: wrap; gap: 3px 8px; margin: 0; font-size: 10px; line-height: 1.6; color: var(--text-secondary); }
+#tab-contacts .contact-meta-line span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tab-contacts .contact-meta-line span + span::before { content: '·'; margin-right: 8px; color: var(--text-hint); }
+#tab-contacts .contact-chevron { width: 14px; height: 14px; color: var(--text-hint); flex-shrink: 0; }
+#tab-contacts .contact-lead { font-size: 11px; color: #b98227; }
+#tab-contacts .contact-avatar.custom, #tab-contacts .contact-avatar.preset { background: var(--ui-surface-2); color: var(--primary); }
+
+/* Hub is the main destination in Create. The conversation shortcuts remain underneath. */
+.create-hub-feature { border-color: var(--ui-accent-ring); background: linear-gradient(145deg, var(--bg-card) 40%, var(--ui-accent-tint)); }
+.create-talk-entry { display: flex; align-items: center; gap: 12px; padding: 16px; margin: 0 0 22px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-card); color: var(--text); text-decoration: none; }
+.create-talk-entry > span:not(.create-talk-symbol) { flex: 1; min-width: 0; }
+.create-talk-entry strong { display: block; font-size: 13px; font-weight: 600; }
+.create-talk-entry small { display: block; margin-top: 5px; color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+.create-talk-symbol { display: grid; place-items: center; width: 36px; height: 36px; background: var(--ui-accent-tint); border-radius: 12px; color: var(--primary); flex-shrink: 0; }
+.create-talk-entry > .ui-icon { width: 16px; color: var(--text-hint); }
+.create-talk-entry:hover { background: var(--bg-hover); }
+
+/* Team resources: the personal overview is visibly separate from actual projects. */
+#page-group .group-list-sidebar { width: 264px; background: var(--ui-canvas); border-color: var(--ui-hairline); }
+.team-list-section-label { font-size: 10px; font-weight: 600; letter-spacing: .07em; color: var(--ui-text-2); padding: 22px 17px 10px; }
+#page-group .group-item { display: flex; align-items: center; gap: 11px; padding: 14px 62px 14px 13px; margin: 0 8px 6px; border: 1px solid transparent; border-radius: 13px; min-width: 0; }
+#page-group .group-item.active { border: 1px solid var(--ui-accent-ring); background: var(--ui-accent-tint); }
+#page-group .group-item.user-space-item { padding: 17px 13px; background: var(--ui-surface); border: 1px dashed var(--ui-accent-ring); border-radius: 16px; align-items: flex-start; }
+#page-group .user-space-item.active { background: var(--ui-accent-tint); border-style: solid; }
+.team-list-icon { width: 34px; height: 34px; display: grid; place-items: center; flex-shrink: 0; background: var(--ui-surface); border: 1px solid var(--ui-hairline); border-radius: 11px; color: var(--ui-text-2); }
+.user-space-item .team-list-icon { background: var(--ui-accent-tint); color: var(--ui-accent); border: 0; }
+.team-list-icon .ui-icon { width: 18px; height: 18px; }
+.team-list-copy { min-width: 0; flex: 1; }
+#page-group .group-item .group-name { color: var(--ui-text); line-height: 1.5; overflow-wrap: anywhere; }
+#page-group .group-item .group-meta { color: var(--ui-text-2); font-size: 10px; margin-top: 4px; line-height: 1.6; }
+#page-group .group-item .user-space-badge { display: inline-block; margin-top: 9px; padding: 3px 7px; background: var(--ui-accent-tint); color: var(--ui-accent); border: 0; font-size: 9px; border-radius: 5px; }
+.team-space-context { display: flex; align-items: center; gap: 13px; padding: 19px 24px; background: var(--ui-accent-tint); border-bottom: 1px solid var(--ui-hairline); color: var(--ui-text); }
+.team-space-context[hidden] { display: none; }
+.team-space-context strong { font-size: 14px; font-weight: 600; }
+.team-space-context p { color: var(--ui-text-2); margin: 5px 0 0; font-size: 11px; line-height: 1.7; }
+.team-space-emblem { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; flex-shrink: 0; color: var(--ui-accent); background: var(--ui-surface); }
+#page-group .group-chat-header { gap: 16px; padding: 18px 22px; background: var(--ui-surface); border-color: var(--ui-hairline); flex-wrap: wrap; }
+#page-group #group-active-name { font-size: 18px; font-weight: 600; letter-spacing: -.02em; color: var(--ui-text); }
+#page-group #group-active-id { font-size: 10px; color: var(--ui-text-2); }
+#page-group .group-messages-box { background: var(--ui-surface); }
+#page-group .team-members-header { padding: 14px 20px; background: var(--ui-surface); border-color: var(--ui-hairline); gap: 12px; flex-wrap: wrap; }
+#page-group .team-members-header > div:first-child { flex-wrap: wrap; row-gap: 6px; }
+#page-group [id^="team-tab-"]:not([id^="team-tab-actions"]) { border-radius: 9px !important; padding: 8px 12px !important; border-color: transparent !important; background: transparent !important; color: var(--ui-text-2) !important; }
+#page-group [id^="team-tab-"][aria-pressed="true"] { background: var(--ui-surface-2) !important; color: var(--ui-text) !important; }
+#page-group .team-members-table-container { padding: 18px 22px; }
+#page-group .team-members-table { table-layout: auto; font-size: 12px; }
+#page-group .team-members-table thead { background: var(--ui-surface-2); }
+#page-group .team-members-table th { color: var(--ui-text-2); font-size: 11px; font-weight: 550; padding: 13px 12px; border-color: var(--ui-hairline); }
+#page-group .team-members-table td { padding: 16px 12px; color: var(--ui-text); border-color: var(--ui-hairline); }
+#page-group .team-members-table tr:hover { background: var(--ui-hover); }
+#page-group .team-members-table button { border-radius: 7px; }
+.studio-team-node > summary { display: flex; align-items: center; gap: 7px; }
+.studio-team-node > summary > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.studio-team-kind { font-size: 9px; font-weight: 500; padding: 2px 5px; border-radius: 4px; background: var(--ui-surface-2); color: var(--ui-text-2); }
+.studio-team-node.is-default-team { border: 1px dashed var(--ui-accent-ring); border-radius: 9px; margin-bottom: 12px; background: var(--ui-accent-tint); }
+.studio-team-node.is-default-team > summary { color: var(--ui-accent); }
+.studio-team-node.is-default-team .studio-team-kind { color: var(--ui-accent); background: var(--ui-surface); }
+
+/* Workflow editor and run list keep their tools while giving content more room. */
+#page-orchestrate .orch-sidebar, #page-orchestrate .orch-right-panel { background: var(--ui-surface); border-color: var(--ui-hairline); }
+#page-orchestrate .orch-sidebar-header { padding: 16px; background: var(--ui-surface); border-color: var(--ui-hairline); }
+#page-orchestrate .orch-sidebar-grid-cell-header { padding: 12px; background: var(--ui-surface); color: var(--ui-text-2); border-color: var(--ui-hairline); }
+#page-orchestrate .orch-toolbar { background: var(--ui-surface); padding: 12px 14px; gap: 7px; border-color: var(--ui-hairline); align-items: center; }
+#page-orchestrate .orch-toolbar .orch-btn { padding: 8px 11px; border: 1px solid var(--ui-hairline); background: var(--ui-surface); color: var(--ui-text-2); border-radius: 9px; box-shadow: none; font-size: 11px; min-height: 34px; }
+#page-orchestrate .orch-toolbar .orch-btn:hover { background: var(--ui-surface-2); color: var(--ui-text); }
+#page-orchestrate .orch-toolbar #orch-run-btn { background: var(--ui-accent); color: var(--ui-on-accent); border-color: transparent; }
+#page-orchestrate .orch-toolbar .orch-btn-danger { color: var(--ui-danger); }
+#page-orchestrate .orch-toolbar select { min-height: 34px; border-radius: 9px; border-color: var(--ui-hairline); background: var(--ui-surface); color: var(--ui-text); }
+#page-orchestrate .orch-control-nodes-bar { gap: 6px; padding: 12px; background: var(--ui-canvas); }
+#page-orchestrate .orch-control-node-card { border-radius: 9px; box-shadow: none; font-size: 11px; }
+#page-orchestrate .orch-canvas { background-color: var(--ui-canvas); }
+#page-orchestrate .orch-expert-card { border-radius: 11px; border-color: var(--ui-hairline); box-shadow: none; }
+#oasis-sidebar .oasis-header { background: var(--bg-card); border-color: var(--border); padding-inline: 14px; }
+#oasis-sidebar .oasis-header-title { gap: 10px; font-size: 16px; font-weight: 600; }
+#oasis-sidebar .oasis-body { background: var(--bg); }
+#oasis-sidebar #oasis-topic-list-header { padding: 14px 18px !important; background: var(--bg) !important; border: 0 !important; }
+#oasis-sidebar .oasis-topic-list { padding: 4px 14px 20px; }
+#oasis-sidebar .oasis-topic-item { border: 1px solid var(--border); margin: 0 0 12px; padding: 18px; border-radius: 16px; background: var(--bg-card); box-shadow: 0 2px 7px rgba(0,0,0,.02); }
+#oasis-sidebar .oasis-topic-item.active { border-color: var(--ui-accent-ring); background: var(--ui-accent-tint); }
+#oasis-sidebar .oasis-topic-question { font-size: 14px; font-weight: 550; line-height: 1.7; margin-top: 12px; }
+#oasis-sidebar .oasis-topic-meta { color: var(--text-secondary); font-size: 11px; margin-top: 12px; }
+#oasis-sidebar .oasis-status-badge { border-radius: 6px; font-size: 10px; padding: 4px 7px; }
+#oasis-sidebar .oasis-header-btn { border-radius: 10px; }
+#oasis-sidebar .oasis-launch-panel { margin: 14px; border-radius: 16px; border: 1px solid var(--border); overflow: hidden; background: var(--bg-card); }
+#oasis-sidebar .oasis-launch-input-area { background: var(--bg-card); padding: 15px; }
+
+@media (max-width: 600px) {
+  #tab-discover .discover-area { padding-top: 16px; }
+  .create-hub-feature { padding: 22px; margin-bottom: 14px; }
+  .create-hub-feature .create-feature-art { width: 100%; height: 100px; margin: 0 0 12px; pointer-events: none; }
+  .create-hub-feature h2 { margin: 0 0 8px; font-size: 23px; line-height: 1.3; }
+  .create-hub-feature p { margin-bottom: 16px; font-size: 13px; line-height: 1.65; }
+  .create-hub-feature .create-primary { min-height: 44px; padding-inline: 18px; font-size: 14px; }
+  .create-shortcut { padding: 16px; gap: 6px; }
+  .create-shortcut > .ui-icon { width: 20px; height: 20px; margin-bottom: 2px; }
+  .create-shortcut span { font-size: 11px; }
+  #tab-contacts .contacts-area { padding: 14px 14px 30px; }
+  #page-group .group-chat-header { padding: 14px 12px; }
+  #page-group .team-members-header { padding: 12px; }
+  #page-group .team-members-table-container { padding: 12px; }
+  .team-space-context { padding: 16px; }
+  #page-orchestrate .orch-toolbar { flex-wrap: nowrap; overflow-x: auto; padding: 10px; min-height: 56px; }
+  #page-orchestrate .orch-toolbar > * { flex-shrink: 0; }
+  #page-orchestrate .orch-sidebar-header { padding: 12px; }
+}
+
+#tab-contacts .contact-section-title { display: flex; align-items: center; gap: 7px; }
+#tab-contacts .contact-section-title > .ui-icon { width: 16px; height: 16px; color: var(--text-secondary); }
+#tab-contacts .cat-icon .ui-icon { width: 16px; height: 16px; }
+#oasis-sidebar .oasis-action-btn .ui-icon { width: 13px; height: 13px; }
+#oasis-sidebar .oasis-header-btn .ui-icon { width: 17px; height: 17px; }
+#oasis-sidebar .oasis-topic-meta { display: flex; align-items: center; gap: 6px; }
+#oasis-sidebar .oasis-topic-meta .ui-icon { width: 13px; height: 13px; }
+@media (max-width: 600px) {
+  #page-orchestrate .orch-toolbar #orch-run-btn { order: -2; }
+  #page-orchestrate .orch-toolbar [onclick="orchSaveLayout()"] { order: -1; }
+}

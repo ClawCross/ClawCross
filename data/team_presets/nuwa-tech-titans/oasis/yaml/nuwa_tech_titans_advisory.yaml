@@ -8,15 +8,15 @@ plan:
     author: begin
     content: "请提出你的问题或议题，各位顾问将依次给出分析。"
 - id: m1
-  expert: zhang_yiming#oasis#张一鸣
+  agent: 张一鸣
 - id: m2
-  expert: karpathy#oasis#安德烈·卡帕西
+  agent: 安德烈·卡帕西
 - id: m3
-  expert: ilya_sutskever#oasis#伊利亚·苏茨克维
+  agent: 伊利亚·苏茨克维
 - id: m4
-  expert: steve_jobs#oasis#史蒂夫·乔布斯
+  agent: 史蒂夫·乔布斯
 - id: m5
-  expert: elon_musk#oasis#埃隆·马斯克
+  agent: 埃隆·马斯克
 - id: m6
   manual:
     author: bend

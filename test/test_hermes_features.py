@@ -20,7 +20,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -179,6 +179,35 @@ class TestSkillSystem(unittest.TestCase):
         skill = get_skill("alice", name="test-skill")
         self.assertIn("carefully", skill["content"])
 
+    def test_patch_cannot_modify_files_outside_skill(self):
+        from webot.skills import create_skill, patch_skill
+
+        for team in ("", "ops"):
+            with self.subTest(team=team):
+                created = create_skill("alice", name="test-skill", content=self._make_skill_content(), team=team)
+                skill_dir = Path(created["path"]).parent
+                outside = skill_dir.parent / "outside.txt"
+                outside.write_text("original", encoding="utf-8")
+                (skill_dir / "outside-link.txt").symlink_to(outside)
+                for file_path in ("../outside.txt", str(outside), "outside-link.txt"):
+                    with self.subTest(file_path=file_path):
+                        outside.write_text("original", encoding="utf-8")
+                        result = patch_skill("alice", name="test-skill", team=team,
+                                             file_path=file_path, old_string="original", new_string="changed")
+                        self.assertFalse(result["success"])
+                        self.assertEqual(outside.read_text(encoding="utf-8"), "original")
+
+    def test_patch_nested_support_file(self):
+        from webot.skills import create_skill, write_skill_file, patch_skill
+
+        created = create_skill("alice", name="test-skill", content=self._make_skill_content())
+        write_skill_file("alice", name="test-skill", file_path="references/notes.md", file_content="original")
+        result = patch_skill("alice", name="test-skill", file_path="references/notes.md",
+                             old_string="original", new_string="changed")
+        self.assertTrue(result["success"])
+        target = Path(created["path"]).parent / "references/notes.md"
+        self.assertEqual(target.read_text(encoding="utf-8"), "changed")
+
     def test_delete_skill(self):
         from webot.skills import create_skill, delete_skill, list_skills
         create_skill("alice", name="test-skill", content=self._make_skill_content())
@@ -219,60 +248,71 @@ class TestSkillSystem(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_skill("alice", name="INVALID NAME!", content=self._make_skill_content())
 
-    def test_missing_frontmatter_accepted_but_meta_empty(self):
-        # create_skill tolerates content without YAML frontmatter; the parser
-        # returns empty metadata and the body is stored verbatim. Index lookups
-        # by description simply won't surface this skill.
-        from webot.skills import create_skill, _parse_frontmatter
-        body = "No frontmatter here, just text."
-        result = create_skill("alice", name="test-skill", content=body)
-        self.assertTrue(result["success"])
-        stored = (Path(result["path"])).read_text(encoding="utf-8")
-        meta, parsed_body = _parse_frontmatter(stored)
-        self.assertEqual(meta, {})
-        self.assertEqual(parsed_body, body)
+    def test_missing_frontmatter_is_rejected(self):
+        # SKILL.md must carry YAML frontmatter with name and description;
+        # content without it is rejected and nothing is written.
+        from webot.skills import create_skill, list_skills
+        result = create_skill("alice", name="test-skill", content="No frontmatter here, just text.")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "Skill content must include YAML frontmatter.")
+        self.assertEqual(list_skills("alice"), [])
 
-    def test_build_skills_prompt(self):
-        from webot.skills import create_skill, build_skills_prompt
+    def test_skills_listing(self):
+        from webot.skills import create_skill, build_user_skills_listing
         create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
-        prompt = build_skills_prompt("alice")
+        prompt = build_user_skills_listing("alice")
         self.assertIn("deploy-script", prompt)
-        self.assertIn("Skills (Procedural Memory)", prompt)
+        self.assertIn("Memory 条目", prompt)
 
-    def test_build_skills_prompt_empty(self):
-        from webot.skills import build_skills_prompt
-        prompt = build_skills_prompt("nonexistent-user")
-        self.assertEqual(prompt, "")
+    def test_skills_listing_without_entries_still_describes_memory(self):
+        from webot.skills import build_user_skills_listing
+        prompt = build_user_skills_listing("nonexistent-user")
+        self.assertIn("当前暂无已注册条目", prompt)
+
+    def test_external_skills_travel_in_the_dynamic_turn_not_the_fixed_identity(self):
+        from agents.store import ACPX, Agent
+        from external.session import identity_prompt, prepare_turn
+        from agents.messages import AgentMessage
+        from webot.skills import create_skill
+        create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
+        agent = Agent(agent_id="cx", owner="alice", name="Critic", driver=ACPX,
+                      config={"platform": "codex", "persona": "你是审稿人。"})
+        prompt = identity_prompt(agent, {}, "")
+        self.assertNotIn("【用户技能 / Memory 条目】", prompt)
+        self.assertIn("你是审稿人。", prompt)
+        turn = prepare_turn(agent, AgentMessage(text="hello"), context={}, mode=None,
+                            enabled_tools=None, response_format=None)
+        self.assertEqual(turn.text.count("【用户技能 / Memory 条目】"), 1)
+        self.assertIn("deploy-script", turn.dynamic_context["skills"])
 
     def test_agent_user_skills_prompt_uses_managed_skills(self):
-        from core.agent import TeamAgent
+        from webot.engine.agent import TeamAgent
         from webot.skills import create_skill
 
         create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
 
         agent = TeamAgent(str(SRC_DIR), str(self.tmppath / "checkpoints.db"))
-        agent._prompts["_user_files_dir"] = str(self.tmppath / "user_files")
 
         prompt = agent._get_user_skills("alice")
         self.assertIn("deploy-script", prompt)
-        self.assertIn("skill_view", prompt)
+        self.assertNotIn("read_file(", prompt)  # how to use the tools is in their schemas
+        self.assertNotIn(str(self.tmppath), prompt)
         self.assertNotIn("skills_manifest.json", prompt)
 
-    def test_agent_user_skills_prompt_uses_team_and_personal_sections(self):
-        from core.agent import TeamAgent
+    def test_agent_user_skills_prompt_lists_the_owners_and_each_teams(self):
+        from webot.engine.agent import TeamAgent
         from webot.skills import create_skill
 
         create_skill("alice", name="shared-skill", content=self._make_skill_content("shared-skill", "Shared"))
-        create_skill("alice", name="team-skill", content=self._make_skill_content("team-skill", "Team"), team="ops")
+        create_skill("alice", name="ops-skill", content=self._make_skill_content("ops-skill", "Ops"), team="ops")
+        create_skill("alice", name="dev-skill", content=self._make_skill_content("dev-skill", "Dev"), team="dev")
 
         agent = TeamAgent(str(SRC_DIR), str(self.tmppath / "checkpoints.db"))
-        agent._prompts["_user_files_dir"] = str(self.tmppath / "user_files")
 
-        prompt = agent._get_user_skills("alice", team="ops")
-        self.assertIn("团队技能", prompt)
-        self.assertIn("共享技能", prompt)
-        self.assertIn("team-skill", prompt)
-        self.assertIn("shared-skill", prompt)
+        prompt = agent._get_user_skills("alice", ["dev", "ops"])  # an agent in two teams
+        for section, skill in (("团队「dev」技能", "dev-skill"), ("团队「ops」技能", "ops-skill"), ("个人技能", "shared-skill")):
+            self.assertIn(section, prompt)
+            self.assertIn(skill, prompt)
 
     def test_get_nonexistent_skill(self):
         from webot.skills import get_skill
@@ -534,6 +574,41 @@ class TestSessionSearch(unittest.TestCase):
         session_ids = [m["session_id"] for m in result["matches"]]
         self.assertNotIn("current", session_ids)
 
+    def test_search_chinese_and_mixed_keywords(self):
+        from webot.trajectory import save_trajectory
+        from webot.session_search import session_search
+
+        for user_id, session_id, content in (
+            ("alice", "deployment", "讨论Python部署方案和数据库备份"),
+            ("alice", "backup", "数据库备份计划"),
+            ("alice", "unrelated", "今天讨论旅游安排"),
+            ("alice", "current", "Python部署方案"),
+            ("bob", "other-user", "Python部署方案"),
+        ):
+            save_trajectory(
+                user_id=user_id, session_id=session_id,
+                messages=[{"role": "user", "content": content}],
+                model="gpt-4", completed=True,
+            )
+
+        for query, expected in (
+            ("部署", {"deployment"}),
+            ("库", {"deployment", "backup"}),
+            ("部署，备份", {"deployment", "backup"}),
+            ("PYTHON 部署", {"deployment"}),
+            ("不存在的关键词", set()),
+        ):
+            with self.subTest(query=query):
+                result = session_search(
+                    user_id="alice", query=query,
+                    current_session_id="current", db_path=self.tmppath / "checkpoints",
+                )
+                self.assertEqual(
+                    {m["session_id"] for m in result["matches"]}, expected,
+                )
+                if query == "部署，备份":
+                    self.assertEqual(result["matches"][0]["session_id"], "deployment")
+
     def test_recent_sessions_no_query(self):
         from webot.trajectory import save_trajectory
         from webot.session_search import session_search
@@ -552,15 +627,15 @@ class TestSessionSearch(unittest.TestCase):
 # 6. Context References (@-syntax)
 # ════════════════════════════════════════════════════════════════════
 
-class TestContextReferences(unittest.TestCase):
+class TestContextReferences(unittest.IsolatedAsyncioTestCase):
     def test_parse_file_reference(self):
-        from utils.context_references import parse_context_references
+        from webot.context_references import parse_context_references
         refs = parse_context_references("Look at @file:src/main.py for details")
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0], ("file", "src/main.py"))
 
     def test_parse_multiple_references(self):
-        from utils.context_references import parse_context_references
+        from webot.context_references import parse_context_references
         refs = parse_context_references("Check @file:a.py and @diff and @folder:src/")
         self.assertEqual(len(refs), 3)
         types = [r[0] for r in refs]
@@ -569,24 +644,24 @@ class TestContextReferences(unittest.TestCase):
         self.assertIn("folder", types)
 
     def test_parse_git_reference(self):
-        from utils.context_references import parse_context_references
+        from webot.context_references import parse_context_references
         refs = parse_context_references("Show me @git:5")
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0], ("git", "5"))
 
     def test_parse_url_reference(self):
-        from utils.context_references import parse_context_references
+        from webot.context_references import parse_context_references
         refs = parse_context_references("Fetch @url:https://example.com")
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0][0], "url")
 
-    def test_expand_file_reference(self):
-        from utils.context_references import expand_context_references
+    async def test_expand_file_reference(self):
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("print('hello')\nprint('world')\n")
 
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@file:test.py",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
@@ -594,13 +669,13 @@ class TestContextReferences(unittest.TestCase):
             self.assertEqual(result.references_expanded, 1)
             self.assertIn("hello", result.expanded_message)
 
-    def test_expand_file_with_line_range(self):
-        from utils.context_references import expand_context_references
+    async def test_expand_file_with_line_range(self):
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
 
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@file:test.py:2-4",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
@@ -608,15 +683,15 @@ class TestContextReferences(unittest.TestCase):
             self.assertIn("line2", result.expanded_message)
             self.assertIn("line4", result.expanded_message)
 
-    def test_expand_folder_reference(self):
-        from utils.context_references import expand_context_references
+    async def test_expand_folder_reference(self):
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             subdir = Path(tmpdir) / "src"
             subdir.mkdir()
             (subdir / "main.py").write_text("main")
             (subdir / "utils.py").write_text("utils")
 
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@folder:src",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
@@ -624,40 +699,40 @@ class TestContextReferences(unittest.TestCase):
             self.assertIn("main.py", result.expanded_message)
             self.assertIn("utils.py", result.expanded_message)
 
-    def test_sensitive_path_blocked(self):
-        from utils.context_references import expand_context_references
+    async def test_sensitive_path_blocked(self):
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             ssh_dir = Path(tmpdir) / ".ssh"
             ssh_dir.mkdir()
             (ssh_dir / "id_rsa").write_text("secret key")
 
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@file:.ssh/id_rsa",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
             )
             self.assertIn("Blocked", result.warnings[0] if result.warnings else "")
 
-    def test_path_traversal_blocked(self):
-        from utils.context_references import expand_context_references
+    async def test_path_traversal_blocked(self):
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@file:../../etc/passwd",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
             )
             self.assertTrue(len(result.warnings) > 0)
 
-    def test_no_references_passthrough(self):
-        from utils.context_references import expand_context_references
-        result = expand_context_references("No references here")
+    async def test_no_references_passthrough(self):
+        from webot.context_references import expand_context_references
+        result = await expand_context_references("No references here")
         self.assertEqual(result.expanded_message, "No references here")
         self.assertEqual(result.references_found, 0)
 
-    def test_expand_diff(self):
-        from utils.context_references import expand_context_references
+    async def test_expand_diff(self):
+        from webot.context_references import expand_context_references
         # This will work in a git repo
-        result = expand_context_references(
+        result = await expand_context_references(
             "@diff",
             cwd=str(PROJECT_ROOT),
             allowed_root=str(PROJECT_ROOT),
@@ -671,7 +746,7 @@ class TestContextReferences(unittest.TestCase):
 
 class TestSmartRouting(unittest.TestCase):
     def setUp(self):
-        from services.smart_routing import set_routing_config
+        from webot.smart_routing import set_routing_config
         self.config = {
             "enabled": True,
             "cheap_model": {
@@ -684,20 +759,20 @@ class TestSmartRouting(unittest.TestCase):
         set_routing_config(self.config)
 
     def tearDown(self):
-        from services.smart_routing import set_routing_config
+        from webot.smart_routing import set_routing_config
         set_routing_config(None)
-        import services.smart_routing as mod
+        import webot.smart_routing as mod
         mod._runtime_config = None
 
     def test_simple_message_routes_cheap(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("What time is it?", routing_config=self.config)
         self.assertIsNotNone(result)
         self.assertEqual(result["model"], "gemini-2.0-flash")
         self.assertEqual(result["routing_reason"], "simple_turn")
 
     def test_complex_message_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route(
             "Debug this Docker container that fails to build with the following error...",
             routing_config=self.config,
@@ -705,45 +780,45 @@ class TestSmartRouting(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_long_message_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         long_msg = "word " * 50  # > 28 words
         result = choose_cheap_model_route(long_msg, routing_config=self.config)
         self.assertIsNone(result)
 
     def test_code_fence_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("```python\nprint('hi')\n```", routing_config=self.config)
         self.assertIsNone(result)
 
     def test_url_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("Check https://example.com", routing_config=self.config)
         self.assertIsNone(result)
 
     def test_multiline_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("First thing\n\nSecond thing", routing_config=self.config)
         self.assertIsNone(result)
 
     def test_disabled_routing(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         config = {**self.config, "enabled": False}
         result = choose_cheap_model_route("Hi", routing_config=config)
         self.assertIsNone(result)
 
     def test_keyword_detection(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         for keyword in ["debug", "deploy", "error", "analyze"]:
             result = choose_cheap_model_route(f"Please {keyword}", routing_config=self.config)
             self.assertIsNone(result, f"Keyword '{keyword}' should route to primary")
 
     def test_multiple_questions_use_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("What is A? And what is B?", routing_config=self.config)
         self.assertIsNone(result)
 
     def test_resolve_turn_route(self):
-        from services.smart_routing import resolve_turn_route
+        from webot.smart_routing import resolve_turn_route
         result = resolve_turn_route("Hello!", routing_config=self.config)
         self.assertIsNotNone(result)
 

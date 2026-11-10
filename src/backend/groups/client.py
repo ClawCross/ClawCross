@@ -1,0 +1,889 @@
+"""A device's group client. Remote credentials never grant access to the agent API."""
+from __future__ import annotations
+
+import asyncio
+from contextlib import contextmanager
+import hashlib
+import json
+import logging
+import os
+from pathlib import Path
+import secrets
+import sqlite3
+import time
+from urllib.parse import unquote, urlsplit
+
+import httpx
+from websockets.asyncio.client import connect
+
+from agents.messages import AgentMessage
+from agents.gateway import reply_channel
+from groups.config import frontend_url, own_front_ends, service_key, service_url
+from groups.delivery import render_digest
+from groups.service import GroupError
+from groups.outbox import OutboxStore
+from common.avatars import AvatarStore
+
+logger = logging.getLogger(__name__)
+
+# A member reached through a web front end polls; the front end carries no WebSocket.
+POLL_SECONDS = 2
+
+
+class ClientError(GroupError):
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.status = status
+
+
+def parse_invite_link(link: str) -> tuple[str, str]:
+    """``(front-end base URL, ticket)`` of an invitation link ``<base>/group-guest#<ticket>``."""
+    parsed = urlsplit((link or '').strip())
+    path = parsed.path.rstrip('/')
+    if parsed.scheme not in {'http', 'https'} or not parsed.hostname or not path.endswith('/group-guest') or not parsed.fragment or parsed.query:
+        raise ClientError('请粘贴完整的邀请链接（…/group-guest#…）')
+    if len(parsed.fragment) > 4096:
+        raise ClientError('邀请链接无效')
+    return normalize_url(f'{parsed.scheme}://{parsed.netloc}' + path[:-len('/group-guest')]), parsed.fragment
+
+
+def normalize_url(value: str) -> str:
+    raw = value.strip() or service_url()
+    if '://' not in raw:
+        raw = 'http://' + raw
+    parsed = urlsplit(raw)
+    path = parsed.path.rstrip('/')
+    if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or any(part in {'.', '..'} for part in unquote(path).split('/')):
+        raise ClientError('请使用服务器地址或部署路径，例如 https://example.com/groups，不包含凭证、查询参数或路径跳转')
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ClientError('服务器端口无效') from exc
+    host = parsed.hostname.lower()
+    host = '[' + host + ']' if ':' in host else host
+    return f'{parsed.scheme}://{host}' + (f':{port}' if port else '') + path
+
+
+class ClientStore(OutboxStore):
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.db() as db:
+            db.executescript('''
+                CREATE TABLE IF NOT EXISTS group_client_identity(id INTEGER PRIMARY KEY CHECK(id=1),node_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS group_client_login_secrets(
+                    owner TEXT NOT NULL,url TEXT NOT NULL,remote_id TEXT NOT NULL,secret TEXT NOT NULL,
+                    PRIMARY KEY(owner,url,remote_id)
+                );
+                CREATE TABLE IF NOT EXISTS group_client_connections(
+                    owner TEXT NOT NULL, alias TEXT NOT NULL, url TEXT NOT NULL, remote_id TEXT NOT NULL,
+                    connection_id TEXT NOT NULL, token TEXT NOT NULL, cursor INTEGER NOT NULL DEFAULT 0,
+                    allowed_agents TEXT NOT NULL DEFAULT '[]', metadata TEXT NOT NULL DEFAULT '{}',
+                    active INTEGER NOT NULL DEFAULT 1, error TEXT NOT NULL DEFAULT '',
+                    via TEXT NOT NULL DEFAULT '', PRIMARY KEY(owner,alias)
+                );
+                CREATE TABLE IF NOT EXISTS group_client_events(
+                    owner TEXT NOT NULL,alias TEXT NOT NULL,id INTEGER NOT NULL,body TEXT NOT NULL,
+                    PRIMARY KEY(owner,alias,id)
+                );
+                CREATE TABLE IF NOT EXISTS group_client_deliveries(
+                    owner TEXT NOT NULL,alias TEXT NOT NULL,event_id INTEGER NOT NULL,agent_id TEXT NOT NULL,
+                    PRIMARY KEY(owner,alias,event_id,agent_id)
+                );
+            ''')
+            # ``via``: the invitation ticket of a member that reaches the group through a web front end.
+            if 'via' not in {c[1] for c in db.execute('PRAGMA table_info(group_client_connections)')}:
+                db.execute("ALTER TABLE group_client_connections ADD COLUMN via TEXT NOT NULL DEFAULT ''")
+            if 'received_cursor' not in {c[1] for c in db.execute('PRAGMA table_info(group_client_connections)')}:
+                db.execute('ALTER TABLE group_client_connections ADD COLUMN received_cursor INTEGER NOT NULL DEFAULT 0')
+                db.execute('UPDATE group_client_connections SET received_cursor=cursor')
+            db.execute('INSERT OR IGNORE INTO group_client_identity VALUES(1,?)', ('device_' + secrets.token_hex(16),))
+            self.node_id = db.execute('SELECT node_id FROM group_client_identity WHERE id=1').fetchone()[0]
+        if os.name != 'nt':
+            self.path.chmod(0o600)
+        self.init_outbox()
+
+    @contextmanager
+    def db(self):
+        db = sqlite3.connect(self.path, timeout=10)
+        db.row_factory = sqlite3.Row
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
+
+    def rows(self, owner=None):
+        with self.db() as db:
+            return [dict(r) for r in db.execute('SELECT * FROM group_client_connections' + (' WHERE owner=?' if owner is not None else ''),
+                                               (owner,) if owner is not None else ())]
+
+    def login_secret(self, owner, url, remote_id):
+        """A private, persistent password scoped to this device, user and remote group.
+
+        Retained when a local connection is removed, so rejoining does not lose
+        the member's name. It is never included in group cards or exports.
+        """
+        with self.db() as db:
+            db.execute('INSERT OR IGNORE INTO group_client_login_secrets VALUES(?,?,?,?)',
+                       (owner, url, remote_id, secrets.token_urlsafe(32)))
+            return db.execute('SELECT secret FROM group_client_login_secrets WHERE owner=? AND url=? AND remote_id=?',
+                              (owner, url, remote_id)).fetchone()[0]
+
+    def remember_login_secret(self, owner, url, remote_id, secret):
+        with self.db() as db:
+            db.execute('INSERT INTO group_client_login_secrets VALUES(?,?,?,?) ON CONFLICT(owner,url,remote_id) DO UPDATE SET secret=excluded.secret',
+                       (owner, url, remote_id, secret))
+
+    def get(self, owner, alias):
+        with self.db() as db:
+            row = db.execute('SELECT * FROM group_client_connections WHERE owner=? AND alias=?', (owner, alias)).fetchone()
+            return dict(row) if row else None
+
+    def save(self, owner, url, result, via=''):
+        gid = result['group']['group_id']
+        alias = 'rg_' + hashlib.sha256((url + '/' + gid).encode()).hexdigest()[:24]
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            existing = db.execute('SELECT active FROM group_client_connections WHERE owner=? AND alias=?', (owner, alias)).fetchone()
+            if not existing or not existing['active']:
+                total = db.execute('SELECT COUNT(*) FROM group_client_connections WHERE active=1').fetchone()[0]
+                own = db.execute('SELECT COUNT(*) FROM group_client_connections WHERE owner=? AND active=1', (owner,)).fetchone()[0]
+                if total >= 128 or own >= 32:
+                    raise ClientError('设备最多连接 128 个群，每个用户最多连接 32 个群', 409)
+            db.execute('''INSERT INTO group_client_connections(owner,alias,url,remote_id,connection_id,token,metadata,via)
+                       VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(owner,alias) DO UPDATE SET
+                       connection_id=excluded.connection_id,token=excluded.token,metadata=excluded.metadata,
+                       via=excluded.via,cursor=0,received_cursor=0,allowed_agents='[]',active=1,error='正在连接' ''',
+                       (owner, alias, url, gid, result['connection_id'], result['token'],
+                        json.dumps(result['group'], ensure_ascii=False), via))
+        return alias
+
+    def update(self, owner, alias, **fields):
+        allowed = {'cursor', 'metadata', 'active', 'error', 'allowed_agents'}
+        if not set(fields) <= allowed:
+            raise ValueError('invalid connection fields')
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if 'metadata' in fields:
+                current = db.execute('SELECT metadata FROM group_client_connections WHERE owner=? AND alias=?', (owner, alias)).fetchone()
+                if current and json.loads(fields['metadata']).get('version', 0) < json.loads(current['metadata']).get('version', 0):
+                    fields.pop('metadata')
+            if not fields:
+                return
+            db.execute('UPDATE group_client_connections SET ' + ','.join(k + '=?' for k in fields) + ' WHERE owner=? AND alias=?',
+                       (*fields.values(), owner, alias))
+
+    def remove(self, owner, alias):
+        """Forget this user's connection and cached data without contacting its server."""
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT 1 FROM group_client_connections WHERE owner=? AND alias=?', (owner, alias)).fetchone()
+            if not row:
+                raise ClientError('本机没有这个群聊', 404)
+            for table in ('group_client_outbox', 'group_client_events', 'group_client_deliveries', 'group_client_connections'):
+                db.execute(f'DELETE FROM {table} WHERE owner=? AND alias=?', (owner, alias))
+
+    def cache(self, row, event):
+        self.cache_events(row, [event])
+
+    def cache_events(self, row, events, *, received=False):
+        if not events:
+            return
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute('SELECT 1 FROM group_client_connections WHERE owner=? AND alias=? AND connection_id=? AND active=1',
+                              (row['owner'], row['alias'], row['connection_id'])).fetchone():
+                return
+            db.executemany('INSERT OR IGNORE INTO group_client_events VALUES(?,?,?,?)',
+                           [(row['owner'], row['alias'], event['id'], json.dumps(event, ensure_ascii=False)) for event in events])
+            if received and events:
+                db.execute('UPDATE group_client_connections SET received_cursor=MAX(received_cursor,?) WHERE owner=? AND alias=?',
+                           (events[-1]['id'], row['owner'], row['alias']))
+            cutoff = db.execute('SELECT id FROM group_client_events WHERE owner=? AND alias=? ORDER BY id DESC LIMIT 1 OFFSET 1999', (row['owner'], row['alias'])).fetchone()
+            if cutoff:
+                db.execute('DELETE FROM group_client_events WHERE owner=? AND alias=? AND id<?', (row['owner'], row['alias'], cutoff[0]))
+                db.execute('DELETE FROM group_client_deliveries WHERE owner=? AND alias=? AND event_id<?', (row['owner'], row['alias'], cutoff[0]))
+
+    def messages(self, owner, alias, after=0, *, before=0, limit=100, through=None):
+        with self.db() as db:
+            order = 'ASC' if after else 'DESC'
+            rows = db.execute(f"SELECT body FROM group_client_events WHERE owner=? AND alias=? AND id>? "
+                              f"AND (?=0 OR id<?) AND (? IS NULL OR id<=?) AND json_extract(body,'$.kind')='message' ORDER BY id {order} LIMIT ?",
+                              (owner, alias, after, before, before, through, through, min(100, max(1, limit)))).fetchall()
+            return [json.loads(r['body']) for r in (rows if after else reversed(rows))]
+
+    def delivered(self, row, event_id, agent_id):
+        with self.db() as db:
+            return bool(db.execute('SELECT 1 FROM group_client_deliveries WHERE owner=? AND alias=? AND event_id=? AND agent_id=?',
+                                   (row['owner'], row['alias'], event_id, agent_id)).fetchone())
+
+    def mark_delivered(self, row, event_id, agent_id):
+        with self.db() as db:
+            db.execute('''INSERT OR IGNORE INTO group_client_deliveries
+                          SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM group_client_connections
+                          WHERE owner=? AND alias=? AND connection_id=? AND active=1)''',
+                       (row['owner'], row['alias'], event_id, agent_id, row['owner'], row['alias'], row['connection_id']))
+
+    def unread_digest(self, row, agent_id, before):
+        with self.db() as db:
+            after = db.execute('SELECT COALESCE(MAX(event_id),0) FROM group_client_deliveries WHERE owner=? AND alias=? AND agent_id=?',
+                               (row['owner'], row['alias'], agent_id)).fetchone()[0]
+        messages = [e['message'] for e in self.messages(row['owner'], row['alias'], after)
+                    if e['kind'] == 'message' and e['id'] < before]
+        return render_digest([{'sender': m['sender_name'], 'content': m['content']} for m in messages[-15:]])
+
+
+class GroupClient:
+    def __init__(self, store: ClientStore, agents, gateway):
+        self.store, self.agents, self.gateway = store, agents, gateway
+        self.tasks = {}
+        self.closed = False
+        self.sends = {}
+        self.outbox_task = None
+        self.receives = {}
+        self.avatar_tasks = {}
+        self.connections = {}
+
+    def connection_status(self, owner, alias):
+        row = self.require(owner, alias)
+        task = self.tasks.get((owner, alias))
+        running = bool(task and not task.done() and not self.closed)
+        status = self.connections.get((owner, alias), {})
+        return {'group_id':alias, 'background_running':running,
+                'state':status.get('state', 'connecting') if running else 'stopped',
+                'transport':'http-poll' if row['via'] else 'websocket',
+                'last_received_at':status.get('last_received_at')}
+
+    @staticmethod
+    def headers(row):
+        headers = {'Authorization': 'Bearer ' + row['token']}
+        if row['via']:
+            headers['X-Group-Invite'] = row['via']
+        if row.get('url') == service_url() and not row['via']:
+            headers['X-Group-Service-Key'] = service_key()
+        return headers
+
+    @staticmethod
+    def _refusal(response):
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        return ClientError(str(body.get('detail') or body.get('error') or '群服务器拒绝请求'), response.status_code)
+
+    def request(self, row, method, path, body=None, params=None):
+        try:
+            with httpx.Client(timeout=20, trust_env=False) as client:
+                response = client.request(method, row['url'] + '/relay' + path, headers=self.headers(row), json=body, params=params)
+            if response.status_code >= 400:
+                raise self._refusal(response)
+            return response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise ClientError('无法连接群服务器', 503) from exc
+
+    @classmethod
+    def enroll(cls, url, path, headers, body):
+        try:
+            with httpx.Client(timeout=20, trust_env=False) as client:
+                response = client.post(url + path, headers=headers, json=body)
+            if response.status_code >= 400:
+                raise cls._refusal(response)
+            return response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise ClientError('无法连接群服务器或服务器响应无效', 503) from exc
+
+    def join_link(self, owner, *, link, agents=(), name='', password=''):
+        """Join by invitation using a device-local password, or an explicit legacy password.
+
+        Through another machine's front end membership polls; through this
+        machine's own it is a local one. Existing connection tokens keep working.
+        """
+        base, ticket = parse_invite_link(link)
+        for aid in agents:
+            if self.agents.get(owner, aid) is None:
+                raise ClientError('只能引入自己拥有的 agent', 403)
+        own = base in own_front_ends()
+        front = frontend_url() if own else base
+        invitation = {'X-Group-Invite': ticket}
+        if own:
+            invitation['X-Group-Service-Key'] = service_key()
+        group_id = self.enroll(front, '/group-guest-api/info', invitation, {})['group_id']
+        url, via = (service_url(), '') if own else (base, ticket)
+        known = next((r for r in self.store.rows(owner) if r['url'] == url and r['remote_id'] == group_id and r['active']), None)
+        if known is None:
+            secret = password or self.store.login_secret(owner, url, group_id)
+            try:
+                result = self.enroll(front, '/relay/join', invitation, {
+                    'node_id': self.store.node_id, 'user_id': owner, 'display_name': name.strip() or owner, 'password': secret})
+            except ClientError as exc:
+                if not password and str(exc) in ('名字或密码不正确', '这个名字已有人使用；如果是你，请在原来的设备上设置密码后再登录'):
+                    raise ClientError('这个昵称已被其他身份使用。请换一个昵称，或在原设备继续加入；已有密码的身份可在高级选项中恢复。', 409) from exc
+                raise
+            if password:
+                self.store.remember_login_secret(owner, url, group_id, password)
+            alias = self.store.save(owner, url, result, via=via)
+        else:
+            alias = known['alias']
+        if own:
+            self.request(self.require(owner, alias), 'POST', '/host-local', {})
+        for aid in agents:
+            self.add_agent(owner, alias, aid)
+        return self.card(self.require(owner, alias))
+
+    def create(self, owner, *, title, kind='group', agents=()):
+        if kind == 'direct':
+            if len(agents) != 1:
+                raise ClientError('私聊需要且只能引入一个 agent')
+            for row in self.store.rows(owner):
+                if row['active'] and json.loads(row['metadata']).get('kind') == 'direct' and list(agents) == json.loads(row['allowed_agents']):
+                    return self.card(row)
+        for aid in agents:
+            if self.agents.get(owner, aid) is None:
+                raise ClientError('只能引入自己拥有的 agent', 403)
+        if kind == 'direct' and not (title or '').strip():
+            title = self.agents.get(owner, agents[0]).name or agents[0]
+        url = service_url()
+        result = self.enroll(url, '/relay/create', {'X-Group-Service-Key': service_key()}, {
+            'title': title, 'kind': kind,
+            'node_id': self.store.node_id, 'user_id': owner, 'display_name': owner})
+        alias = self.store.save(owner, url, result)
+        for aid in agents:
+            self.add_agent(owner, alias, aid)
+        return self.card(self.require(owner, alias))
+
+    def require(self, owner, alias):
+        row = self.store.get(owner, alias)
+        if not row or not row['active']:
+            raise ClientError('未加入此群，或群凭证已撤销', 403)
+        return row
+
+    async def remove_local(self, owner, alias):
+        # Remove the credential first so in-flight responses cannot recreate the cache.
+        self.store.remove(owner, alias)
+        task = self.tasks.pop((owner, alias), None)
+        avatar_task = self.avatar_tasks.pop((owner, alias), None)
+        if avatar_task is not None:
+            avatar_task.cancel()
+            await asyncio.gather(avatar_task, return_exceptions=True)
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        return {'removed': alias, 'local_only': True}
+
+    def add_agent(self, owner, alias, aid, *, convert_to_group=False):
+        row = self.require(owner, alias)
+        agent = self.agents.get(owner, aid)
+        if not agent:
+            raise ClientError('只能引入自己拥有的 agent', 403)
+        fields = {'agent_id': aid, 'name': agent.name, 'platform': agent.platform,
+                  'avatar': AvatarStore().get(owner, agent.config.get('avatar', ''))}
+        if convert_to_group:
+            fields['convert_to_group'] = True
+        group = self.request(row, 'POST', '/agents', fields)
+        allowed = set(json.loads(row['allowed_agents']))
+        allowed.add(aid)
+        self.store.update(owner, alias, metadata=json.dumps(group, ensure_ascii=False), allowed_agents=json.dumps(sorted(allowed)))
+        return self.card(self.require(owner, alias))
+
+    def principal(self, row, principal):
+        group = json.loads(row['metadata'])
+        for member in group.get('members', []):
+            if member['principal'] == principal or (member['connection_id'] == row['connection_id'] and
+                    (member['agent_id'] == principal or (not member['agent_id'] and principal == 'u:' + row['owner']))):
+                return member['principal']
+        raise ClientError('成员不属于此群', 404)
+
+    def manage(self, owner, alias, action, fields):
+        row = self.require(owner, alias)
+        if fields.get('principal'):
+            fields = {**fields, 'principal': self.principal(row, fields['principal'])}
+        result = self.request(row, 'POST', '/manage/' + action, fields)
+        if action in {'leave', 'delete'}:
+            self.store.update(owner, alias, active=0)
+        else:
+            self.store.update(owner, alias, metadata=json.dumps(result, ensure_ascii=False))
+            if action == 'remove_member':
+                allowed = set(json.loads(row['allowed_agents']))
+                remaining = {m['agent_id'] for m in result['members'] if m['connection_id'] == row['connection_id']}
+                self.store.update(owner, alias, allowed_agents=json.dumps(sorted(allowed & remaining)))
+        return result if action in {'leave', 'delete'} else self.card(self.require(owner, alias))
+
+    def card(self, row):
+        group = json.loads(row['metadata'])
+        allowed = set(json.loads(row['allowed_agents']))
+        members = []
+        for member in group.get('members', []):
+            local = member['connection_id'] == row['connection_id']
+            if local and member['agent_id'] and member['agent_id'] not in allowed:
+                continue
+            principal = (member['agent_id'] or 'u:' + row['owner']) if local else member['principal']
+            agent = None
+            if member['is_agent']:
+                state = member.get('activity', {}).get('state', 'remote') if not local else 'idle'
+                original = self.agents.get(row['owner'], member['agent_id']) if local else None
+                busy = getattr(self.gateway, 'is_busy', None)
+                if original and callable(busy):
+                    state = 'running' if busy(original) else 'idle'
+                    if state == 'idle' and original.driver == 'acpx':
+                        from external.native_tool_policy import native_tools_enabled
+                        if not native_tools_enabled(original.config):
+                            state = 'paused'
+                agent = {'agent_id': principal, 'name': member['name'], 'platform': member['platform'],
+                         'remote': not local, 'settings': {'persona': '', 'tools': [], 'teams': []},
+                         'status': {'state': state, 'actions': [],
+                                    'started_at': member.get('activity', {}).get('started_at')}}
+            members.append({**member, 'principal': principal, 'agent': agent, 'nickname': '', 'remote': not local,
+                            'can_edit_profile': local and not member['is_agent'],
+                            'is_owner': not member['is_agent'] and member['connection_id'] == group.get('owner'),
+                            'can_remove': (group.get('owner') == row['connection_id'] and member['connection_id'] != group.get('owner'))
+                                          or (member['is_agent'] and local)})
+        primary = None
+        for original, visible in zip([m for m in group.get('members', []) if not (m['connection_id'] == row['connection_id'] and m['agent_id'] and m['agent_id'] not in allowed)], members):
+            if original['principal'] == group.get('primary_agent'):
+                primary = visible['principal']
+        messages = self.messages(row['owner'], row['alias'])
+        paused = '暂停外部联网' in row['error']
+        receipt_names = {m['principal']: m['agent_id'] or 'u:' + row['owner']
+                         for m in group.get('members', []) if m['connection_id'] == row['connection_id']}
+        return {**group, 'group_id': row['alias'], 'remote_group_id': row['remote_id'], 'server_url': row['url'],
+                'receipts': [{**r, 'principal': receipt_names.get(r['principal'], r['principal'])} for r in group.get('receipts', [])],
+                'connection_state': 'paused' if paused else 'connected' if not row['error'] else 'reconnecting',
+                'external_access_enabled': False if paused else group.get('external_access_enabled', True), 'connection_error': row['error'],
+                'owner': row['owner'] if group.get('owner') == row['connection_id'] else 'remote:' + str(group.get('owner')),
+                'primary_agent': primary, 'members': members, 'member_count': len(members),
+                'member_names': [m['name'] for m in members][:4], 'messages': messages,
+                'last_message': messages[-1] if messages else None, 'message_count': len(messages),
+                'updated_at': messages[-1]['created_at'] if messages else 0, 'federated': True}
+
+    def messages(self, owner, alias, after=0):
+        row = self.require(owner, alias)
+        return [self.local_message(row, {**e['message'], 'id': e['id']})
+                for e in self.store.messages(owner, alias, after, through=row['received_cursor']) if e['kind'] == 'message']
+
+    @staticmethod
+    def local_message(row, message):
+        mapping = {m['principal']: (m['agent_id'] or 'u:' + row['owner']) for m in json.loads(row['metadata']).get('members', [])
+                   if m['connection_id'] == row['connection_id']}
+        return {**message, 'sender': mapping.get(message['sender'], message['sender']),
+                'mentions': [mapping.get(m, m) for m in message.get('mentions', [])]}
+
+    def search_messages(self, owner, alias, query, before_id=0, limit=50, **filters):
+        row = self.require(owner, alias)
+        if filters.get('sender'):
+            filters['sender']=self.principal(row,filters['sender'])
+        return self.request(row, 'GET', '/search', params={'query':query,'before_id':before_id,'limit':limit,**filters})
+
+    def message_context(self, owner, alias, message_id):
+        return self.request(self.require(owner,alias),'GET',f'/messages/{message_id}/context')
+
+    def history(self, owner, alias, before_id=0, limit=50):
+        """Read server history separately from the delivery cursor and Agent inbox."""
+        row = self.require(owner, alias)
+        limit = min(50, max(1, limit))
+        mapping = {m['principal']: (m['agent_id'] or 'u:' + owner)
+                   for m in json.loads(row['metadata']).get('members', []) if m['connection_id'] == row['connection_id']}
+        try:
+            # Existing relay protocol supports date-filtered, cursor-paged searches,
+            # including older Hub servers. Do not replay these rows as events.
+            page = self.search_messages(owner, alias, '', before_id, limit, from_ts=1)
+            messages = [{**m, 'sender': mapping.get(m['sender'], m['sender']),
+                         'mentions': [mapping.get(p, p) for p in m.get('mentions', [])]}
+                        for m in page.get('messages', [])]
+            return {'messages': sorted(messages, key=lambda m: m['id']),
+                    'next_before_id': page.get('next_before_id', 0), 'source': 'server', 'error': ''}
+        except ClientError as exc:
+            if exc.status not in {502, 503, 504}:
+                raise
+            events = self.store.messages(owner, alias, before=before_id, limit=limit)
+            messages = [{**e['message'], 'id': e['id'],
+                         'sender': mapping.get(e['message']['sender'], e['message']['sender']),
+                         'mentions': [mapping.get(p, p) for p in e['message'].get('mentions', [])]} for e in events]
+            more = bool(messages and self.store.messages(owner, alias, before=messages[0]['id'], limit=1))
+            return {'messages': messages, 'next_before_id': messages[0]['id'] if more else 0,
+                    'source': 'cache', 'error': str(exc)}
+
+    def memberships(self, owner, aid):
+        result = []
+        for row in self.store.rows(owner):
+            if not row['active'] or aid not in json.loads(row['allowed_agents']):
+                continue
+            card = self.card(row)
+            me = next((m for m in card['members'] if m['principal'] == aid and not m['remote']), None)
+            if me:
+                meta = self.metadata(card, me)
+                agent = self.agents.get(owner, aid)
+                if agent:
+                    meta['reply_channel'] = reply_channel(agent, row['alias'])
+                result.append(meta)
+        return result
+
+    @staticmethod
+    def metadata(card, member):
+        return {'group_id': card['group_id'], 'title': card['title'], 'kind': card['kind'],
+                'announcement': card.get('announcement', ''),
+                'owner': card['owner'], 'identity': member['name'],
+                'role': 'primary_agent' if card['primary_agent'] == member['principal'] else 'member',
+                'server_url': card['server_url'], 'remote_group_id': card['remote_group_id'],
+                'delivery': '回复只交给这个空间的小程序，不进群聊。' if card.get('app') else '群成员可见；按当前群规则唤醒其他 agent。',
+                'members': [{k: m[k] for k in ('name', 'muted', 'user_id', 'agent_id', 'node_id') if k in m} | {'kind': 'agent' if m['is_agent'] else 'human'} for m in card['members']],
+                'reply_channel': f'send_to_group(group_id="{card["group_id"]}", content="你的回复")'}
+
+    async def post(self, owner, alias, sender, content, **fields):
+        row = self.require(owner, alias)
+        aid = '' if sender == 'u:' + owner else sender
+        if aid and (aid not in json.loads(row['allowed_agents']) or self.agents.get(owner, aid) is None):
+            raise ClientError('发送 agent 未经本机用户授权加入此群', 403)
+        mentions = [self.principal(row, p) for p in fields.get('mentions') or []]
+        body = {'content': content, 'agent_id': aid, 'mentions': mentions, 'attachments': fields.get('attachments') or [],
+                'client_msg_id': fields.get('client_msg_id') or secrets.token_hex(16), 'reply_to': fields.get('reply_to'),
+                'expected_title': fields.get('expected_title')}
+        try:
+            key = self.store.enqueue(row, body)
+        except ValueError as exc:
+            raise ClientError(str(exc), 409) from exc
+        self.ensure_outbox()
+        return await self.send_pending(key)
+
+    async def send_pending(self, key):
+        # Coalesce a caller and the retry loop. Server-side dedup also covers process crashes.
+        if key not in self.sends:
+            task = asyncio.create_task(self._send_pending(key))
+            self.sends[key] = task
+            def finished(done):
+                self.sends.pop(key, None)
+                if not done.cancelled():
+                    done.exception()
+            task.add_done_callback(finished)
+        return await asyncio.shield(self.sends[key])
+
+    async def _send_pending(self, key):
+        item = self.store.outbox(key)
+        if not item:
+            return None
+        owner, alias, aid, _ = key
+        try:
+            row = self.require(owner, alias)
+            if row['connection_id'] != item['connection_id'] or (aid and (
+                    aid not in json.loads(row['allowed_agents']) or self.agents.get(owner, aid) is None)):
+                raise ClientError('原发送身份已失效，停止重试', 403)
+            return await self._send_body(row, json.loads(item['body']), key)
+        except ClientError as exc:
+            retry = exc.status in {408, 425, 429, 500, 502, 503, 504}
+            self.store.send_failed(key, exc, retry)
+            if retry:
+                raise ClientError(f'{exc}；消息已保存待重试（{key[-1]}）', exc.status) from exc
+            raise
+
+    async def _send_body(self, row, body, key):
+        try:
+            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
+                response = await client.post(row['url'] + '/relay/messages', headers=self.headers(row), json=body)
+        except httpx.HTTPError as exc:
+            raise ClientError('无法连接群服务器', 503) from exc
+        if response.status_code >= 400:
+            raise self._refusal(response)
+        try:
+            result = response.json()
+            if not result.get('app'):
+                message = result.get('message', {})
+                if type(message.get('id')) is not int or message['id'] <= 0 or not isinstance(message.get('sender'), str):
+                    raise ValueError('invalid message confirmation')
+        except (ValueError, AttributeError) as exc:
+            raise ClientError('群服务器未返回有效发送确认', 502) from exc
+        if result.get('app'):
+            self.store.sent(key)
+            return result  # in a space with an app, the output went to the app rather than the chat
+        self.store.cache(row, {'id': result['message']['id'], 'kind': 'message', 'message': result['message']})
+        self.store.sent(key)
+        return {**result, 'message': self.local_message(row, result['message'])}
+
+    def ensure_outbox(self):
+        if not self.closed and (self.outbox_task is None or self.outbox_task.done()):
+            self.outbox_task = asyncio.create_task(self.retry_outbox())
+
+    async def retry_outbox(self):
+        while not self.closed:
+            await asyncio.gather(*(self.send_pending(key) for key in self.store.pending_sends()), return_exceptions=True)
+            await asyncio.sleep(1)
+
+    async def consume(self, row, packet):
+        key = (row['owner'], row['alias'])
+        async with self.receives.setdefault(key, asyncio.Lock()):
+            current = self.require(*key)
+            if current['connection_id'] != row['connection_id']:
+                raise ClientError('接收连接身份已改变', 403)
+            await self._consume(current, packet)
+
+    async def _consume(self, row, packet):
+        if packet.get('connection_id') != row['connection_id']:
+            raise ClientError('连接身份不匹配', 403)
+        if packet.get('group', {}).get('group_id') != row['remote_id']:
+            raise ClientError('群身份不匹配', 403)
+        ids = [event.get('id') for event in packet.get('events', [])]
+        if any(type(value) is not int or value <= 0 for value in ids) or ids != sorted(set(ids)):
+            raise ClientError('群服务器事件顺序无效', 502)
+        group = {**packet['group']}
+        if 'receipts' in packet:
+            group['receipts'] = packet['receipts']
+            group['capabilities'] = packet.get('capabilities', {})
+        self.store.update(row['owner'], row['alias'], metadata=json.dumps(group, ensure_ascii=False), error='')
+        # Cache the authoritative ordered batch atomically. Outgoing POST responses
+        # alone must not advance this watermark and hide older messages still in flight.
+        self.store.cache_events(row, packet.get('events', []), received=True)
+        row = self.require(row['owner'], row['alias'])
+        allowed = set(json.loads(row['allowed_agents']))
+        card = self.card(row)
+        for event in packet.get('events', []):
+            if event['id'] <= row['cursor']:
+                continue
+            if event.get('kind') == 'message':
+                for member in packet['group'].get('members', []):
+                    aid = member.get('agent_id')
+                    if member.get('connection_id') != row['connection_id'] or aid not in allowed or member.get('muted') or member['principal'] not in event.get('targets', []):
+                        continue
+                    agent = self.agents.get(row['owner'], aid)
+                    if aid not in json.loads(self.require(row['owner'], row['alias'])['allowed_agents']):
+                        continue
+                    if not agent or self.store.delivered(row, event['id'], aid):
+                        continue
+                    visible = next((m for m in card['members'] if m['principal'] == aid and not m['remote']), None)
+                    if not visible:
+                        continue
+                    message = event['message']
+                    source = next((m for m in packet['group'].get('members', []) if m['principal'] == message['sender']), None)
+                    human_requests = []
+                    if source and not source['is_agent'] and not message.get('sender_agent_id'):
+                        verified_owner = bool(source.get('host_local') and row['url']==service_url() and source['user_id']==agent.owner)
+                        human_requests = [{'id': f'group:{row["remote_id"]}:{event["id"]}',
+                            'text': message['content'], 'source_kind': 'group_human',
+                            'sender_user': source['user_id'] if verified_owner else 'remote:'+source['user_id'],
+                            'claimed_sender_user':source['user_id'], 'authenticated_owner':verified_owner, 'sender_name': source['name'],
+                            'group_id': row['alias']}]
+                    quote = message.get('reply')
+                    reference = f'\n[引用消息 #{quote["id"]}] {quote["sender_name"]}:\n{quote["content"]}\n[引用结束]\n' if quote else ''
+                    text = self.store.unread_digest(row, aid, event['id']) + f'[群聊「{card["title"]}」 group_id={row["alias"]}] {message["sender_name"]} 说:\n{reference}{message["content"]}'
+                    await self._wake(row, card, agent, visible, event['id'], AgentMessage(text=text, sender=message['sender'],
+                        summary=f'群聊「{card["title"]}」 {message["sender_name"]}: {message["content"][:60]}',
+                        attachments=message.get('attachments', [])), human_requests)
+            elif event.get('kind') == 'app_request':
+                # The space's app asks one of this device's agents directly; only this device receives it.
+                aid = event.get('agent_id')
+                agent = self.agents.get(row['owner'], aid) if aid in allowed else None
+                visible = next((m for m in card['members'] if m['principal'] == aid and not m['remote']), None)
+                if agent and visible and not self.store.delivered(row, event['id'], aid):
+                    await self._wake(row, card, agent, visible, event['id'], AgentMessage(
+                        text=f'[空间「{card["title"]}」的小程序 group_id={row["alias"]}] 请求:\n{event["content"]}',
+                        sender='app', summary=f'空间「{card["title"]}」的小程序: {event["content"][:60]}'), [])
+            self.store.update(row['owner'], row['alias'], cursor=event['id'])
+
+    async def _wake(self, row, card, agent, visible, event_id, message, human_requests):
+        """Wakes one local agent with a group message or an app request; its reply goes back to the group."""
+        aid = agent.agent_id
+        if agent.driver == 'acpx':
+            from external.native_tool_policy import native_tools_enabled
+            if not native_tools_enabled(agent.config):
+                self.store.mark_delivered(row, event_id, aid)
+                return  # Membership remains visible; disabled native sessions never queue or spend.
+        from webot.runtime import effective_session_mode
+        automatic = effective_session_mode(agent.owner,agent.agent_id) == 'chat'
+        forwarding = ((agent.config.get('meta') or {}).get('forwarding') or {}).get('reply') == 'automatic'
+        tools = agent.config.get('tools') if agent.driver == 'webot' else ((agent.config.get('meta') or {}).get('acp') or {}).get('tools')
+        text_reply=automatic or forwarding or (tools is not None and 'send_to_group' not in tools) or (agent.driver == 'acpx' and not ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools',True))
+        completion = None
+        if text_reply:
+            async def completion(reply, owner=row['owner'], alias=row['alias'], target=aid):
+                if reply and reply.ok and reply.content.strip():
+                    try:
+                        await self.post(owner,alias,target,reply.content,client_msg_id=f'chat-reply:{event_id}:{target}')
+                    except ClientError:
+                        logger.warning('群回复暂未发送：%s/%s', owner, alias, exc_info=True)
+        reply_meta = self.metadata(card,visible)
+        if text_reply:
+            reply_meta['automatic_reply_id'] = f'chat-reply:{event_id}:{aid}'
+        reply_meta['reply_channel'] = '直接输出文字；系统会发送到当前群，不需要调用工具。' if text_reply else reply_channel(agent,row['alias'])
+        try:
+            receipt = await self.gateway.inbox(agent, message, context={'conversation_id': row['alias'],
+                'delivery_id': f'relay:{row["alias"]}:{event_id}:{aid}',
+                'group_human_requests': human_requests,
+                'group_auto_reply': bool(text_reply),
+                'groups': [reply_meta]},mode='chat' if automatic else None,on_complete=completion)
+            error = '' if receipt.accepted else receipt.error or '未接受'
+        except Exception as exc:
+            error = str(exc) or type(exc).__name__
+        if error:
+            # One agent that cannot take messages must not stop the group: skip it here; the unread
+            # digest of its next delivery carries what it missed.
+            logger.warning('群消息 #%s 未送达 agent %s：%s', event_id, aid, error)
+            return
+        self.store.mark_delivered(row, event_id, aid)
+
+    async def reply_to_inbox(self, agent, groups, content):
+        """Restore the normal group reply after a service restart loses callbacks."""
+        if not content or not content.strip():
+            return
+        for group in groups:
+            key = group.get('automatic_reply_id', '')
+            if key.startswith('chat-reply:') and key.endswith(':'+agent.agent_id):
+                await self.post(agent.owner, group['group_id'], agent.agent_id, content,
+                                client_msg_id=key)
+
+    def ensure(self, owner, alias):
+        key = (owner, alias)
+        if self.closed:
+            return
+        if key not in self.avatar_tasks or self.avatar_tasks[key].done():
+            avatar_task = asyncio.create_task(self._sync_avatars(owner, alias))
+            self.avatar_tasks[key] = avatar_task
+            def avatar_finished(done):
+                if self.avatar_tasks.get(key) is done:
+                    self.avatar_tasks.pop(key, None)
+            avatar_task.add_done_callback(avatar_finished)
+        if key not in self.tasks or self.tasks[key].done():
+            self.connections[key] = {'state':'connecting', 'last_received_at':None}
+            task = asyncio.create_task(self.worker(owner, alias))
+            self.tasks[key] = task
+            def finished(done):
+                if self.tasks.get(key) is done:
+                    self.tasks.pop(key, None)
+            task.add_done_callback(finished)
+
+    async def _sync_avatars(self, owner, alias):
+        """Publish only changed identity, independently of chat and activity heartbeats."""
+        assets = AvatarStore()
+        delay = 2
+        try:
+            while not self.closed:
+                await asyncio.sleep(delay)
+                row = self.store.get(owner, alias)
+                if not row or not row['active']:
+                    return
+                try:
+                    members = json.loads(row['metadata']).get('members', [])
+                    own = [m for m in members if m.get('connection_id') == row['connection_id']]
+                    human = next((m for m in own if not m['is_agent']), None)
+                    picture = assets.user(owner)
+                    if human and picture['configured'] and picture['avatar'] != human.get('avatar', ''):
+                        await asyncio.to_thread(self.manage, owner, alias, 'profile', {'avatar_image': picture['url']})
+                    for member in own:
+                        if not member['is_agent']:
+                            continue
+                        agent = self.agents.get(owner, member['agent_id'])
+                        if agent and 'avatar' in agent.config and agent.config.get('avatar', '') != member.get('avatar', ''):
+                            await asyncio.to_thread(self.add_agent, owner, alias, agent.agent_id)
+                    delay = 15
+                except Exception:
+                    # Failed identity synchronization never retries a model or blocks group delivery.
+                    delay = min(300, max(30, delay * 2))
+        except asyncio.CancelledError:
+            return
+
+    async def _receive(self, owner, alias, packet):
+        """Apply one events packet; returns the cursor to acknowledge."""
+        row = self.require(owner, alias)
+        # A deleted local agent loses permission immediately, including offline deletes.
+        for member in list(packet['group'].get('members', [])):
+            if member['connection_id'] == row['connection_id'] and member.get('agent_id') and self.agents.get(owner, member['agent_id']) is None:
+                packet['group'] = await asyncio.to_thread(self.request, row, 'POST', '/manage/remove_member', {'principal': member['principal']})
+        await self.consume(self.require(owner, alias), packet)
+        self.connections[(owner, alias)] = {'state':'connected', 'last_received_at':time.time()}
+        return self.require(owner, alias)['cursor']
+
+    async def _stream(self, owner, alias, connected):
+        row = self.require(owner, alias)
+        uri = row['url'].replace('https://', 'wss://', 1).replace('http://', 'ws://', 1) + '/relay/ws'
+        async with connect(uri, open_timeout=10, max_size=2 * 1024 * 1024, proxy=None) as ws:
+            await ws.send(json.dumps({'token': row['token'], 'cursor': row['cursor'],
+                                     'received_cursor': row['received_cursor'], 'device_id': self.store.node_id,
+                                     'agent_activity': self.running_agents(row)}))
+            connected()
+            async def heartbeat():
+                while not self.closed:
+                    await asyncio.sleep(POLL_SECONDS)
+                    await ws.send(json.dumps({'type': 'activity', 'running': self.running_agents(self.require(owner, alias))}))
+            pulse = asyncio.create_task(heartbeat())
+            try:
+                async for raw in ws:
+                    packet = json.loads(raw)
+                    if packet.get('type') == 'events':
+                        await ws.send(json.dumps({'type': 'ack', 'cursor': await self._receive(owner, alias, packet)}))
+            finally:
+                pulse.cancel()
+                await asyncio.gather(pulse, return_exceptions=True)
+
+    def running_agents(self, row):
+        """Only this connection's admitted Agents; inspect local locks without starting a runtime."""
+        allowed = set(json.loads(row['allowed_agents']))
+        busy = getattr(self.gateway, 'is_busy', None)
+        if not callable(busy):
+            return []
+        members = json.loads(row['metadata']).get('members', [])
+        ids = {m['agent_id'] for m in members if m.get('connection_id') == row['connection_id']
+               and m.get('agent_id') in allowed}
+        return sorted(aid for aid in ids if (agent := self.agents.get(row['owner'], aid)) and busy(agent))
+
+    async def _poll(self, owner, alias, connected):
+        version = None
+        while not self.closed:
+            row = self.require(owner, alias)
+            packet = await asyncio.to_thread(self.request, row, 'POST', '/poll', {
+                'cursor': row['cursor'], 'received_cursor': row['received_cursor'], 'device_id': self.store.node_id,
+                'agent_activity': self.running_agents(row)})
+            connected()
+            if packet['events'] or packet['group'].get('version') != version or 'receipts' in packet:
+                await self._receive(owner, alias, packet)
+                version = packet['group'].get('version')
+            if not packet['events']:
+                await asyncio.sleep(POLL_SECONDS)
+
+    async def worker(self, owner, alias):
+        delay = 1
+
+        def connected():
+            nonlocal delay
+            delay = 1
+
+        while not self.closed:
+            row = self.store.get(owner, alias)
+            if not row or not row['active']:
+                return
+            try:
+                if row['url'] == service_url() and not row['via']:
+                    await asyncio.to_thread(self.request, row, 'POST', '/host-local', {})
+                await (self._poll if row['via'] else self._stream)(owner, alias, connected)
+                if self.closed:
+                    return
+                raise ConnectionError("group connection closed")
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                from websockets.exceptions import ConnectionClosed
+                revoked = (isinstance(exc, ConnectionClosed) and exc.rcvd and exc.rcvd.code == 1008) or (
+                    isinstance(exc, ClientError) and exc.status in {401, 403})
+                if revoked:
+                    self.connections[(owner, alias)] = {'state':'revoked'}
+                    self.store.update(owner, alias, active=0, error='群凭证已失效或成员关系已撤销')
+                    return
+                paused = (isinstance(exc, ClientError) and exc.status == 503 and '暂停外部联网' in str(exc)) or (
+                    isinstance(exc, ConnectionClosed) and exc.rcvd and exc.rcvd.code == 1013 and '暂停外部联网' in exc.rcvd.reason)
+                self.connections[(owner, alias)] = {'state':'paused' if paused else 'reconnecting'}
+                self.store.update(owner, alias, error='群主已暂停外部联网，等待恢复' if paused else '连接中断，正在重连')
+                await asyncio.sleep(delay)
+                delay = min(30, delay * 2)
+
+    async def start(self):
+        self.ensure_outbox()
+        for row in self.store.rows():
+            if row['active']:
+                self.ensure(row['owner'], row['alias'])
+
+    async def close(self):
+        self.closed = True
+        tasks = [*self.tasks.values(), *self.sends.values(), *self.avatar_tasks.values()]
+        if self.outbox_task is not None:
+            tasks.append(self.outbox_task)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

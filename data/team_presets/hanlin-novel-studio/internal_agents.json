@@ -4,6 +4,22 @@
     "tag": "hanlin_zhang"
   },
   {
+    "name": "翰林院·修撰",
+    "tag": "hanlin_xiuzhuan"
+  },
+  {
+    "name": "翰林院·编修",
+    "tag": "hanlin_bianxiu"
+  },
+  {
+    "name": "翰林院·检讨",
+    "tag": "hanlin_jiantao"
+  },
+  {
+    "name": "翰林院·庶吉士",
+    "tag": "hanlin_shujishi"
+  },
+  {
     "name": "起居注官",
     "tag": "qijuzhu"
   }

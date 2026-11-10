@@ -1,35 +1,35 @@
 # Clawcross 端口大全
 
-> 最后更新：2026-04-01
+> 最后更新：2026-10-17
 
 ## 端口总览
 
 | 端口 | 环境变量 | 服务文件 | 说明 | 绑定地址 | 对外暴露 |
 |------|----------|----------|------|----------|----------|
-| **51200** | `PORT_AGENT` | `src/mainagent.py` | AI Agent 主服务（OpenAI 兼容 API） | `127.0.0.1` | 否 |
-| **51201** | `PORT_SCHEDULER` | `src/utils/scheduler_service.py` | 定时任务调度中心 | `127.0.0.1` | 否 |
-| **51202** | `PORT_OASIS` | `oasis/server.py` | OASIS 论坛 / Agent 管理与编排中心 | `127.0.0.1` | 否 |
-| **51209** | `PORT_FRONTEND` | `src/front.py` | 前端 Web UI（Flask） | `0.0.0.0` | 是 Tunnel |
-| **51210** | —（硬编码） | `visual/main.py` | 可视化编排系统（开发用） | `0.0.0.0` | 否 |
+| **51200** | `PORT_AGENT` | `src/backend/server.py` | AI Agent 主服务（OpenAI 兼容 API） | `127.0.0.1` | 否 |
+| **51201** | `PORT_SCHEDULER` | `src/backend/scheduler/service.py` | 定时任务调度中心 | `127.0.0.1` | 否 |
+| **51202** | `PORT_OASIS` | `src/backend/oasis/server.py` | OASIS 论坛 / Agent 管理与编排中心 | `127.0.0.1` | 否 |
+| **51203** | `PORT_GROUPS` | `src/backend/groups/server.py` | 独立群聊服务器、群连接与转发 | `127.0.0.1`（可显式更改） | 默认否 |
+| **51209** | `PORT_FRONTEND` | `src/frontend/server.py` | 前端 Web UI（Flask） | `127.0.0.1` | 经显式 Tunnel 或反向代理 |
+| **51210** | —（硬编码） | `src/frontend/visual.py` | 可视化编排系统（开发用） | `0.0.0.0` | 否 |
 | **58010** | `PORT_BARK` | 外部二进制 `bin/bark-server` | Bark 推送服务器 | — | 是 Tunnel |
-| **18789** | `OPENCLAW_API_URL`（可选） | 外部服务 | OpenClaw 后端（外部集成） | 不适用 | 不适用 |
 
 ## 详细说明
 
 ### 51200 — AI Agent 主服务
 
-- **文件**：`src/mainagent.py`
+- **文件**：`src/backend/server.py`
 - **职责**：
   - 提供 OpenAI 兼容的 `/v1/chat/completions` 接口
   - Agent 核心逻辑（工具调用、多轮对话、记忆管理）
   - `/system_trigger` 内部触发端点（定时任务回调等）
-  - `/login`、`/sessions`、`/tools`、`/tts`、`/settings`、`/groups` 等 API
-- **调用方**：前端 `front.py`（代理转发）、chatbot、MCP 模块、OASIS 回调
+  - `/v1/agents`（本机所有 agent，WeBot 会话也在其中）、`/login`、`/tools`、`/tts`、`/settings`、`/groups` 等 API
+- **调用方**：前端 `src/frontend/server.py`（代理转发）、渠道、MCP 模块、OASIS 回调
 - **鉴权**：`X-Internal-Token` 或用户密码
 
 ### 51201 — 定时任务调度中心
 
-- **文件**：`src/utils/scheduler_service.py`
+- **文件**：`src/backend/scheduler/service.py`
 - **职责**：
   - 管理 cron / 一次性定时任务
   - 提供 `/tasks` 端点供 `mcp_scheduler.py` 调用
@@ -39,20 +39,27 @@
 
 ### 51202 — OASIS 论坛服务
 
-- **文件**：`oasis/server.py`
+- **文件**：`src/backend/oasis/server.py`
 - **职责**：
   - 多人设讨论引擎（Topics / Experts / Sessions）
   - Town Genesis / swarm blueprint 生成
-  - GraphRAG 长期记忆与 ReportAgent
-  - OpenClaw 快照管理
+  - GraphRAG 长期记忆与 ReportAgent（尚未接入，见 oasis-reference.md）
   - `/publicnet/info` 公网信息查询
   - Agent 管理与编排中心（迁移中）
 - **调用方**：`mcp_oasis.py`、前端代理、外部脚本
-- **注意**：默认绑定 `127.0.0.1`，可用 `--host 0.0.0.0` 启动
+- **注意**：默认绑定 `127.0.0.1`；WSL 下或设置了 `CLAWCROSS_SERVER_HOST` 时会绑定到其他地址。此时只有本机回环地址的调用可以免 token，其他主机的请求必须带 `X-Internal-Token: $INTERNAL_TOKEN`，否则返回 401。
+
+### 51203 — 独立群聊服务
+
+默认本机运行，旧群通过机器凭证 RPC 访问，新群通过群客户端连接。
+显式 `GROUP_SERVER_HOST=0.0.0.0` 后，其他设备可凭群号和密码加入。
+远端仅接触 `/relay` 群协议，不获得 Agent API 的 INTERNAL_TOKEN。
+前端 Tunnel 只公开网页，不自动公开群服务器。公网群服务器应通过 HTTPS/WSS 代理。
+使用方式见 [跨设备群聊](group-network.md)。
 
 ### 51209 — 前端 Web UI
 
-- **文件**：`src/front.py`
+- **文件**：`src/frontend/server.py`
 - **职责**：
   - 用户交互界面（聊天、登录、设置、OASIS 面板）
   - 反向代理：将浏览器请求转发到 Agent / OASIS 等内部服务
@@ -68,54 +75,46 @@
 
 ### 51210 — 可视化编排系统（开发用）
 
-- **文件**：`visual/main.py`
+- **文件**：`src/frontend/visual.py`
 - **职责**：独立 Flask 应用，提供 2D 画布拖拽编排 Agent 节点，导出 OASIS 兼容的 YAML 工作流
-- **注意**：不在 `launcher.py` 启动序列中，需手动 `python visual/main.py` 启动
+- **注意**：不在 `launcher.py` 启动序列中，需手动 `python src/frontend/visual.py` 启动
 
 ### 58010 — Bark 推送服务器
 
 - **来源**：外部二进制 `bin/bark-server`
 - **职责**：接收推送请求并转发到 iOS/macOS 设备
 - **数据**：`data/bark/bark.db`
-- **公网地址**：由 tunnel 写入 `BARK_PUBLIC_URL`
-
-### 18789 — OpenClaw 后端（可选）
-
-- **来源**：外部 OpenClaw Gateway 服务
-- **职责**：连接外部 Agent Session，在 OASIS 工作流 YAML 中作为 `api_url` 引用
-- **条件**：仅在配置了 OpenClaw 集成时使用
-- **浏览器入口**：`http://127.0.0.1:18789/`
-- **HTTP API**：`http://127.0.0.1:18789/v1/chat/completions`
+- **公网地址**：当前单一隧道不暴露 Bark，也不写入 `BARK_PUBLIC_URL`
 
 ## 启动顺序
 
-由 `scripts/launcher.py` 定义：
+由 `launch/launcher.py` 并行启动以下服务，按实际就绪状态等待，日志输出各组件耗时：
 
-在 1/5 之前，如果本机已安装 OpenClaw，launcher 会先尝试预热 OpenClaw gateway，确保 `/v1/chat/completions` 可用，并刷新 `OPENCLAW_*` 运行时配置。
+| 服务 | 端口 | 就绪检查 |
+|------|------|----------|
+| 群聊服务器 | 51203 | `/relay/health` |
+| 定时调度中心 | 51201 | TCP 监听 |
+| OASIS 论坛 | 51202 | `/experts` |
+| AI Agent | 51200 | `/health`，完成工具目录和应用生命周期初始化 |
+| 前端 Web UI | 51209 | TCP 监听 |
 
-| 步骤 | 服务 | 端口 | 等待时间 |
-|------|------|------|----------|
-| 1/5 | 定时调度中心 | 51201 | 2s |
-| 2/5 | OASIS 论坛 | 51202 | 2s |
-| 3/5 | AI Agent | 51200 | 3s |
-| 4/5 | Chatbot 配置 | — | 交互式 |
-| 5/5 | 前端 Web UI | 51209 | 1s |
+内置工具目录在主进程读取，不为获取定义而启动 12 个 MCP 子进程；实际工具调用仍走原 stdio MCP 通道。已配置且明确启用的渠道在核心服务就绪后启动。重载时只在端口仍被占用时等待释放，不再固定等待两秒。
 
 ## Tunnel 暴露策略
 
-由 `scripts/tunnel.py` 管理：
+由 `launch/tunnel.py` 管理：
 
 ```
 公网用户
   ↓ HTTPS
-[Cloudflare Tunnel]
-  ├─→ 127.0.0.1:51209 (front.py)    → PUBLIC_DOMAIN
-  └─→ 127.0.0.1:58010 (bark-server) → BARK_PUBLIC_URL
+[Hub 设备子域名 / 显式选择的 Cloudflare 通道]
+  └─→ 127.0.0.1:51209 (frontend) → PUBLIC_DOMAIN
 ```
 
-- Tunnel 只暴露 `front.py` 和 `bark-server`
+- 此隧道只暴露前端（`src/frontend/server.py`）；Bark 保持本地访问
+- 默认 Hub 通过设备主动建立的 WSS 连接转发完整前端，设备地址在重连后保留，无需额外二进制。Cloudflare 需显式选择并预先安装 cloudflared，其临时地址可能变化，启动脚本不会下载
 - 所有内部服务（Agent、Scheduler、OASIS）**不对外暴露**
-- 前端到内部服务的通信全部通过 `front.py` 反向代理
+- 前端到内部服务的通信全部通过前端（`src/frontend/server.py`）反向代理
 
 ## 环境变量配置
 
@@ -130,7 +129,7 @@ PORT_FRONTEND=51209
 
 ---
 
-## front.py 全部接口（:51209）
+## 前端 src/frontend/server.py 全部接口（:51209）
 
 ### 页面 & 静态资源
 
@@ -140,10 +139,18 @@ PORT_FRONTEND=51209
 - `GET /manifest.json` — PWA manifest
 - `GET /sw.js` — Service Worker
 
-### OpenAI 兼容（→ :51200）
+### OpenAI 兼容 & Agent / Team API（→ :51200）
 
-- `POST /v1/chat/completions` — 聊天补全（公开路由，Bearer Token 鉴权）
-- `GET /v1/models` — 模型列表（公开路由）
+- `POST /v1/chat/completions` — 聊天补全（公开路由，Bearer Token 鉴权）；`model` 可以是 agent 地址 / `ag_` 编号，或 `<用户>/<team>`（交给 team 的 lead）
+- `GET /v1/models` — 模型列表（公开路由）：你的 agent 与 team
+- `/v1/agents…` — 本机所有 agent，一套接口（登录用户以自己的身份转发）：
+  - `GET /v1/agents`（`?status=1` 附带运行状态，`?platform=webot` 只列一个平台的）· `POST /v1/agents` 新建（`{name, platform, persona, team, global_name, api_url, model…}`）
+  - `GET|PATCH|DELETE /v1/agents/<ref>` · `POST /v1/agents/<ref>/messages` · `POST /v1/agents/<ref>/control`（status / cancel / reset；WeBot 还有 compact / deliver_inbox）· `GET /v1/agents/<ref>/history`
+  - WeBot 会话就是 WeBot agent：会话列表 = `GET /v1/agents?status=1&platform=webot`（状态里带 `title`、`last_message`、`message_count`、时间、`mode`、`context`），删除会话 = `DELETE /v1/agents/<id>`
+- `/v1/teams…` — team 组合 agent：
+  - `GET|POST /v1/teams` · `GET|PATCH|DELETE /v1/teams/<team>`
+  - `POST /v1/teams/<team>/members`（`{agent, role?, is_lead?}`）· `PATCH|DELETE /v1/teams/<team>/members/<agent>`
+  - `POST /v1/teams/<team>/import`（导入 team 文件夹里的 internal_agents.json / external_agents.json）· `POST /v1/teams/<team>/messages`（交给 lead）
 
 ### 登录 & 会话
 
@@ -153,7 +160,6 @@ PORT_FRONTEND=51209
 
 ### Agent 代理（→ :51200）
 
-- `POST /proxy_cancel` — 取消生成（→ `/cancel`）
 - `POST /proxy_tts` — 语音合成（→ `/tts`）
 - `GET /proxy_tools` — 工具列表（→ `/tools`）
 - `GET /proxy_settings` — 获取设置（→ `/settings`）
@@ -161,25 +167,20 @@ PORT_FRONTEND=51209
 - `GET /proxy_settings_full` — 获取完整设置（→ `/settings/full`）
 - `POST /proxy_settings_full` — 更新完整设置（→ `/settings/full`）
 - `POST /proxy_restart` — 重启服务（→ `/restart`）
-- `GET /proxy_sessions` — 会话列表（→ `/sessions`）
-- `GET /proxy_sessions_status` — 会话状态（→ `/sessions_status`）
-- `POST /proxy_session_history` — 会话历史（→ `/session_history`）
-- `POST /proxy_session_status` — 单会话状态（→ `/session_status`）
-- `POST /proxy_delete_session` — 删除会话（→ `/delete_session`）
 
 ### 群组聊天代理（→ :51200）
 
-- `GET /proxy_groups` — 群组列表（→ `/groups`）
-- `POST /proxy_groups` — 创建群组（→ `/groups`）
-- `GET /proxy_groups/<id>` — 群组详情（→ `/groups/<id>`）
-- `PUT /proxy_groups/<id>` — 更新群组（→ `/groups/<id>`）
-- `DELETE /proxy_groups/<id>` — 删除群组（→ `/groups/<id>`）
-- `GET /proxy_groups/<id>/messages` — 获取消息（→ `/groups/<id>/messages`）
-- `POST /proxy_groups/<id>/messages` — 发送消息（→ `/groups/<id>/messages`）
-- `POST /proxy_groups/<id>/mute` — 静音（→ `/groups/<id>/mute`）
-- `POST /proxy_groups/<id>/unmute` — 取消静音（→ `/groups/<id>/unmute`）
-- `GET /proxy_groups/<id>/mute_status` — 静音状态（→ `/groups/<id>/mute_status`）
-- `GET /proxy_groups/<id>/sessions` — 群组会话（→ `/groups/<id>/sessions`）
+`/proxy_groups/...` 原样转发到 `/groups/...`（以当前登录用户身份）。成员是 agent（`ag_…`）和人（`u:<用户>`）。
+
+- `GET /proxy_groups` — 群聊列表（含私聊）
+- `POST /proxy_groups` — 创建：`{title, kind?: "group"|"direct", agents?: [ref], team?}`；按 team 建群时成员和主 agent 跟随 team
+- `GET|PATCH|DELETE /proxy_groups/<id>` — 详情 / `{title?, dnd?}` / 删除
+- `GET /proxy_groups/<id>/messages?after_id=` — 增量消息
+- `POST /proxy_groups/<id>/messages` — 发送：`{content, mentions?, reply_to?, attachments?, run_mode?}`
+- `POST /proxy_groups/<id>/members` — 加成员 `{agent}`；`PATCH|DELETE /proxy_groups/<id>/members/<principal>` — `{muted?, nickname?}` / 移出
+- `POST /proxy_groups/<id>/mute_agents` — 全员禁言 `{muted}`
+- `PUT /proxy_groups/<id>/primary` — 主 agent `{agent | null}`
+- `GET /proxy_groups/<id>/typing` · `GET /proxy_groups/<id>/available_agents`
 
 ### OASIS 代理（→ :51202）
 
@@ -201,40 +202,14 @@ PORT_FRONTEND=51209
 - 第一次进入 `/studio` 时默认落在 `Chat` tab，右侧 Town 侧栏折叠、`Town Mode` 关闭、子 tab 默认是 `TOWN`
 - Town Mode、`REFORGE`、`EXPLAIN` 都在这条侧栏里，不在消息中心侧栏
 
-### OpenClaw 代理（→ :51202）
-
-- `GET /proxy_openclaw_sessions` — OpenClaw 会话列表
-- `POST /proxy_openclaw_add` — 添加 OpenClaw Agent
-- `GET /proxy_openclaw_default_workspace` — 默认工作区
-- `GET /proxy_openclaw_workspace_files` — 工作区文件列表
-- `GET /proxy_openclaw_workspace_file` — 读取工作区文件
-- `POST /proxy_openclaw_workspace_file` — 保存工作区文件
-- `GET /proxy_openclaw_agent_detail` — Agent 详情
-- `GET /proxy_openclaw_skills` — 技能列表
-- `GET /proxy_openclaw_tool_groups` — 工具组列表
-- `POST /proxy_openclaw_update_config` — 更新配置
-- `GET /proxy_openclaw_channels` — 频道列表
-- `GET /proxy_openclaw_agent_bindings` — Agent 绑定
-- `POST /proxy_openclaw_agent_bind` — 绑定 Agent
-- `DELETE /proxy_openclaw_remove` — 移除 Agent
-
-### OpenClaw 快照
-
-- `GET /team_openclaw_snapshot` — 获取快照
-- `POST /team_openclaw_snapshot/export` — 导出单个快照
-- `POST /team_openclaw_snapshot/export_all` — 导出全部快照
-- `POST /team_openclaw_snapshot/sync_all` — 同步全部快照
-- `POST /team_openclaw_snapshot/restore` — 恢复单个快照
-- `POST /team_openclaw_snapshot/restore_all` — 恢复全部快照
-
-### TinyFish 搜索代理（front.py 本地处理 + TinyFish Web Agent）
+### TinyFish 搜索代理（前端本地处理 + TinyFish Web Agent）
 
 - `GET /api/tinyfish/status` — 获取监控配置、目标列表、最近运行、价格变化和最新站点快照
 - `POST /api/tinyfish/run` — 提交 TinyFish 监控任务，可选同步等待完成
 - `POST /api/tinyfish/live-run` — 透传 TinyFish SSE 实时爬取事件，并在结束后持久化结果
 - `GET /api/tinyfish/sites/<site_key>` — 查看单个站点最近一次存储的快照
 
-### ClawCross Creator（front.py 本地处理 + TinyFish / OASIS）
+### ClawCross Creator（前端本地处理 + TinyFish / OASIS）
 
 - `POST /api/team-creator/discover` — ClawCross Creator 第 1 阶段：发现 SOP / 组织结构页面，SSE 流式返回
 - `POST /api/team-creator/extract` — ClawCross Creator 第 2 阶段：对单个页面执行 TinyFish 角色提取，SSE 流式返回
@@ -259,7 +234,6 @@ PORT_FRONTEND=51209
 - `GET /proxy_visual/load-yaml-raw/<name>` — 原始 YAML
 - `DELETE /proxy_visual/delete-layout/<name>` — 删除布局
 - `POST /proxy_visual/upload-yaml` — 上传 YAML
-- `GET /proxy_visual/sessions-status` — 编排会话状态
 
 ### Tunnel 管理
 
@@ -267,29 +241,22 @@ PORT_FRONTEND=51209
 - `POST /proxy_tunnel/start` — 启动 Tunnel
 - `POST /proxy_tunnel/stop` — 停止 Tunnel
 
-### Internal Agents 管理
-
-- `GET /internal_agents` — Agent 列表
-- `POST /internal_agents` — 创建 Agent
-- `PUT|PATCH /internal_agents/<sid>` — 更新 Agent
-- `DELETE /internal_agents/<sid>` — 删除 Agent
-
 ### Teams 管理
 
 - `GET /teams` — 团队列表
 - `POST /teams` — 创建团队
-- `DELETE /teams/<name>` — 删除团队
-- `GET /teams/<name>/members` — 成员列表
-- `POST /teams/<name>/members/external` — 添加外部成员
-- `DELETE /teams/<name>/members/external` — 移除外部成员
-- `PUT /teams/<name>/members/external` — 更新外部成员
+- `PATCH /teams/<name>` — 重命名
+- `DELETE /teams/<name>` — 删除团队文件夹（agent 不受影响）
+- `GET|POST /teams/<name>/alarms` · `DELETE /teams/<name>/alarms/<task_id>` — 团队成员的定时任务（`{agent, schedule_type, cron|run_at, text}`）
 - `GET /teams/<name>/experts` — 团队人设 prompt 列表
 - `POST /teams/<name>/experts` — 添加团队人设 prompt
 - `PUT /teams/<name>/experts/<tag>` — 更新团队人设 prompt
 - `DELETE /teams/<name>/experts/<tag>` — 删除团队人设 prompt
-- `POST /teams/<name>/generate-from-workflow` — 从 ClawCross Studio 画布节点批量生成 / 更新团队
+- `POST /teams/<name>/generate-from-workflow` — 把画布上的 agent / persona 节点加进团队
 - `POST /teams/snapshot/download` — 下载团队快照
 - `POST /teams/snapshot/upload` — 上传团队快照
+
+成员增删改走 `/v1/teams/<team>/members…`（见上）。
 
 ## 鉴权规则
 

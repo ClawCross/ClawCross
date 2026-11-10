@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261108150736822865",
+  "candidate_id": "blended-verification-loop-approval-auth",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-08T15:07:36.822808+00:00"
+  },
+  "commands": [
+    {
+      "command": "python -m pytest test/test_agents.py -q",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Unit tests patched the retired external.acpx.get_acpx_adapter entry, so the current direct ACP adapter was selected instead of the fake. The run was interrupted. Patch external.acp.adapter and forbid constructing external.acp_direct.DirectAdapter in unit tests; exercise actual native adapters only in explicitly authorized integration checks. After the fix, the focused backend suite passed 82 tests and 4 subtests."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-08T15:07:36.822902+00:00",
+  "asset_id": "sha256:4d92b5675a14df6258cdac33ada2d93678fb86bc849a46667646be03ce836526"
+}

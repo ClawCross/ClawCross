@@ -8,6 +8,66 @@ on:
   pull_request:
 
 jobs:
+  ci-agent-startup:
+    name: startup / ${{ matrix.os }} / MCP ${{ matrix.mcp }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        mcp: ["0.2.1", "0.3.2"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v8.0.0
+      - name: Install runtime and test dependencies
+        run: uv pip install --system -r config/requirements-dev.txt
+      - name: Select compatibility version in the isolated runner
+        run: uv pip install --system --no-deps langchain-mcp-adapters==${{ matrix.mcp }}
+      - name: Start actual Agent service and check health
+        run: python -m pytest test/test_agent_startup.py -q
+
+  ci-cli-package:
+    name: cli-package / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - run: python -m pip install pytest
+      - name: Verify CLI, streaming and isolated bootstrap
+        run: python -m pytest test/test_cli_entrypoints.py test/test_cli_join.py test/test_autostart.py test/test_bridge_mode.py -q
+      - name: Verify npm runtime assets and private-file exclusions
+        run: npm run check:package
+
+  ci-windows-sandbox:
+    name: ci-windows / sandbox
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Install focused test dependency
+        run: python -m pip install pytest
+      - name: Verify native Job Objects, strict files and SRT bridge contracts
+        env:
+          CLAWCROSS_HOME: ${{ runner.temp }}/clawcross-windows-ci
+        run: python -m pytest test/test_windows_resource_limits.py test/test_windows_srt.py test/test_confined_files.py -q
+
   ci-fast-python:
     name: ci-fast / python
     runs-on: ubuntu-latest
@@ -25,6 +85,10 @@ jobs:
         run: >
           .venv/bin/python -m pytest
           test/test_agent_runtime_state.py
+          test/test_agent_message_activity.py
+          test/test_agents.py
+          test/test_checkpoint_storage.py
+          test/test_external_agent_history.py
           test/test_openai_protocol.py
           test/test_configure_openclaw_sync.py
           test/test_team_creator_jobs.py
@@ -67,6 +131,7 @@ jobs:
           .venv/bin/python -m pytest
           test/test_integration.py
           test/test_proxy_login_i18n.py
+          test/test_frontend_https.py
           -q
 
   ci-smoke-browser:

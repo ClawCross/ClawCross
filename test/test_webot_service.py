@@ -3,10 +3,11 @@ import types
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import AsyncMock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -25,24 +26,19 @@ if "fastapi" not in sys.modules:
 from webot.models import WeBotLspRequest, WeBotSubagentHistoryRequest, WeBotSubagentRefRequest
 from webot.models import (
     WeBotApprovalResolutionRequest,
-    WeBotBridgeAttachRequest,
-    WeBotBridgeDetachRequest,
-    WeBotBuddyActionRequest,
     WeBotDreamRequest,
     WeBotKairosUpdateRequest,
     WeBotPlanUpdateRequest,
     WeBotSessionInboxListRequest,
-    WeBotSessionInboxSendRequest,
     WeBotSessionRuntimeRequest,
     WeBotTodoUpdateRequest,
     WeBotVerificationCreateRequest,
-    WeBotVoiceStateUpdateRequest,
     WeBotWorkflowPresetApplyRequest,
 )
 import webot.memory as webot_memory
 import webot.policy as policy
 import webot.runtime_store as runtime_store
-from webot.service import WeBotService
+from webot.api.service import WeBotService
 from webot.subagents import create_subagent_record, upsert_subagent
 
 
@@ -134,7 +130,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     active_keys={"alice#subagent__research__worker1"},
                     statuses={"alice#subagent__research__worker1": {"busy": True}},
                 )
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=agent,
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -173,7 +169,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             runtime_store.DEFAULT_DB_PATH = Path(tmpdir) / "runtime.db"
             policy.PROJECT_ROOT = Path(tmpdir)
             try:
-                service = WeBotService(
+                service = WeBotService(system=types.SimpleNamespace(run=AsyncMock(return_value={'status': 'received'})),
                     agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -247,7 +243,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             store.DEFAULT_DB_PATH = Path(tmpdir) / "subagents.db"
             runtime_store.DEFAULT_DB_PATH = Path(tmpdir) / "runtime.db"
             try:
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -324,35 +320,12 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             webot_memory.USER_FILES_DIR = Path(tmpdir) / "user_files"
             runtime_store.PROJECT_ROOT = Path(tmpdir)
             try:
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
                 )
 
-                voice = await service.update_voice_state(
-                    WeBotVoiceStateUpdateRequest(
-                        user_id="alice",
-                        session_id="default",
-                        enabled=True,
-                        auto_read_aloud=True,
-                        last_transcript="ship it",
-                    ),
-                    None,
-                )
-                bridge = await service.create_bridge_attach(
-                    WeBotBridgeAttachRequest(
-                        user_id="alice",
-                        session_id="default",
-                        role="viewer",
-                        label="browser",
-                    ),
-                    None,
-                )
-                buddy = await service.buddy_action(
-                    WeBotBuddyActionRequest(user_id="alice", action="pet"),
-                    None,
-                )
                 kairos = await service.update_kairos_state(
                     WeBotKairosUpdateRequest(
                         user_id="alice",
@@ -370,24 +343,11 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     None,
                 )
-                bridge_id = bridge["bridge"]["bridge_id"]
-                detached = await service.detach_bridge(
-                    WeBotBridgeDetachRequest(user_id="alice", bridge_id=bridge_id),
-                    None,
-                )
                 runtime_view = await service.get_session_runtime("alice", "default", "", None)
 
-                self.assertTrue(voice["voice"]["enabled"])
-                self.assertEqual(voice["voice"]["status"], "enabled")
-                self.assertEqual(bridge["bridge"]["websocket_path"], f"/webot/ws/alice/{bridge_id}")
-                self.assertEqual(detached["bridge"]["status"], "detached")
-                self.assertEqual(buddy["buddy"]["species"], runtime_view["buddy"]["species"])
                 self.assertTrue(kairos["memory"]["kairos_enabled"])
                 self.assertIn("state", dream["memory"])
                 self.assertIn("memory", runtime_view)
-                self.assertIn("bridge", runtime_view)
-                self.assertIn("voice", runtime_view)
-                self.assertIn("buddy", runtime_view)
             finally:
                 store.DEFAULT_DB_PATH = original_db_path
                 runtime_store.DEFAULT_DB_PATH = original_runtime_db_path
@@ -395,7 +355,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                 webot_memory.USER_FILES_DIR = original_memory_user_files
                 runtime_store.PROJECT_ROOT = original_runtime_root
 
-    async def test_session_inbox_send_and_deliver(self):
+    async def test_session_inbox_lists_queued_entries(self):
         with TemporaryDirectory() as tmpdir:
             import webot.subagents as store
             original_db_path = store.DEFAULT_DB_PATH
@@ -403,7 +363,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             store.DEFAULT_DB_PATH = Path(tmpdir) / "subagents.db"
             runtime_store.DEFAULT_DB_PATH = Path(tmpdir) / "runtime.db"
             try:
-                target_record = create_subagent_record(
+                upsert_subagent(create_subagent_record(
                     agent_id="worker1",
                     user_id="alice",
                     session_id="subagent__research__worker1",
@@ -412,56 +372,17 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     description="Investigate runtime",
                     parent_session="default",
                     status="idle",
+                ))
+                runtime_store.create_inbox_message(
+                    "alice", source_session="default", target_session="subagent__research__worker1",
+                    content="Auth module needs rate limiting",
                 )
-                upsert_subagent(target_record)
-
-                agent = _FakeAgent({}, active_keys=set(), statuses={})
-                service = WeBotService(
-                    agent=agent,
+                service = WeBotService(system=None,
+                    agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
                 )
 
-                delivered_payloads = []
-
-                async def _fake_push_system_message(*, user_id, session_id, text, timeout=30):
-                    delivered_payloads.append((user_id, session_id, text))
-
-                service._push_system_message = _fake_push_system_message
-
-                sent = await service.send_session_inbox(
-                    WeBotSessionInboxSendRequest(
-                        user_id="alice",
-                        session_id="default",
-                        target_ref="worker1",
-                        body="Auth module needs rate limiting",
-                    ),
-                    None,
-                )
-                delivered_list = await service.get_session_inbox(
-                    WeBotSessionInboxListRequest(
-                        user_id="alice",
-                        session_id="subagent__research__worker1",
-                        status="delivered",
-                    ),
-                    None,
-                )
-
-                self.assertEqual(sent["created"], 1)
-                self.assertEqual(sent["delivered"], 1)
-                self.assertEqual(len(delivered_payloads), 1)
-                self.assertEqual(delivered_list["items"][0]["status"], "delivered")
-
-                agent._active_keys.add("alice#subagent__research__worker1")
-                queued = await service.send_session_inbox(
-                    WeBotSessionInboxSendRequest(
-                        user_id="alice",
-                        session_id="default",
-                        target_ref="worker1",
-                        body="Build failed again",
-                    ),
-                    None,
-                )
                 queued_list = await service.get_session_inbox(
                     WeBotSessionInboxListRequest(
                         user_id="alice",
@@ -471,10 +392,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     None,
                 )
 
-                self.assertEqual(queued["targets"][0]["delivery_state"], "busy")
-                self.assertEqual(queued_list["items"][0]["status"], "queued")
-                artifacts = runtime_store.list_runtime_artifacts("alice", "subagent__research__worker1", limit=10)
-                self.assertTrue(any(item.kind == "session_inbox_delivery" for item in artifacts))
+                self.assertEqual([item["status"] for item in queued_list["items"]], ["queued"])
             finally:
                 store.DEFAULT_DB_PATH = original_db_path
                 runtime_store.DEFAULT_DB_PATH = original_runtime_db_path
@@ -494,7 +412,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                 lambda username, session_id="": workspace_info
             )
             try:
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),

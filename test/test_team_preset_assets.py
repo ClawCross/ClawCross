@@ -6,17 +6,39 @@ from tempfile import TemporaryDirectory
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import services.team_preset_assets as team_preset_assets
+import teams.preset_assets as team_preset_assets
+from agents.store import AgentStore
+from teams.store import TeamStore
 
 
 class TeamPresetAssetsTests(unittest.TestCase):
     def test_repo_ships_expected_presets(self):
         preset_ids = {item["preset_id"] for item in team_preset_assets.list_team_presets()}
         self.assertTrue({"ming-neige", "tang-sansheng-beta", "modern-ceo", "hanlin-novel-studio"}.issubset(preset_ids))
+
+    def test_shipped_workflows_name_only_the_presets_roles_and_known_personas(self):
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from oasis.scheduler import extract_expert_names, parse_schedule
+
+        def entries(path):
+            return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+
+        prompts = PROJECT_ROOT / "data" / "prompts"
+        public = {e["tag"] for name in ("oasis_experts.json", "agency_experts.json") for e in entries(prompts / name)}
+        for preset in sorted((PROJECT_ROOT / "data" / "team_presets").iterdir()):
+            roles = {e["name"] for name in ("internal_agents.json", "external_agents.json") for e in entries(preset / name)}
+            tags = public | {e["tag"] for e in entries(preset / "oasis_experts.json")}
+            for workflow in sorted((preset / "oasis" / "yaml").glob("*.yaml")):
+                with self.subTest(workflow=f"{preset.name}/{workflow.name}"):
+                    names = extract_expert_names(parse_schedule(workflow.read_text(encoding="utf-8")))
+                    unknown = [n for n in names
+                               if (n.startswith("agent:") and n[len("agent:"):] not in roles)
+                               or (n.startswith("persona:") and n.split(":")[1] not in tags)]
+                    self.assertEqual(unknown, [])
 
     def test_list_and_install_team_preset(self):
         with TemporaryDirectory() as tmpdir:
@@ -75,20 +97,23 @@ class TeamPresetAssetsTests(unittest.TestCase):
                 self.assertEqual(len(listed), 1)
                 self.assertEqual(listed[0]["preset_id"], "modern-ceo")
 
+                agents = AgentStore(root / "agents.db")
+                teams = TeamStore(agents, root / "user_files")
                 result = team_preset_assets.install_team_preset(
                     user_id="alice",
                     team_name="Modern Ops",
                     preset_id="modern-ceo",
-                    project_root=root,
+                    teams=teams,
                 )
                 self.assertEqual(result["team"], "Modern Ops")
                 self.assertEqual(result["internal_agents"], 2)
                 self.assertEqual(result["workflow_files"], ["modern.yaml"])
 
-                team_dir = root / "data" / "user_files" / "alice" / "teams" / "Modern Ops"
-                installed_agents = json.loads((team_dir / "internal_agents.json").read_text(encoding="utf-8"))
-                self.assertEqual(len(installed_agents), 2)
-                self.assertTrue(all(item.get("session") for item in installed_agents))
+                team_dir = teams.folder("alice", "Modern Ops")
+                members = teams.members("alice", "Modern Ops")
+                self.assertEqual([m.role for m in members], ["CEO", "CTO"])
+                self.assertTrue(all(m.agent.agent_id for m in members))
+                self.assertFalse((team_dir / "internal_agents.json").exists())
                 self.assertTrue((team_dir / "clawcross_preset_manifest.json").exists())
                 self.assertTrue((team_dir / "oasis" / "yaml" / "modern.yaml").exists())
             finally:

@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261005092225336352",
+  "candidate_id": "blended-verification-loop-workspace-preflight-bounded-execution",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-05T09:22:25.336305+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "Editor command failed: python was not found on PATH; use /home/ubuntu/.clawcross/venv/bin/python. Two patch attempts failed context matching and applied no changes; use complete ordered patch contexts.",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-05T09:22:25.336403+00:00",
+  "asset_id": "sha256:53d8d728fd7cc4d0e4bef23184bcee6f078960c442c456b06045a097479937ff"
+}

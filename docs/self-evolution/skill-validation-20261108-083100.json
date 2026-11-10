@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261108083100414444",
+  "candidate_id": "approval-auth-1",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-11-08T08:31:00.414409+00:00"
+  },
+  "commands": [
+    {
+      "command": "controlled ACP migration reload verification",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Reload and 27 Agent configuration/native-ID preservation succeeded; post-reload checker selected Cathy using an assumed case-sensitive owner. Locate the owned Agent across the authenticated owner inventory rather than guessing the display name. Corrected read-only audit confirmed paused flag and original group connectivity; do not repeat the reload just to repair an audit selector."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-11-08T08:31:00.414469+00:00",
+  "asset_id": "sha256:2a879210b730e98252b1a9f07f3378b5e0709e3b487c2a7e7d5535eee67aa98a"
+}

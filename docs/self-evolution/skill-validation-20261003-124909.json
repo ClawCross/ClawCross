@@ -1,0 +1,39 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261003124909947806",
+  "candidate_id": "blended-verification-loop-approval-auth-bounded-execution",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-03T12:49:09.947776+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "\u001b[2m[WebServer] \u001b[22m2026-10-03 20:45:55,288 INFO [werkzeug] [req:-] \u001b[31m\u001b[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.\u001b[0m\n\u001b[2m[WebServer] \u001b[22m * Running on http://127.0.0.1:51229\n\u001b[2m[WebServer] \u001b[22m2026-10-03 20:45:55,288 INFO [werkzeug] [req:-] \u001b[33mPress CTRL+C to quit\u001b[0m\n\u001b[2m[WebServer] \u001b[22m2026-10-03 20:45:56,276 INFO [werkzeug] [req:-] 127.0.0.1 - - [03/Oct/2026 20:45:56] \"GET /studio HTTP/1.1\" 200 -\n\nRunning 3 tests using 1 worker\n\n(node:1431230) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:1431230) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n  ✓  1 test/browser/runtime-settings.spec.js:48:1 › settings save only changes to the selected scope and reset inheritance (2.6s)\n  ✓  2 test/browser/runtime-settings.spec.js:69:1 › Manual and Bypass are distinct selectable modes with different saved values (1.6s)\n  ✘  3 test/browser/runtime-settings.spec.js:89:1 › remembered sandbox permissions are removable without changing other settings (30.1s)\n\n\n  1) test/browser/runtime-settings.spec.js:89:1 › remembered sandbox permissions are removable without changing other settings \n\n    \u001b[31mTest timeout of 30000ms exceeded.\u001b[39m\n\n    Error: locator.click: Test timeout of 30000ms exceeded.\n    Call log:\n    \u001b[2m  - waiting for getByText('已记住的沙盒权限', { exact: true })\u001b[22m\n\n\n      92 |   await page.evaluate(() => openRuntimeSettings('session-1'));\n      93 |   await page.getByRole('tab',{name:'工具审核'}).click();\n    > 94 |   await page.getByText('已记住的沙盒权限',{exact:true}).click();\n         |                                                 ^\n      95 |   await expect(page.locator('[data-sandbox-grant]')).toHaveCount(2);\n      96 |   await page.locator('[data-sandbox-grant]').filter({hasText:'example.com:443'}).getByRole('button',{name:'移除'}).click();\n      97 |   await expect(page.locator('[data-sandbox-grant]')).toHaveCount(1);\n        at /home/ubuntu/work2/ClawCross/test/browser/runtime-settings.spec.js:94:49\n\n    Error Context: test-results/runtime-settings-remembere-5cf44-out-changing-other-settings/error-context.md\n\n    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────\n    test-results/runtime-settings-remembere-5cf44-out-changing-other-settings/trace.zip\n    Usage:\n\n        npx playwright show-trace test-results/runtime-settings-remembere-5cf44-out-changing-other-settings/trace.zip\n\n    ────────────────────────────────────────────────────────────────────────────────────────────────\n\n  1 failed\n    test/browser/runtime-settings.spec.js:89:1 › remembered sandbox permissions are removable without changing other settings \n  2 passed (39.7s)",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-03T12:49:09.947827+00:00",
+  "asset_id": "sha256:ec7094151c552ab599a83f8465b8f0cc28b75869a5bee3d80f2b754f28ba54fb",
+  "verified_resolution": {
+    "summary": "KEEP Y: session capabilities and exact-action grants verified; consumed approvals need a dedicated audit update; canonical arguments and scoped hashes are required.",
+    "backend_tests": 173,
+    "backend_subtests": 306,
+    "browser_tests": 3,
+    "real_reviewer_decision": "KEEP Y",
+    "evidence": "Regression: KEEP Y permission was saved, but the generic metadata updater ignored used approvals.\nFix: record_approval_memory updates only a consumed approval and preserves its execution metadata.\nOther fixes: scope remembered actions to the authenticated session; normalize permit arguments; retain the 40,000-character tool schema budget; locate the permission summary independently of its count.\nVerification: 168 backend tests and 302 subtests passed in the focused batch; its 2 failed cases both passed after fixes. Three added boundary tests and 4 subtests passed. Three focused browser tests passed (the grant removal case was fixed and rerun).\nActual Landlock: persistent read cannot delete, another Agent requires review, ceiling/revocation removes access; remembered HTTPS destination works without a second review.\nActual configured reviewer: native JSON Schema returned KEEP Y with a valid original-user source.\n"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261004173149736315",
+  "candidate_id": "blended-verification-loop-structured-output-approval-auth",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-04T17:31:49.736280+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "......F                                                              [100%]\n=================================== FAILURES ===================================\n______ OasisRuntimeTests.test_saved_yaml_parallel_agents_and_human_resume ______\n\nself = <test.test_oasis_runtime.OasisRuntimeTests testMethod=test_saved_yaml_parallel_agents_and_human_resume>\n\n        def test_saved_yaml_parallel_agents_and_human_resume(self):\n            schedule = \"\"\"version: 2\n    repeat: false\n    discussion: false\n    plan:\n      - id: start\n        manual:\n          author: host\n          content: RUNTIME_START\n      - id: pair\n        parallel:\n          - agent: Writer\n          - agent: Reviewer\n      - id: confirm\n        human:\n          author: host\n          prompt: continue?\n      - id: finish\n        manual:\n          author: host\n          content: RUNTIME_FINISHED\n    edges:\n      - [start, pair]\n      - [pair, confirm]\n      - [confirm, finish]\n    \"\"\"\n            saved = self.client.post(\"/workflows\", json={\n                \"user_id\": \"tester\", \"team\": \"runtime\", \"name\": \"smoke\", \"schedule_yaml\": schedule,\n            })\n            self.assertEqual(saved.status_code, 200, saved.text)\n            workflow = self.teams.folder(\"tester\", \"runtime\") / \"oasis/yaml/smoke.yaml\"\n            self.assertTrue(workflow.is_file())\n            response = self.client.post(\"/topics\", json={\n                \"question\": \"runtime test\", \"user_id\": \"tester\", \"team\": \"runtime\",\n                \"schedule_file\": str(workflow), \"discussion\": False, \"max_rounds\": 1,\n            })\n>           self.assertEqual(response.status_code, 200, response.text)\nE           AssertionError: 500 != 200 : {\"detail\":\"Engine init failed: LLM_MODEL is not configured. Set it in config/.env, or run src/backend/ops/setup/configure.py --auto-model and then configure LLM_MODEL <model>.\"}\n\ntest/test_oasis_runtime.py:156: AssertionError\n=========================== short test summary info ============================\nFAILED test/test_oasis_runtime.py::OasisRuntimeTests::test_saved_yaml_parallel_agents_and_human_resume\n1 failed, 6 passed, 4 subtests passed in 4.46s",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-04T17:31:49.736336+00:00",
+  "asset_id": "sha256:cb88b0b8b876cc2f4fe1d6717bca31629c0831548a6e622c37052b42da9352f9"
+}

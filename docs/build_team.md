@@ -1,8 +1,6 @@
 # Build Team via CLI (Quick Reference)
 
-> This document provides a quick reference for building a team using Clawcross CLI, focusing on core commands without trial-and-error details.
-
-If you want the browser-based flow that starts from a task description, discovered SOP pages, or a workflow canvas, read [team-creator.md](./team-creator.md) first.
+> 用 `src/cli/cli.py` 从零搭一个团队的最短路径。在主 Agent 对话里创建与管理团队，请看 [team-management.md](./team-management.md)。
 
 ---
 
@@ -11,446 +9,188 @@ If you want the browser-based flow that starts from a task description, discover
 - Clawcross services must be running (Agent, Scheduler, OASIS, Frontend)
 - Check service status:
   ```bash
-  bash selfskill/scripts/run.sh status
+  bash launch/run.sh status
   ```
 - Default ports: Agent(51200), Scheduler(51201), OASIS(51202), Frontend(51209)
 
 ---
 
-## 2. Team Management
+## 2. 三个概念
 
-### 2.1 Create a Team
+| 概念 | 是什么 | 在哪 |
+|---|---|---|
+| **agent** | 本机上的一个会话，编号就是会话号（可自定，如 `coder`；不给则系统分配 `ag_…`），加上名字、平台（`webot`、`codex`、`claude-code`、`gemini-cli`、`openclaw`、任意 HTTP 服务）和设置（人设 tag 等）。所有平台是**同一种东西**，用同一套命令管理；给一个没用过的编号发信息，就新建一个 agent | `agents` 命令 / `/v1/agents` |
+| **team** | 一个命名空间：把 agent、人设、技能、定时任务、工作流放进一个文件夹。每个成员有一个 team 内名字，在任何能写编号的地方都可以用 `<team>.<名字>` 找到它；可以标一个 lead。team 不拥有 agent：同一个 agent 可以在多个 team 里 | `teams` 命令 / `/v1/teams` |
+| **persona（人设）** | 一段角色 prompt，按 `tag` 存在人设库（公共 / agency / 你自己的 / team 的 `oasis_experts.json`）。agent 用 `persona` 设置穿上它；工作流里的临时专家也按 tag 取它 | `personas` 命令 |
 
-```bash
-uv run scripts/cli.py teams create --team-name <TEAM_NAME>
-```
+命令里的 `--agent` 写 agent 编号，或 `<team>.<名字>`。
 
-Example:
-```bash
-uv run scripts/cli.py teams create --team-name demo_team
-```
+---
 
-### 2.2 List All Teams
-
-```bash
-uv run scripts/cli.py teams list
-```
-
-### 2.3 View Team Details
+## 3. Team Management
 
 ```bash
-uv run scripts/cli.py teams show --team-name <TEAM_NAME>
-```
-
-### 2.4 View Team Members
-
-```bash
-uv run scripts/cli.py teams members --team-name <TEAM_NAME>
-```
-
-Output example:
-```
-Team Name: demo_team
-Members (1):
-- name: my_new_agent, global_name: my_new_agent, type: ext
+uv run src/cli/cli.py teams create --team-name demo_team     # 新建
+uv run src/cli/cli.py teams list                              # 列出
+uv run src/cli/cli.py teams info --team-name demo_team        # 详情
+uv run src/cli/cli.py teams members --team-name demo_team     # 成员（任何平台）
+uv run src/cli/cli.py teams rename --team-name demo_team --new-name demo2
+uv run src/cli/cli.py teams delete --team-name demo_team      # 只删 team 文件夹，agent 不受影响
 ```
 
 ---
 
-## 3. Agent Management
+## 4. Agents
 
-Clawcross supports **3 types** of agents: Internal, OpenClaw, and External.
+### 4.1 新建 agent（任何平台同一条命令）
 
-External agents communicate via HTTP or the **Agent Client Protocol (ACP)** through the `acpx` CLI adapter. ACP supports tools like `openclaw`, `codex`, `claude`, `gemini`, and `aider`. `acpx` is automatically installed during `bash selfskill/scripts/run.sh setup`.
-
-### 3.1 Internal Agent (Lightweight)
-
-> **关键概念区分**：
-> - `#oasis#` 格式 = Internal Agent：在 OASIS 工作流 YAML 中，使用 `#oasis#` 格式引用的是 **Internal Agent**（团队内部已定义的 session agent）。
->   - 例如：`architect#oasis#my_architect` 表示使用 tag 为 `architect` 的人设，通过名为 `my_architect` 的 internal session agent 执行。
->   - Internal Agent 需要预先在 `internal_agents.json` 中定义。
-> - `#temp#` 格式 = 临时人设：不需要预先定义 Internal Agent，只需要有对应的人设 prompt 即可。
->   - 例如：`creative#temp#1` 表示使用 tag 为 `creative` 的人设，创建一个临时的、无状态的实例。
->   - **Temp Agent 不需要预先定义**，只要 `oasis_experts.json` 或公共人设中存在该 tag 的 prompt 即可使用。
->   - 适合用于辩论、头脑风暴等不需要跨轮次记忆的场景。
-
-**Add an Internal Agent:**
 ```bash
-uv run scripts/cli.py internal-agents add \
-  --team <TEAM_NAME> \
-  --data '{"session":"<SESSION_ID>","meta":{"name":"<AGENT_NAME>","tag":"<TAG>"}}'
+# WeBot（ClawCross 自己的 agent）；agent_id 就是会话号，不写则系统分配
+uv run src/cli/cli.py agents create --name "Coder" --data '{"agent_id": "coder", "persona": "creative"}'
+
+# ACP 工具（codex / claude-code / gemini-cli / aider …）：每个 agent 是该工具里的一个会话，同一工具可以有任意多个
+uv run src/cli/cli.py agents create --name "Codex Reviewer" --platform codex \
+  --data '{"agent_id": "codex-reviewer", "persona": "critical"}'
+
+# 任意 OpenAI 兼容 HTTP 服务
+uv run src/cli/cli.py agents create --name "My Service" --platform my_service \
+  --data '{"agent_id": "my-service", "api_url": "http://127.0.0.1:8080/v1", "model": "gpt-4o"}'
 ```
 
-Example - Add a creative persona:
+同一个编号只能建一次；重复会返回已有的那个（HTTP 409）。也可以不建，直接给新编号发信息（`agents ask --agent <新编号>`），会按 WeBot 新建。
+
+### 4.2 查看、修改、控制、删除
+
 ```bash
-uv run scripts/cli.py internal-agents add \
-  --team demo_team \
-  --data '{"session":"creative_s1","meta":{"name":"创意人设","tag":"creative"}}'
+uv run src/cli/cli.py agents list [--status]
+uv run src/cli/cli.py agents show   --agent coder
+uv run src/cli/cli.py agents update --agent coder --name "Coder" --data '{"settings": {"persona": "coder"}}'
+uv run src/cli/cli.py agents ask    --agent coder --message "你好"
+uv run src/cli/cli.py agents inbox  --agent coder --message "空了看一下"   # 放进收件箱
+uv run src/cli/cli.py agents status --agent coder     # 同样适用于 cancel / reset
+uv run src/cli/cli.py agents delete --agent coder     # 同时退出所有 team 和群聊
 ```
 
-**List Internal Agents in a Team:**
+### 4.3 加入 / 移出 team
+
 ```bash
-uv run scripts/cli.py internal-agents list --team <TEAM_NAME>
+uv run src/cli/cli.py teams add-member    --team-name demo_team --agent coder --role "Coder" [--lead]
+uv run src/cli/cli.py teams set-lead      --team-name demo_team --agent coder
+uv run src/cli/cli.py teams remove-member --team-name demo_team --agent coder   # agent 本身保留
 ```
 
-**Update an Internal Agent:**
+`--role` 是成员在这个 team 里的名字：`demo_team.Coder` 就能找到它，team 模式的工作流里写 `agent: Coder`。省略时用 agent 名称。
+
+### 4.4 OpenClaw agent
+
+OpenClaw 和 Codex 一样是 ACP 工具，经 acpx 的 `openclaw acp` 对话，连 OpenClaw 的 `main` agent；ClawCross 不改 OpenClaw 的配置：
+
 ```bash
-uv run scripts/cli.py internal-agents update \
-  --sid <SESSION_ID> --team <TEAM_NAME> \
-  --data '{"meta":{"name":"<NEW_NAME>"}}'
+uv run src/cli/cli.py agents create --name "Researcher" --platform openclaw \
+  --data '{"agent_id": "researcher", "persona": "analyst"}'
+uv run src/cli/cli.py teams add-member --team-name demo_team --agent researcher --role "Researcher"
 ```
 
-**Delete an Internal Agent:**
-```bash
-uv run scripts/cli.py internal-agents delete \
-  --sid <SESSION_ID> --team <TEAM_NAME>
-```
-
-### 3.2 OpenClaw Agent
-
-OpenClaw Agent 是运行在 OASIS 后端的真实 Agent 实例。添加到 Team 需要**先确保后端有真实配置**，再同步到 JSON。
-
-> 在将 OpenClaw agent 加入 Team 之前，**必须**先执行以下命令检查已有的 OpenClaw agent：
-> ```bash
-> uv run scripts/cli.py -u <username> openclaw sessions
-> ```
-> 确认目标 agent 的名称存在于返回的列表中。如果不存在，需要先用 `openclaw sessions add` 创建，或选择列表中已有的 agent。**禁止**在未确认 agent 存在的情况下直接将 `global_name` 写入 `external_agents.json`。
-
-#### 完整流程
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  CLI 添加/设置 OpenClaw Agent 的完整流程                                  │
-└─────────────────────────────────────────────────────────────────────────┘
-
-  ┌──────────────────┐
-  │ 1. 查找或创建后端 │  ← 先确定后端有真实配置
-  └────────┬─────────┘
-           │
-           ├─ A. 查找已有: `openclaw sessions`
-           │           GET /sessions/openclaw
-           │           查看已运行的 OpenClaw Agent
-           │
-           └─ B. 新建: `openclaw sessions add`
-              POST /sessions/openclaw/add
-
-  ┌──────────────────┐
-  │ 2. (可选)修改配置 │
-  └────────┬─────────┘
-           │
-           └─ `openclaw update-config`
-              POST /sessions/openclaw/update-config
-
-  ┌──────────────────┐
-  │ 3. 添加到 JSON   │  ← 骨架信息 (name, tag, global_name)
-  └────────┬─────────┘
-           │
-           └─ `teams add-ext-member`
-              POST /teams/{team}/members/external
-
-  ┌──────────────────┐
-  │ 4. 导出完整配置  │  ← 关键！将后端配置同步到 JSON
-  └────────┬─────────┘
-           │
-           └─ `openclaw snapshot export`
-              POST /team_openclaw_snapshot/export
-```
-
-#### 步骤详解
-
-**Step 1: 查找已有的 OpenClaw Agent**
-```bash
-uv run scripts/cli.py -u <username> openclaw sessions
-```
-
-**Step 2: 或创建新的 OpenClaw Agent**
-```bash
-uv run scripts/cli.py -u <username> openclaw sessions add \
-  --agent-name <AGENT_NAME> \
-  --backend openai \
-  --model gpt-4o \
-  --api-key <API_KEY> \
-  --base-url <BASE_URL>
-```
-
-**Step 3: (可选) 修改 Agent 配置**
-```bash
-uv run scripts/cli.py -u <username> openclaw update-config \
-  --agent-name <AGENT_NAME> \
-  --config '{"temperature": 0.7}'
-```
-
-**Step 4: 添加到 Team JSON（骨架信息）**
-```bash
-uv run scripts/cli.py -u <username> teams add-ext-member \
-  --team-name <TEAM_NAME> \
-  --data '{
-    "name": "<AGENT_NAME>",
-    "tag": "openclaw",
-    "global_name": "<GLOBAL_NAME>"
-  }'
-```
-
-**Step 5: 导出后端完整配置到 JSON**
-```bash
-uv run scripts/cli.py -u <username> openclaw snapshot export \
-  --team-name <TEAM_NAME> \
-  --name <AGENT_NAME>
-```
-
-> CLI 需要用户显式执行 `export` 才能将后端配置同步到 JSON；而前端在关闭 Agent 配置面板时会自动执行 sync_all。
-
-### 3.3 External Agent (API-based)
-
-如需对 OpenClaw 外部 Agent 进行深度控制（如修改温度参数、限制工具权限等），请先阅读 **[openclaw-commands.md](openclaw-commands.md)** 文档中的"六、外部 Agent 配置"章节。
-
-**Add an External Member:**
-```bash
-uv run scripts/cli.py teams add-ext-member \
-  --team-name <TEAM_NAME> \
-  --data '{
-    "name": "<MEMBER_NAME>",
-    "global_name": "<GLOBAL_NAME>",
-    "type": "external",
-    "meta": {
-      "description": "<DESCRIPTION>",
-      "emoji": "<EMOJI>",
-      "disabled": false
-    }
-  }'
-```
-
-**Note:**
-- `name` and `global_name` are required fields. Keep them consistent to point to the same entity.
-- **Important**: When adding an OpenClaw agent, the `tag` field should be set to `"openclaw"` (recommended). This allows the system to correctly identify and route requests to the appropriate ACP (Agent Communication Protocol) handler. Other possible values include `codex`, but `openclaw` is the recommended tag for OpenClaw agents.
-
-Example (adding OpenClaw agent `my_new_agent` to a team):
-```bash
-uv run scripts/cli.py teams add-ext-member \
-  --team-name demo_team \
-  --data '{
-    "name": "my_new_agent",
-    "global_name": "my_new_agent",
-    "type": "external",
-    "tag": "openclaw",
-    "meta": {
-      "description": "My newly created OpenClaw agent for testing",
-      "emoji": "🤖",
-      "disabled": false
-    }
-  }'
-```
+前提和限制见 [openclaw-commands.md](openclaw-commands.md)。
 
 ---
 
-## 4. Create Custom Persona
+## 5. 用文件声明成员（导入格式）
 
-When public personas don't meet your needs, you can create custom personas (人设) for your team.
+团队包（preset、快照 zip、team-builder 写出的文件夹）用两个 JSON 文件声明成员，格式固定：
 
-> **Note:** In YAML and CLI, the field/command name is `expert`, but it represents a **persona (人设)** — an **expert persona prompt** that defines an Agent's role, personality, and capabilities. It is NOT a separate agent. The team-level file `oasis_experts.json` is essentially a **persona prompt collection** — each entry is a prompt, not an agent.
-
-### 4.1 Create a Custom Persona
-
-**Command:**
-```bash
-uv run scripts/cli.py personas add \
-  --tag <PERSONA_TAG> \
-  --persona-name "<PERSONA_DISPLAY_NAME>" \
-  --persona "<PERSONA_DESCRIPTION>" \
-  --temperature <TEMPERATURE_VALUE> \
-  [--team <TEAM_NAME>]
+`teams/<team>/internal_agents.json` —— WeBot 成员
+```json
+[
+  { "name": "Coordinator", "tag": "coordinator", "is_primary": true },
+  { "name": "Writer",      "tag": "writer" }
+]
 ```
 
-**Parameters:**
+`teams/<team>/external_agents.json` —— 其他平台成员
+```json
+[
+  { "name": "Codex Reviewer", "tag": "critical", "platform": "codex", "global_name": "codex_reviewer" }
+]
+```
+
+- `name` = 角色名，`tag` = 人设，`is_primary` = lead（至多一条）
+- `session`（内部）/ `global_name`（外部）是本机的 agent 编号
+- team 里已有同名成员就是那个成员；条目指向已有编号就用那个 agent；否则新建
+
+导入：
+```bash
+uv run src/cli/cli.py teams import --team-name demo_team
+```
+导入后成员登记在 ClawCross 里，这两个文件被移走；导出团队（`teams snapshot-download`）时会按同样格式重新生成。
+
+---
+
+## 6. Personas
+
+```bash
+uv run src/cli/cli.py personas list
+uv run src/cli/cli.py personas add \
+  --tag architect --persona-name "🏗️ 架构师" \
+  --persona "You are an experienced software architect ..." \
+  --temperature 0.4 [--team demo_team]
+```
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `--tag` | Yes | Unique identifier for the persona (e.g., `coder`, `architect`) |
-| `--persona-name` | Yes | Display name with emoji (e.g., `"💻 代码达人"`) |
-| `--persona` | Yes | System prompt defining the persona's role, skills, and behavior |
-| `--temperature` | Yes | Creativity level (0.0-1.0), lower = more deterministic |
-| `--team` | No | Associate persona with a specific team (optional) |
+| `--tag` | Yes | 人设标识（如 `coder`、`architect`） |
+| `--persona-name` | Yes | 显示名 |
+| `--persona` | Yes | 角色 prompt |
+| `--temperature` | Yes | 0.0-1.0 |
+| `--team` | No | 只放进这个 team 的人设库（`oasis_experts.json`） |
 
-**Example - Create a coder persona:**
-```bash
-uv run scripts/cli.py personas add \
-  --tag coder \
-  --persona-name "💻 代码达人"  --persona "You are an expert programmer proficient in multiple programming languages. You write clean, efficient, and well-documented code. You follow best practices, design patterns, and coding standards. You can debug complex issues, optimize performance, and provide code reviews." \
-  --temperature 0.3
-```
+让某个 agent 穿上人设：`agents update --agent <ref> --data '{"settings": {"persona": "<tag>"}}'`，或建 agent 时直接给 `persona`。
 
-**Example - Create an architect persona for a specific team:**
-```bash
-uv run scripts/cli.py personas add \
-  --tag architect \
-  --persona-name "🏗️ 架构师"  --persona "You are an experienced software architect with deep expertise in system design, microservices, cloud-native architecture, and scalability patterns. You provide high-level technical guidance and help teams make informed decisions about technology stacks." \
-  --temperature 0.4 \
-  --team demo_team
-```
+公共人设 10 个（`creative`、`critical`、`data`、`synthesis`、`economist`、`lawyer`、`cost_controller`、`revenue_planner`、`entrepreneur`、`common_person`），另有 68 个 agency 专业人设（design / engineering / marketing / product / project-management / spatial-computing / specialized / support / testing）。
 
-### 4.2 Add Custom Persona to Team
+---
 
-After creating a custom persona, add it as an Internal Agent:
+## 7. 在工作流里用团队
 
-```bash
-uv run scripts/cli.py internal-agents add \
-  --team <TEAM_NAME> \
-  --data '{"session":"<SESSION_ID>","meta":{"name":"<AGENT_NAME>","tag":"<PERSONA_TAG>"}}'
-```
+工作流只有两种参与者写法（详见 [create_workflow.md](create_workflow.md)）：
 
-**Example:**
-```bash
-uv run scripts/cli.py internal-agents add \
-  --team demo_team \
-  --data '{"session":"architect_s1","meta":{"name":"🏗️ 架构师","tag":"architect"}}'
+```yaml
+version: 2
+plan:
+  - id: plan
+    agent: Coordinator          # 团队成员：写角色名，任何平台都一样
+  - id: ideas
+    parallel:
+      - persona: creative       # 临时专家：按 tag 取人设，话题结束即清理
+      - agent: Codex Reviewer
+edges:
+  - [plan, ideas]
 ```
 
 ---
 
-## 6. View Public Persona List
+## 8. Complete Example
 
 ```bash
-uv run scripts/cli.py personas list
-```
+uv run src/cli/cli.py teams create --team-name demo_team
 
-### Core Public Personas (10)
+uv run src/cli/cli.py agents create --name "Coordinator" --data '{"agent_id": "coordinator", "persona": "synthesis", "team": "demo_team"}'
+uv run src/cli/cli.py agents create --name "Codex Reviewer" --platform codex \
+  --data '{"agent_id": "codex-reviewer", "persona": "critical", "team": "demo_team"}'
 
-| Name | Tag |
-|------|-----|
-| 🎨 创意人设 | `creative` |
-| 🔍 批判人设 | `critical` |
-| 📊 数据分析师 | `data` |
-| 🎯 综合顾问 | `synthesis` |
-| 📈 经济学家 | `economist` |
-| ⚖️ 法学家 | `lawyer` |
-| 💰 成本限制者 | `cost_controller` |
-| 📊 收益规划者 | `revenue_planner` |
-| 🚀 创新企业家 | `entrepreneur` |
-| 🧑 普通人 | `common_person` |
+uv run src/cli/cli.py teams add-member --team-name demo_team --agent coordinator --lead
+uv run src/cli/cli.py teams add-member --team-name demo_team --agent codex-reviewer
 
-### Agency Professional Personas (68)
-
-| Category | Count | Examples |
-|----------|-------|----------|
-| 🎨 Design | 8 | Brand Guardian, UI Designer, UX Architect, Image Prompt Engineer... |
-| ⚙️ Engineering | 11 | Senior Developer, Backend Architect, Frontend Developer, DevOps Automator, AI Engineer... |
-| 📢 Marketing | 11 | Content Creator, Growth Hacker, TikTok Strategist, WeChat Official Account Manager... |
-| 📦 Product | 4 | Sprint Prioritizer, Trend Researcher, Feedback Synthesizer, Behavioral Nudge Engine |
-| 📋 Project Management | 5 | Senior Project Manager, Studio Producer, Experiment Tracker... |
-| 🥽 Spatial Computing | 6 | visionOS Spatial Engineer, XR Immersive Developer, Metal Engineer... |
-| 🔬 Specialist | 9 | Agents Orchestrator, Developer Advocate, Data Analytics Reporter... |
-| 🛡️ Support | 6 | Finance Tracker, Legal Compliance Checker, Infrastructure Maintainer... |
-| 🧪 Testing | 8 | API Tester, Performance Benchmarker, Accessibility Auditor... |
-
-### Custom Personas (8)
-
-| Name | Tag |
-|------|-----|
-| 场景段描述者 | `VLM` |
-| 日志阅读者LLM | `LLM-log` |
-| 时序判别器 | `time-series` |
-| 用户画像阅读者 | `statistic` |
-| 信息总结器 | `summaryfor4` |
-| 子段阅读者 | `subsegment` |
-| 搜索者 | `searcher` |
-| 任务发布者 | `tasksender` |
-
----
-
-## 7. Complete Workflow Example
-
-Below is a complete example of building a team from scratch:
-
-```bash
-# Step 1: Create a new team
-uv run scripts/cli.py teams create --team-name demo_team
-
-# Step 2: View available public personas
-uv run scripts/cli.py personas list
-
-# Step 3: Add Internal Agent (creative persona)
-uv run scripts/cli.py internal-agents add \
-  --team demo_team \
-  --data '{"session":"creative_s1","meta":{"name":"创意人设","tag":"creative"}}'
-
-# Step 4: Add Internal Agent (critical persona)
-uv run scripts/cli.py internal-agents add \
-  --team demo_team \
-  --data '{"session":"critical_s1","meta":{"name":"批判人设","tag":"critical"}}'
-
-# Step 5: Add External Member (OpenClaw agent)
-uv run scripts/cli.py teams add-ext-member \
-  --team-name demo_team \
-  --data '{
-    "name": "my_new_agent",
-    "global_name": "my_new_agent",
-    "type": "external",
-    "meta": {
-      "description": "My newly created OpenClaw agent for testing",
-      "emoji": "🤖",
-      "disabled": false
-    }
-  }'
-
-# Step 6: Verify team members
-uv run scripts/cli.py teams members --team-name demo_team
+uv run src/cli/cli.py teams members --team-name demo_team
+uv run src/cli/cli.py agents ask --agent demo_team.Coordinator --message "你好"
+uv run src/cli/cli.py cron new --team demo_team --agent coordinator --cron "0 9 * * 1" --text "整理本周进展"
 ```
 
 ---
 
-## 8. Tips & Notes
+## 9. Tips
 
-- **Team name duplication**: If a team name already exists, the create command will report an error. Use `teams list` to check first.
-- **Tag matching**: When adding public personas as Internal Agents, the `tag` field must match the persona's tag exactly (e.g., `creative`, `critical`).
-- **Session ID**: Each Internal Agent in a team needs a unique `session` ID. Use descriptive names like `creative_s1` for easy identification.
-- **Multiple agent types**: A single team can contain a mix of Internal, OpenClaw, and External agents.
-- **Required fields for External Members**: `name` and `global_name` are required. Keep them consistent to point to the same entity.
-
----
-
-## 8. Summary
-
-The core workflow for building a Clawcross team using CLI is:
-**Create Team → Add Members (Internal/OpenClaw/External) → Add Personas → Verify**.
-
-All operations are based on `scripts/cli.py`, ensure execution under `uv run` environment.
-
----
-
-## 9. Agent设置和Expert设置经验总结
-
-### 9.1 Agent设置最佳实践
-
-**OpenClaw Agent配置要点：**
-- **全局唯一标识**：`global_name`必须全局唯一，避免命名冲突
-- **Session管理**：相同session共享上下文，不同session保持独立
-- **配置同步**：添加agent后必须执行`openclaw snapshot export`同步后端配置到JSON
-
-**Internal Agent配置要点：**
-- **Session ID唯一性**：每个Internal Agent需要唯一的session ID
-- **Tag匹配**：tag必须与persona的tag完全匹配（如`creative`、`critical`）
-- **人设复用**：同一persona可被多个agent使用，但session需不同
-
-### 9.2 Expert设置经验
-
-**Persona（人设）配置规则：**
-- **Expert字段格式**：必须使用`tag#ext#id`格式（如：`openclaw#ext#my_new_agent`）
-- **Model字段格式**：支持session扩展，如`agent:main:default`或`agent:my_new_agent`
-- **温度设置**：根据persona类型设置合适的temperature（创意类0.7-0.9，分析类0.3-0.5）
-
-**工作流行为控制：**
-- **禁止自动重复开启**：即使工作流看似无结果，也不得自动重复开启
-- **子agent行为限制**：子agent除非收到点名要求，否则不得自行开启子工作流
-- **状态检查**：使用`topics show`进行非阻塞状态检查，避免阻塞等待
-
-### 9.3 常见问题解决
-
-**工作流重复启动问题：**
-- 使用`topics list`查看所有活跃工作流
-- 使用`topics show --topic-id <ID>`检查具体状态
-- 确认失败后再决定是否重试，避免重复启动
-
-**多级讨论控制：**
-- 在OASIS提示词中明确禁止子agent自动开启子工作流
-- 保持单级讨论原则，防止嵌套失控
-- 明确点名机制，只有被点名时才开启子讨论
+- **一个运行时一个 agent**：WeBot 会话、`平台 + global_name` 都只能登记一次；想在多个 team 里用同一个 agent，直接 `add-member` 到各个 team。
+- **角色名在 team 内唯一**：工作流、群聊 @、定时任务都靠它找成员。
+- **删除**：`teams remove-member` 只是移出；`agents delete` 才删除 agent（并退出所有 team 和群聊）。
+- **工作流行为**：不要自动重复开启工作流；子 agent 未被点名时不要自行开启子工作流；用 `topics show --topic-id <ID>` 做非阻塞状态检查。

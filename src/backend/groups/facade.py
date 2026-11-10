@@ -1,0 +1,359 @@
+"""Authenticated local API: legacy groups over RPC, new groups through the relay client."""
+import asyncio
+import json
+import os
+from urllib.parse import quote
+
+import httpx
+
+from groups.client import ClientError, GroupClient
+from groups.config import service_key, service_url
+from groups.space_apps import SpaceAppRunner, catalogue, own_folder
+
+
+class GroupFacade:
+    def __init__(self, client: GroupClient, names=None):
+        self.client, self.names = client, names
+        self.agents = client.agents
+        self.apps = SpaceAppRunner(client)
+
+    @staticmethod
+    def rpc_headers(user):
+        return {'X-Group-Service-Key': service_key(), 'Authorization': f"Bearer {os.getenv('INTERNAL_TOKEN', '')}:{user}"}
+
+    def rpc(self, user, method, path='', body=None, params=None):
+        try:
+            with httpx.Client(timeout=10, trust_env=False) as client:
+                response = client.request(method, service_url() + '/local/groups' + path,
+                                          headers=self.rpc_headers(user), json=body, params=params)
+            if response.status_code >= 400:
+                raise ClientError(str(response.json().get('detail', '群服务请求失败')), response.status_code)
+            return response.json()
+        except httpx.HTTPError as exc:
+            raise ClientError('本地群服务不可用', 503) from exc
+
+    def agent_id(self, user, ref):
+        agent = self.agents.get(user, ref) or (self.names(user, ref) if self.names else None)
+        if not agent:
+            raise ClientError('此 agent 不属于当前用户或不存在', 404)
+        return agent.agent_id
+
+    def create(self, user, *, title, kind='group', agents=()):
+        ids = [self.agent_id(user, a) for a in agents]
+        card = self.client.create(user, title=title if kind == 'direct' else title or '私聊', kind=kind, agents=ids)
+        self.client.ensure(user, card['group_id'])
+        return card
+
+    def list(self, user):
+        legacy = self.rpc(user, 'GET').get('groups', [])
+        return legacy + [self.client.card(r) for r in self.client.store.rows(user) if r['active']]
+
+    def memberships(self, user, aid):
+        try:
+            legacy = self.rpc(user, 'GET', params={'agent_id': aid}).get('groups', []) if self.agents.get(user, aid) else []
+        except ClientError as exc:
+            if exc.status != 503:
+                raise
+            # Group service downtime must not prevent independent agent calls.
+            legacy = []
+        return legacy + self.client.memberships(user, aid)
+
+    def detail(self, user, gid):
+        if gid.startswith('rg_'):
+            return self.client.card(self.client.require(user, gid))
+        return self.rpc(user, 'GET', '/' + quote(gid, safe=''))
+
+    def messages(self, user, gid, after_id=0):
+        if gid.startswith('rg_'):
+            return self.client.messages(user, gid, after_id)
+        return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/messages', params={'after_id': after_id})['messages']
+
+    def message_state(self, user, gid):
+        if not gid.startswith('rg_'):
+            return {}
+        row = self.client.require(user, gid)
+        group = json.loads(row['metadata'])
+        mapping = {m['principal']: m['agent_id'] or 'u:' + user for m in group.get('members', [])
+                   if m['connection_id'] == row['connection_id']}
+        return {'capabilities': group.get('capabilities', {}),
+                'receipts': [{**r, 'principal': mapping.get(r['principal'], r['principal'])} for r in group.get('receipts', [])]}
+
+    def search_messages(self, user, gid, query, before_id=0, limit=50, **filters):
+        if gid.startswith('rg_'):
+            return self.client.search_messages(user, gid, query, before_id, limit, **filters)
+        return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/search',
+                        params={'query':query,'before_id':before_id,'limit':limit,**filters})
+
+    def message_context(self,user,gid,message_id):
+        if gid.startswith('rg_'): return self.client.message_context(user,gid,message_id)
+        return self.rpc(user,'GET','/'+quote(gid,safe='')+f'/messages/{message_id}/context')
+
+    def update(self, user, gid, *, title=None, dnd=None, announcement=None):
+        fields = {k: v for k, v in {'title': title, 'dnd': dnd, 'announcement': announcement}.items() if v is not None}
+        if gid.startswith('rg_'):
+            return self.client.manage(user, gid, 'patch', fields)
+        return self.rpc(user, 'PATCH', '/' + quote(gid, safe=''), fields)
+
+    def delete(self, user, gid):
+        with self.apps.lock:
+            result = self.client.manage(user, gid, 'delete', {}) if gid.startswith('rg_') else self.rpc(user, 'DELETE', '/' + quote(gid, safe=''))
+            self.apps.discard(user, gid)
+            return result
+
+    def add_member(self, user, gid, ref, *, convert_to_group=False):
+        if gid.startswith('rg_'):
+            return self.client.add_agent(user, gid, self.agent_id(user, ref), convert_to_group=convert_to_group)
+        return self.rpc(user, 'POST', '/' + quote(gid, safe='') + '/members',
+                        {'agent': ref, 'convert_to_group': convert_to_group})
+
+    def remove_member(self, user, gid, principal):
+        if gid.startswith('rg_'):
+            return self.client.manage(user, gid, 'remove_member', {'principal': principal})
+        return self.rpc(user, 'DELETE', '/' + quote(gid, safe='') + '/members/' + quote(principal, safe=''))
+
+    def update_member(self, user, gid, principal, *, muted=None, nickname=None):
+        if gid.startswith('rg_'):
+            return self.client.manage(user, gid, 'member_patch', {'principal': principal, 'muted': muted, 'name': nickname})
+        return self.rpc(user, 'PATCH', '/' + quote(gid, safe='') + '/members/' + quote(principal, safe=''), {'muted': muted, 'nickname': nickname})
+
+    def mute_agents(self, user, gid, muted):
+        if gid.startswith('rg_'):
+            for m in self.detail(user, gid)['members']:
+                if m['is_agent']:
+                    self.update_member(user, gid, m['principal'], muted=muted)
+            return self.detail(user, gid)
+        return self.rpc(user, 'POST', '/' + quote(gid, safe='') + '/mute_agents', {'muted': muted})
+
+    def set_primary(self, user, gid, agent_ref):
+        if gid.startswith('rg_'):
+            return self.client.manage(user, gid, 'primary', {'principal': agent_ref})
+        return self.rpc(user, 'PUT', '/' + quote(gid, safe='') + '/primary', {'agent': agent_ref})
+
+    def typing(self, user, gid):
+        if gid.startswith('rg_'):
+            card = self.client.card(self.client.require(user, gid))
+            active = [m for m in card['members'] if m.get('agent') and m['agent']['status']['state'] == 'running']
+            return {'typing':[m['name'] for m in active], 'names':[m['name'] for m in active],
+                    'agents':[{'agent_id':m['agent']['agent_id'], 'principal':m['principal'], 'name':m['name'],
+                               'state':'running', 'remote':m['remote'],
+                               'started_at':m['agent']['status'].get('started_at')} for m in active]}
+        return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/typing')
+
+    def agents_available(self, user, gid):
+        if gid.startswith('rg_'):
+            from agents.routes import agent_card
+            inside = {m['principal'] for m in self.detail(user, gid)['members'] if not m['remote']}
+            return [agent_card(a) for a in self.agents.list(user) if a.agent_id not in inside]
+        return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/available_agents')['agents']
+
+    async def post(self, user, gid, sender, content, **fields):
+        if gid.startswith('rg_'):
+            return await self.client.post(user, gid, sender, content, **fields)
+        body = {'content': content, **fields}
+        body['run_mode'] = body.pop('mode', None)
+        if sender != 'u:' + user:
+            body['agent'] = sender
+        headers = {**self.rpc_headers(user), 'X-Internal-Token': os.getenv('INTERNAL_TOKEN', '')}
+        async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
+            response = await client.post(service_url() + '/local/groups/' + quote(gid, safe='') + '/messages', headers=headers, json=body)
+        if response.status_code >= 400:
+            raise ClientError(str(response.json().get('detail', '群服务请求失败')), response.status_code)
+        return response.json()
+
+    def forget(self, owner, aid):
+        self.rpc(owner, 'POST', '/_forget', {'agent_id': aid})
+        for row in self.client.store.rows(owner):
+            if not row['active'] or aid not in json.loads(row['allowed_agents']):
+                continue
+            allowed = set(json.loads(row['allowed_agents']))
+            allowed.discard(aid)
+            self.client.store.update(owner, row['alias'], allowed_agents=json.dumps(sorted(allowed)))
+            try:
+                self.client.manage(owner, row['alias'], 'remove_member', {'principal': aid})
+            except ClientError:
+                # Locally revoke immediately; remote removal is retried by reconciliation.
+                pass
+
+
+def client_router(facade, *, internal_token, verify_password):
+    from fastapi import APIRouter, Header, HTTPException
+    from pydantic import BaseModel, Field
+    from agents.routes import authenticate
+
+    class JoinBody(BaseModel):
+        invite: str = Field(min_length=1, max_length=5000)  # the invitation link
+        agents: list[str] = Field(default_factory=list, max_length=32)
+        name: str = Field('', max_length=40)       # the member's name and password in that group
+        password: str = Field('', max_length=128)
+
+    router = APIRouter()
+
+    def user_of(auth):
+        return authenticate(auth, internal_token=internal_token, verify_password=verify_password)
+
+    @router.post('/groups/join')
+    async def join(body: JoinBody, authorization: str | None = Header(None)):
+        user = user_of(authorization)
+        try:
+            agents = [facade.agent_id(user, a) for a in body.agents]
+            card = await asyncio.to_thread(facade.client.join_link, user, link=body.invite, agents=agents,
+                                           name=body.name, password=body.password)
+            facade.client.ensure(user, card['group_id'])
+            return card
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+        except httpx.HTTPError as exc:
+            raise HTTPException(503, '无法连接群服务器') from exc
+
+    @router.post('/groups/{gid}/leave')
+    async def leave(gid: str, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'leave', {})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.get('/groups/{gid}/connection')
+    async def connection(gid: str, authorization: str | None = Header(None)):
+        try:
+            return facade.client.connection_status(user_of(authorization), gid)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post('/groups/{gid}/receipts')
+    async def receipt(gid: str, body: dict, authorization: str | None = Header(None)):
+        try:
+            user = user_of(authorization)
+            row = facade.client.require(user, gid)
+            read = body.get('read_cursor')
+            if type(read) is not int or read < 0:
+                raise ClientError('已读位置无效')
+            return await asyncio.to_thread(facade.client.request, row, 'POST', '/receipts', {
+                'device_id': facade.client.store.node_id, 'received_cursor': row['received_cursor'], 'read_cursor': read})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.patch('/groups/{gid}/profile')
+    async def member_profile(gid: str, body: dict, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'profile', body)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.get('/groups/{gid}/members/{principal}/profile-images/{image_id}')
+    async def profile_image(gid: str, principal: str, image_id: str, authorization: str | None = Header(None)):
+        try:
+            row = facade.client.require(user_of(authorization), gid)
+            real_principal = facade.client.principal(row, principal)
+            return await asyncio.to_thread(facade.client.request, row, 'GET', '/guest/image',
+                                           params={'principal': real_principal, 'image_id': image_id})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.get('/groups/{gid}/members/{principal}/avatar/{image_id}')
+    async def member_avatar(gid: str, principal: str, image_id: str, authorization: str | None = Header(None)):
+        try:
+            row = facade.client.require(user_of(authorization), gid)
+            real_principal = facade.client.principal(row, principal)
+            return await asyncio.to_thread(facade.client.request, row, 'GET', '/guest/avatar',
+                params={'principal': real_principal, 'image_id': image_id})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.delete('/groups/{gid}/local')
+    async def remove_local(gid: str, authorization: str | None = Header(None)):
+        try:
+            return await facade.client.remove_local(user_of(authorization), gid)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post('/groups/{gid}/disconnect-external')
+    async def disconnect_external(gid: str, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'disconnect_external', {})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    class ExternalAccess(BaseModel):
+        enabled: bool
+
+    @router.post('/groups/{gid}/external-access')
+    async def external_access(gid: str, body: ExternalAccess, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'external_access', {'enabled':body.enabled})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post('/groups/{gid}/app-key')
+    async def app_key(gid: str, authorization: str | None = Header(None)):
+        """The owner's key for the app server it runs; a new key disconnects the previous one."""
+        try:
+            row = facade.client.require(user_of(authorization), gid)
+            return await asyncio.to_thread(facade.client.request, row, 'POST', '/app/key', {})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.delete('/groups/{gid}/app')
+    async def remove_app(gid: str, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.apps.stop, user_of(authorization), gid)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    class AppRun(BaseModel):
+        app: str = Field(min_length=1, max_length=100)
+
+    @router.get('/groups/space-apps')
+    async def space_apps(authorization: str | None = Header(None)):
+        """The apps ClawCross can run for a space: shipped examples and the owner's own folder."""
+        user_of(authorization)
+        apps = await asyncio.to_thread(catalogue)
+        return {'apps': [{k: v for k, v in app.items() if k != 'entry'} for app in apps.values()], 'folder': str(own_folder())}
+
+    @router.get('/groups/{gid}/app-run')
+    async def app_run(gid: str, authorization: str | None = Header(None)):
+        return facade.apps.status(user_of(authorization), gid)
+
+    @router.get('/groups/{gid}/history')
+    async def group_history(gid: str, before_id: int = 0, limit: int = 50, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.history, user_of(authorization), gid, max(0, before_id), limit)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post('/groups/{gid}/app-run')
+    async def start_app(gid: str, body: AppRun, authorization: str | None = Header(None)):
+        """Runs an app for this space on this machine, with a fresh key; it starts again after a restart."""
+        try:
+            return await asyncio.to_thread(facade.apps.start, user_of(authorization), gid, body.app)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.delete('/groups/{gid}/app-run')
+    async def stop_app(gid: str, authorization: str | None = Header(None)):
+        """Stops the app this machine runs for the space and returns the space to plain chat."""
+        try:
+            return await asyncio.to_thread(facade.apps.stop, user_of(authorization), gid)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post('/groups/{gid}/app-session')
+    async def app_session(gid: str, authorization: str | None = Header(None)):
+        """Where this member's page of the space's app opens: the group server's site, tunnelled to the app."""
+        try:
+            row = facade.client.require(user_of(authorization), gid)
+            path = (await asyncio.to_thread(facade.client.request, row, 'POST', '/app/session', {}))['path']
+            own = row['url'] == service_url() and not row['via']
+            return {'url': '/' + path if own else row['url'] + '/' + path}
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post('/groups/{gid}/guest-invite')
+    async def guest_invite(gid: str, body: dict, authorization: str | None = Header(None)):
+        try:
+            row = facade.client.require(user_of(authorization), gid)
+            result = await asyncio.to_thread(facade.client.request, row, 'POST', '/guest-invites', body)
+            return {**result, 'server_url': row['url']}  # the group server the link joins
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    return router

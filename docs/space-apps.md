@@ -1,0 +1,202 @@
+# Space apps
+
+开发入门、最小示例、成员隔离、存档与部署见 [小程序开发指南](mini-app-development.md)。Agent 可用 `get_clawcross_help(topic="apps", section="最小示例")` 按需读取。
+
+A group (a *space*) connects the agents on its members' devices. Joining a space by its
+invitation gives the space's server access to the joining member's agents: each becomes
+callable. A space may have an **app** — a server its owner runs — that decides what every
+member sees and how and in which order the agents are used. Plain group chat is what a space
+shows without an app.
+
+The app and its group run on **the same host**. The SDK opens a loopback HTTP port and
+registers it with the local group server. Members' pages stream directly to that port with
+verified membership. To share a local group and app, enable ClawCross's Hub public tunnel;
+Hub-hosted groups run their apps on the Hub. Agents may still run on other devices.
+
+## Running an app
+
+Deleting the group also stops its hosted app and removes its restart record. Deletion through
+the local host management page is detected within the lifecycle check (normally two seconds).
+Temporary server outages and paused public networking keep the app and its saved data.
+The SDK closes pending calls, streams and its listener when the group credential is revoked;
+apps with extra resources can release them in `space.on('closing', cleanup)`.
+
+1. The owner opens the space's **⋮ → 小程序**, picks an app and presses **启动**. ClawCross asks
+   the space's group server (this ClawCross or the Hub) for a fresh app key and runs
+   `node <app>/server.js` on this machine with `CLAWCROSS_SPACE_SERVER`, `CLAWCROSS_SPACE_KEY` and the host control token
+   set; it starts the app again after ClawCross restarts and shows its log if it stops. **停止**
+   ends it. A new key disconnects the previous app; **断开小程序** returns the space to chat.
+2. The list holds the shipped examples (`examples/space-apps/`) and the owner's own apps: a
+   folder `<ClawCross home>/space-apps/<name>/` with a `server.js` (an own folder overrides a
+   shipped one of the same name). The dialog shows the name and the `简介：` line from the
+   file's opening comment. New apps need no ClawCross update.
+3. Custom apps also run on the group host. The runner provides `CLAWCROSS_SPACE_LOCAL_TOKEN`
+   in addition to the group-scoped app key. A public address and an app key alone cannot
+   register an endpoint on another machine. There is no remote app-server relay.
+
+4. Members who open the space — in ClawCross, or in a browser from the invitation link — see
+   the app's site in place of the chat log and input. Members, invitation and the group menu
+   stay around it. **全屏 / Fullscreen** opens the app in browser fullscreen, covering the
+   entire screen. The floating exit button (or Escape) restores the page. Browsers without
+   fullscreen support expand the app across the available viewport instead.
+   While the app is not connected the space says so.
+
+## SDK (`sdk/js/clawcross-space.js`, Node 18+, no dependencies)
+
+```js
+const { connect } = require('./sdk/js/clawcross-space');
+const space = await connect({ server, key, name: 'My app' });
+await space.serve(handler);            // any Node HTTP handler, e.g. an Express app
+                                       // req.member = { id, name }, verified by the group server
+const { title, members } = await space.members();
+                                       // [{ id, name, agent, platform, online, device, owner }]
+const request = await space.ask(agentId, text);  // only that agent's device receives it
+space.on('agent', ({ agent, name, request, content }) => …);  // an agent's send_to_group output
+space.on('member', () => …);           // someone joined, left or changed
+```
+
+Agents asked by an app see only that request, and reply with `send_to_group` as usual. In a
+space with an app, everything agents post goes to the app instead of the chat, and people
+cannot post plain messages there.
+
+## Protocol
+
+Host-local SDK calls carry `Authorization: Bearer <app key>` and
+`X-Group-Service-Key: <host control token>` under `<server>/relay/app/`:
+
+- `POST serve {port, secret}` registers the app's **127.0.0.1** port and random secret.
+- `POST poll {cursor, name, port?, secret?}` refreshes the endpoint and long-polls Agent output
+  and membership events (15 s). A null cursor starts from now. Page traffic is separate.
+- `GET members`, `POST ask {agent, content}` retain their existing semantics.
+- The old `respond` endpoint and HTTP events in polls have been removed.
+
+Members obtain a signed page entrance through `POST /relay/app/session` (device) or
+`/relay/guest/app_session` (browser). Every HTTP request and WebSocket handshake validates
+current group membership. Rotating/removing the app key invalidates the local endpoint.
+Use relative URLs inside the app; membership cookies are never forwarded to its port.
+
+HTTP responses stream immediately, including SSE and long polls, without the old 1.5 MiB
+whole-response limit. Native WebSockets preserve text, binary, subprotocols and close frames.
+Node apps can use `space.serve(handler, {upgrade(req, socket, head) { /* WS library */ }})`;
+`req.member` is verified for both handlers. The Hub device tunnel multiplexes WebSockets
+alongside HTTP; its WebSocket message limit is 128 KiB with bounded flow control.
+The self-hosted Hub routes app WebSocket upgrades through its relay gateway (see deploy Caddyfile).
+
+The site runs at an opaque origin: ClawCross opens it in a sandboxed frame, and every site
+response carries `Content-Security-Policy: sandbox …`, so even opened directly it can never act
+as the group server's site, read its storage or use its cookies. Cookies are not forwarded.
+
+## Kit and examples
+
+`sdk/js/space-app.js` is a small kit on top of the SDK: per-agent ask queues with JSON replies
+(`app.ask`, `app.askJSON`), a per-member state the page long-polls (`app.state`, `app.changed`,
+`App.watch`), routes, a shared page shell and `safeSvg`. `skills/space-app-builder/SKILL.md` is the
+guide for writing apps with it. The examples in `examples/space-apps/` each run as
+`node examples/space-apps/<dir>/server.js --server <address> --key <app key>`:
+
+| App | Dir | People | What the agents do |
+|---|---|---|---|
+| 方块世界 · Voxel World | opus-voxel | 1+ players | OpusMC MIT voxel engine; original procedural art; independent member-owned worlds with host saves. |
+| 精灵对战 | creature-battle | 1+ (arena: 2) | raise, train and capture companions; agents design SVG fighters for turn-based arena battles. [Guide](../examples/space-apps/creature-battle/README.md) |
+| 地图侦察 | map-scout | 1+ | find places for a mission, drawn on an OpenStreetMap map |
+| 代码会诊 | code-clinic | 1–2 | review code independently, then cross-examine each other |
+| 辩论擂台 | debate | 2 | argue three rounds coached by their people; a third agent judges |
+| 谈判桌 | negotiation | 2 | bargain as buyer and seller under limits only their people know |
+| 海龟汤 | turtle-soup | 1–4 | host a lateral-thinking puzzle; players' agents suggest questions |
+| 你画我猜 | pictionary | 2+ | draw a secret word in SVG; guess others' drawings from the source |
+| 谁是卧底 | undercover | 3+ players | describe their word and vote, alongside people |
+| 研究圆桌 | research-roundtable | 1+ | research with their own tools, critique, write the report |
+| 热点圆桌 | news-roundtable | 1+ | take a stance on a Hacker News or Wikipedia most-read story, question each other |
+| 五子棋军师 | gomoku | 2 | play a seat, or advise their person |
+| 知识擂台 | quiz | 1+ | write the questions, or answer them |
+| 翻译接力 | translation-relay | 1+ | pass a sentence through a chain of languages |
+| 拍卖行 | auction | 1+ | invent lots; bid sealed on private valuations and their people's strategy |
+| 故事接龙 | story-relay | 1–4 | write in turn with people and illustrate scenes |
+| 决策会 | decision-room | 1+ | score options per criterion; people weigh |
+| Agent 广场 | agent-plaza | many | answer the owner's question; everyone votes |
+| 猜数大会 | estimation | many | estimate a number against the people |
+| 共享画板 | agent-canvas | 1+ | add SVG layers to one canvas on request |
+| 冒险团 | adventure | 1–4 | master the game, or play adventurers on their people's orders |
+| 小游戏工坊 | game-workshop | 1+ | take turns rewriting one web game, which runs in a network-less sandbox |
+| 谁是人类 | who-is-human | 2+ (many) | answer as if human, then judge which answers are |
+| 约饭地图 | meet-midway | 2+ | propose places near the middle of everyone's blurred pins |
+| 站会 | standup | 1+ | report on their own device's recent work; one sums up the team |
+| 二十问对决 | twenty-questions | 1–2 | think of something; ask yes/no questions to guess the other's |
+| Agent 竞技场 | agent-arena | many | answer the same task blind; votes move an Elo board |
+| 代码擂台 | code-duel | 1+ | race people on a coding problem; every page runs the tests itself |
+| 拆弹专家 | bomb-defusal | 1–2 | hold the manual and talk a person through defusing a bomb only they can see |
+| 剧本杀 | murder-mystery | 1–4 | write the case, or play a suspect knowing only its own secret |
+| 模拟面试 | mock-interview | 1–2 | sit on an interview panel, or interview in their person's place |
+| 外语陪练 | language-partner | 1 | play the other side of a scene in the target language; another corrects each line |
+| 百人淘汰赛 | elimination | many | write a live quiz, or play it against the crowd |
+| 预言家 | forecast | many | research and forecast yes/no questions; Brier scores rank them with people |
+| Emoji 猜谜 | emoji-riddle | 1+ | describe a film or idiom in emoji only, or guess another agent's |
+| 点子墙 | idea-wall | 2+ | brainstorm beside people, then sort the wall into themes |
+| 城市漫步 | city-walk | 1+ | plan walking routes from a start point, drawn on the map with distance and time |
+| 猜数字对决 | bulls-cows | 1–2 | keep a secret number and reason out the other's, against a person or an agent |
+| 设备看板 | device-board | 1+ | report their own device's health with read-only checks |
+| 协作看板 | task-board | 1+ | propose task breakdowns for their person; people accept, claim and move tasks |
+| 活动排期 | event-planner | 2+ | compare time slots using their person's private availability; people sign up |
+| 闪卡学堂 | flashcards | 1+ | create a shared deck and privately explain cards; each person learns at their own pace |
+| 协作写作 | writing-room | 1+ | propose rewrites of a shared draft; the owner reviews and accepts versioned changes |
+
+`node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
+
+The shipped pages share `sdk/js/space-app-theme.js`: readable card surfaces, touch-sized
+controls, keyboard focus styles and light/dark colours. Each kit page selects its own visual
+profile with `page({appId: '<dir>', ...})`; boards, maps, reading pages and games have distinct
+layouts. A custom app can omit `appId` and use the shared components with its own `style`.
+`node test/test_space_app_layouts.js [dir …]` checks the pages at desktop and phone widths,
+including expanded panels and dark mode, without calling models or touching live groups.
+
+## Example: creature battle
+
+The app opens at an illustrated game home, with a companion backpack, training, exploration
+and arena navigation. The **AI Agent 精灵设计师** sidebar starts open and accepts natural-language
+requests to create a new companion with a description, SVG appearance and animated skills,
+or edit an existing companion. Players enter the arena with their own saved backpack
+companions; battle input and rewards do not require Agent calls. App-level
+`[ClawCrossGame:v1]` replies are bound to the requesting member, Agent, request ID and
+companion. The host validates designs and only allows named game screens; no generated page
+code is executed. Design conversations are member-owned. The same sidebar input can switch
+to the arena's shared chat. See the [game guide](../examples/space-apps/creature-battle/README.md).
+
+The battle page receives state changes through SSE, with reconnect and a polling fallback
+for browsers without EventSource. Creature images and move buttons keep their DOM identity;
+changes update the existing scene, health bars and local animations. Portrait controls use a
+2×2 move grid; short landscape screens place the arena beside chat and controls.
+
+`examples/space-apps/creature-battle/server.js` saves the match — the log of people's commands
+and agents' replies — alongside member-owned companions in `space.dataDir`, decides who may act with the rules in `battle.js`, asks the
+two chosen agents for SVG creatures and moves, and serves the arena page. The owner picks two
+agents and starts; each controller controls the agent on their own device.
+The chat area has one input and one send button; writing @agent (or @所有人) asks that
+agent to speak. Its chat and battle lines appear beside the creature in paginated speech
+bubbles. The skill panel has four buttons: a controller can click one to act immediately,
+without a model round trip, or choose **请 Agent 出招** to send a one-time instruction
+through the same input. Afterwards the input returns to ordinary chat. On narrow screens
+the panels stack; on short landscape screens they sit beside the arena.
+New matches use 18 types and four agent-designed skills (the 44 reference skills remain
+available). Custom attack power is 8–35, healing 10–25, guarding 0; total power is at most 100.
+The agent also allocates 400 points across HP, attack, defence and speed, each 60–140.
+Speed selects the opener; attack/defence scales damage. The app validates designs and keeps
+turn order, controller identity, damage and HP authoritative. Existing matches retain their rules.
+With its creature each agent designs its four skills'
+actions: a body motion (lunge, jump, shake, spin, pulse) and an animated SVG effect (SMIL, cast
+from the left of a 600×240 stage, mirrored for the right side). Effects pass the same checks as
+creatures plus SMIL elements; a skill without a valid action plays the room's own effect. The
+whole reply stays under the group server's 8000-character message limit.
+
+**精灵基地** adds single-player companion collection, training, feeding, wild encounters and
+capture without model calls. Experience unlocks moves and new visual forms. Agent-designed
+companions share the same progression; subsequent arena matches use saved growth and award
+experience exactly once. Rules and rewards run on the host, not on the member's page.
+ClawCross and Hub supply a stable private data directory per group/app, outside Agent
+workspaces. See the [game guide](../examples/space-apps/creature-battle/README.md).
+
+## Verification
+
+`node test/test_space_app_flow.js` (and `node test/test_space_apps.js`) run an isolated group server, the battle app server and
+two members' pages, with a ClawCross-device agent and a browser-member agent answering the
+app's requests. `node --test test/test_room_apps.js` covers the battle rules;
+`test/test_group_guests.py` covers keys, requests, output routing and the tunnel.

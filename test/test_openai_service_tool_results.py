@@ -5,20 +5,18 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from api.openai_models import ChatCompletionRequest
-from api.openai_service import OpenAIChatService
+from agents.openai import ChatCompletionRequest
+from webot.api.openai_service import OpenAIChatService
 
 
 class OpenAIServiceToolResultTests(unittest.TestCase):
     def _service(self) -> OpenAIChatService:
         agent = types.SimpleNamespace(agent_app=None)
         return OpenAIChatService(
-            internal_token="test",
-            verify_password=lambda u, p: True,
             agent=agent,
             extract_text=lambda content: content if isinstance(content, str) else str(content or ""),
             build_human_message=lambda text, images, files, audios: types.SimpleNamespace(content=text),
